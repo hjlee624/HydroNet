@@ -32,7 +32,11 @@ export function Sidebar() {
 }
 
 function CategoryNode({ cat, selectedTaskId }: { cat: Category; selectedTaskId: string | null }) {
-  const tasks = useEditor((s) => s.project.tasks.filter((t) => t.categoryId === cat.id))
+  // Select the stable array ref and filter in the body — returning a fresh
+  // `.filter()` array straight from the selector makes zustand v5's snapshot
+  // unstable (useSyncExternalStore → infinite re-render → blank screen).
+  const allTasks = useEditor((s) => s.project.tasks)
+  const tasks = allTasks.filter((t) => t.categoryId === cat.id)
   const a = useEditor.getState
 
   return (
