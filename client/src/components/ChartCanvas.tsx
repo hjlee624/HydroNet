@@ -10,7 +10,7 @@ import { routeLinks } from '../engine/routing'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
 
 type Drag =
-  | { kind: 'move'; taskId: string; grabOffsetDays: number }
+  | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
   | { kind: 'link'; fromId: string }
   | null
 
@@ -44,10 +44,11 @@ export function ChartCanvas() {
     const task = project.tasks.find((t) => t.id === id)
     if (!task) return
     store.selectTask(id)
-    store.beginGesture()
     const { x } = toContent(e.clientX, e.clientY)
     const dayAtPointer = model.dayOf(x)
-    dragRef.current = { kind: 'move', taskId: id, grabOffsetDays: dayAtPointer - task.start }
+    // History is captured lazily on the first real move, so a plain click that
+    // merely selects a bar does not push an empty undo step.
+    dragRef.current = { kind: 'move', taskId: id, grabOffsetDays: dayAtPointer - task.start, started: false }
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
   }
@@ -74,6 +75,7 @@ export function ChartCanvas() {
     if (!drag) return
     const { x, y } = toContent(e.clientX, e.clientY)
     if (drag.kind === 'move') {
+      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
     } else {

@@ -129,10 +129,14 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
     if (format === 'png' || format === 'jpg') {
       const mime = format === 'png' ? 'image/png' : 'image/jpeg'
       const quality = format === 'jpg' ? 0.94 : undefined
-      await new Promise<void>((resolve) => {
+      await new Promise<void>((resolve, reject) => {
         canvas.toBlob(
           (blob) => {
-            if (blob) triggerDownload(blob, `${filename}.${format}`)
+            if (!blob) {
+              reject(new Error('캔버스를 이미지로 변환하지 못했습니다. 해상도(DPI)를 낮춰 다시 시도하세요.'))
+              return
+            }
+            triggerDownload(blob, `${filename}.${format}`)
             resolve()
           },
           mime,

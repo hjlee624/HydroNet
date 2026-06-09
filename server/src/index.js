@@ -44,6 +44,20 @@ app.use(express.json({ limit: '12mb' }))
 
 const idOk = (id) => /^[A-Za-z0-9_-]{1,80}$/.test(id)
 const fileFor = (id) => path.join(DATA_DIR, `${id}.json`)
+
+// Per-id write serialization. Concurrent PUTs for the same project (multiple
+// tabs, auto-save racing a manual save, client retries) are chained so their
+// write→rename pairs never interleave. Combined with a unique temp filename
+// per write, this rules out the shared-temp corruption / lost-write race.
+const writeChains = new Map()
+function serializeWrite(id, task) {
+  const prev = writeChains.get(id) ?? Promise.resolve()
+  const run = prev.then(task, task) // run regardless of the previous outcome
+  const tail = run.catch(() => {})
+  writeChains.set(id, tail)
+  tail.then(() => { if (writeChains.get(id) === tail) writeChains.delete(id) })
+  return run
+}
 const asyncRoute = (fn) => (req, res) => Promise.resolve(fn(req, res)).catch((e) => {
   appendLog('error', `${req.method} ${req.path}`, { message: e.message, stack: e.stack })
   res.status(500).json({ error: '서버 오류가 발생했습니다.' })
@@ -93,10 +107,18 @@ app.put('/api/projects/:id', asyncRoute(async (req, res) => {
   if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
   const project = req.body
   if (!project || project.id !== id) return res.status(400).json({ error: 'ID 불일치' })
-  // Atomic write: temp file then rename, so a crash mid-write can't corrupt data.
-  const tmp = fileFor(id) + '.tmp'
-  await fs.writeFile(tmp, JSON.stringify(project, null, 2), 'utf8')
-  await fs.rename(tmp, fileFor(id))
+  // Unique temp + per-id serialization: atomic against crashes AND safe against
+  // concurrent same-id writers (no shared temp path, no interleaving).
+  await serializeWrite(id, async () => {
+    const tmp = `${fileFor(id)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
+    try {
+      await fs.writeFile(tmp, JSON.stringify(project, null, 2), 'utf8')
+      await fs.rename(tmp, fileFor(id))
+    } catch (e) {
+      await fs.unlink(tmp).catch(() => {}) // clean up the orphan temp on failure
+      throw e
+    }
+  })
   res.json({ ok: true, id })
 }))
 
