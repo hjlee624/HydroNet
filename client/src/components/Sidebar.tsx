@@ -4,7 +4,7 @@
 import { useEditor } from '../state/store'
 import type { Category } from '../types/model'
 
-export function Sidebar() {
+export function Sidebar({ width }: { width: number }) {
   const project = useEditor((s) => s.project)
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const a = useEditor.getState
@@ -14,7 +14,7 @@ export function Sidebar() {
     .sort((x, y) => x.order - y.order)
 
   return (
-    <aside className="panel panel--left">
+    <aside className="panel panel--left" style={{ width }}>
       <div className="panel__header">
         <span className="panel__title">공종 구성</span>
         <button className="btn btn--sm" onClick={() => a().addCategory()}>＋ 공종</button>

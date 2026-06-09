@@ -7,12 +7,12 @@ import { dateToDay, dayToDate, parseISO, toISO } from '../engine/dates'
 import { PAPER_SIZES } from '../engine/paper'
 import type { LinkType, PaperSize } from '../types/model'
 
-export function Inspector() {
+export function Inspector({ width }: { width: number }) {
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
 
   return (
-    <aside className="panel panel--right">
+    <aside className="panel panel--right" style={{ width }}>
       <div className="panel__header">
         <span className="panel__title">
           {selectedTaskId ? '공정 속성' : selectedLinkId ? '연결 속성' : '도면 · 프로젝트'}

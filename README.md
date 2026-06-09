@@ -66,6 +66,7 @@ HydroNet/
 ├─ server/                  # Express 백엔드 (파일 저장 + error.log)
 │  ├─ src/index.js
 │  └─ data/                 # 프로젝트 JSON 저장소
+├─ start-lan.bat            # LAN 접속용 서버 실행 (0.0.0.0, 클라이언트+API 단일 포트)
 ├─ error.log                # 모든 프로그램 오류 기록 (ABS_RULE)
 └─ package.json             # 루트 (dev 동시 실행)
 ```
@@ -96,6 +97,25 @@ npm run build      # client/dist 생성
 node server/src/index.js   # dist가 있으면 서버가 정적 호스팅
 ```
 
+### 🌐 LAN(사내망)에서 다른 PC로 접속
+오지 현장 사무실의 여러 PC가 한 대의 서버에 접속해 공유할 수 있습니다. 서버는
+`0.0.0.0`(모든 네트워크 인터페이스)에 바인딩되어 클라이언트(빌드본) + API를
+한 포트(기본 4000)로 함께 제공합니다.
+
+```bat
+start-lan.bat          ◀ 더블클릭 (최초 1회 자동 빌드)
+```
+실행하면 콘솔에 접속 주소가 표시됩니다:
+```
+Local: http://127.0.0.1:4000/
+LAN:   http://192.168.x.x:4000/      ← 다른 PC는 이 주소로 접속
+```
+> 다른 PC에서 LAN 주소가 안 열리면 서버 PC의 Windows Defender 방화벽에서 TCP 4000 포트를 허용하세요:
+> ```
+> netsh advfirewall firewall add rule name="HydroNet 4000" dir=in action=allow protocol=TCP localport=4000
+> ```
+> 포트 변경: `set PORT=8020` 후 실행 (또는 환경변수 `PORT`/`HOST`).
+
 ### 검증 스크립트
 ```bash
 cd client
@@ -115,6 +135,11 @@ npx tsx scripts/render-preview.ts   # preview.png 로 마일스톤 출력 미리
 | `Esc` | 연결 드래그 취소 |
 
 조작: 바를 **드래그**하여 이동, 선택 후 우측 끝 **●를 다른 공정으로 드래그**하여 연결.
+
+**화면 조작**
+- **패널 너비 조절** — 좌/우 사이드바 경계를 마우스로 드래그 (너비는 자동 저장)
+- **배율** — 우측 상단 `＋/−` 는 차트 **전체(가로·세로·글자)** 를 균일하게 확대/축소
+- **전체 화면** — `⤢ 전체 화면` 버튼으로 패널을 숨기고 전체 화면 미리보기(출력 전 확인), `Esc` 로 종료
 
 ---
 

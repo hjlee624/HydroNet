@@ -3,7 +3,13 @@
 
 import { useEditor } from '../state/store'
 
-export function TopBar({ onExport }: { onExport: () => void }) {
+interface TopBarProps {
+  onExport: () => void
+  onToggleFullscreen: () => void
+  fullscreen: boolean
+}
+
+export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps) {
   const name = useEditor((s) => s.project.name)
   const dirty = useEditor((s) => s.dirty)
   const zoom = useEditor((s) => s.zoom)
@@ -61,6 +67,9 @@ export function TopBar({ onExport }: { onExport: () => void }) {
         </div>
 
         <span className={`save-state ${dirty ? 'dirty' : ''}`}>{dirty ? '● 저장 중…' : '저장됨'}</span>
+        <button className="btn btn--sm" title="출력 전 전체 화면 미리보기 (Esc 종료)" onClick={onToggleFullscreen}>
+          {fullscreen ? '⤢ 종료' : '⤢ 전체 화면'}
+        </button>
         <button className="btn btn--primary" onClick={onExport}>도면 출력</button>
       </div>
     </header>

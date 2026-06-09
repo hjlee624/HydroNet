@@ -25,16 +25,17 @@ export function ChartCanvas() {
   const dragRef = useRef<Drag>(null)
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
 
-  const model = useMemo(() => {
-    const eff = { ...project, view: { ...project.view, pxPerDay: project.view.pxPerDay * zoom } }
-    return computeLayout(eff)
-  }, [project, zoom])
+  // Layout is computed at base scale; zoom is applied as a uniform CSS
+  // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
+  // scales together — not just the horizontal axis.
+  const model = useMemo(() => computeLayout(project), [project])
 
   const routed = useMemo(() => routeLinks(model, project.links), [model, project.links])
 
   function toContent(clientX: number, clientY: number) {
     const rect = paperRef.current!.getBoundingClientRect()
-    return { x: clientX - rect.left, y: clientY - rect.top }
+    // rect reflects the scaled box; divide by zoom to get unscaled model coords.
+    return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom }
   }
 
   function onTaskPointerDown(e: RPointerEvent, id: string) {
@@ -102,10 +103,11 @@ export function ChartCanvas() {
 
   return (
     <div className="canvas-wrap" onClick={() => useEditor.getState().selectTask(null)}>
+      <div className="paper-scale" style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}>
       <div
         ref={paperRef}
         className="paper"
-        style={{ width: model.contentWidth, height: model.contentHeight }}
+        style={{ width: model.contentWidth, height: model.contentHeight, transform: `scale(${zoom})` }}
         onClick={(e) => e.stopPropagation()}
       >
         <ChartSvg
@@ -123,6 +125,7 @@ export function ChartCanvas() {
           onLinkClick={(_, id) => useEditor.getState().selectLink(id)}
           onBackgroundClick={() => useEditor.getState().selectTask(null)}
         />
+      </div>
       </div>
     </div>
   )

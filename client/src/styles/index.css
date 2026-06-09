@@ -280,13 +280,38 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
     radial-gradient(circle at 1px 1px, rgba(0,0,0,0.035) 1px, transparent 0) 0 0 / 22px 22px,
     var(--surface);
 }
-.paper {
+.paper-scale {
+  position: relative;
   margin: 0 auto;
+}
+.paper {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
   background: var(--canvas);
   box-shadow: var(--shadow-card), rgba(0,0,0,0.06) 0 2px 6px;
   border: 1px solid var(--hairline);
-  position: relative;
 }
+
+/* ── Panel resize handles ── */
+.resizer {
+  flex: 0 0 6px;
+  cursor: col-resize;
+  background: transparent;
+  position: relative;
+  z-index: 5;
+  transition: background 0.12s;
+}
+.resizer::after {
+  content: '';
+  position: absolute;
+  top: 0; bottom: 0; left: 2px;
+  width: 2px;
+  background: var(--hairline-soft);
+}
+.resizer:hover, .resizer.dragging { background: rgba(250, 81, 17, 0.18); }
+.resizer:hover::after, .resizer.dragging::after { background: var(--primary); }
 #hydronet-chart { display: block; }
 .chart-bar { cursor: grab; }
 .chart-bar.dragging { cursor: grabbing; }

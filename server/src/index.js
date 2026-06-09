@@ -11,6 +11,7 @@ import cors from 'cors'
 import fs from 'node:fs/promises'
 import fssync from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -19,6 +20,19 @@ const DATA_DIR = path.resolve(__dirname, '..', 'data')
 const CLIENT_DIST = path.resolve(ROOT, 'client', 'dist')
 const ERROR_LOG = path.resolve(ROOT, 'error.log')
 const PORT = process.env.PORT || 4000
+// Bind all interfaces by default so other PCs on the LAN can connect.
+const HOST = process.env.HOST || '0.0.0.0'
+
+/** Non-internal IPv4 addresses (for printing LAN URLs). */
+function lanAddresses() {
+  const out = []
+  for (const ifaces of Object.values(os.networkInterfaces())) {
+    for (const i of ifaces ?? []) {
+      if (i.family === 'IPv4' && !i.internal && !i.address.startsWith('169.254.')) out.push(i.address)
+    }
+  }
+  return out
+}
 
 fssync.mkdirSync(DATA_DIR, { recursive: true })
 
@@ -143,7 +157,11 @@ if (fssync.existsSync(CLIENT_DIST)) {
   })
 }
 
-app.listen(PORT, () => {
-  appendLog('info', `HydroNet 서버 시작 (port ${PORT})`)
-  console.log(`HydroNet server ▸ http://localhost:${PORT}`)
+const served = fssync.existsSync(CLIENT_DIST)
+app.listen(PORT, HOST, () => {
+  appendLog('info', `HydroNet 서버 시작 (host ${HOST}, port ${PORT}, client=${served ? 'dist' : 'api-only'})`)
+  console.log('\nHydroNet server listening on all interfaces:')
+  console.log(`  Local:  http://127.0.0.1:${PORT}/${served ? '' : '  (API only — run "npm run build" to serve the app)'}`)
+  for (const ip of lanAddresses()) console.log(`  LAN:    http://${ip}:${PORT}/`)
+  console.log(`\n다른 PC에서 LAN URL이 안 열리면 Windows Defender 방화벽에서 TCP ${PORT} 포트를 허용하세요.\n`)
 })

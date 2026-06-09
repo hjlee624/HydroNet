@@ -1,16 +1,47 @@
-// Application shell — composes the panels and wires global keyboard shortcuts.
+// Application shell — composes the panels, resizable side widths, the
+// fullscreen preview mode, and global keyboard shortcuts.
 
 import { useEffect, useState } from 'react'
 import { TopBar } from './components/TopBar'
 import { Sidebar } from './components/Sidebar'
+import { Resizer } from './components/Resizer'
 import { ChartCanvas } from './components/ChartCanvas'
 import { Inspector } from './components/Inspector'
 import { StatusBar } from './components/StatusBar'
 import { ExportDialog } from './components/ExportDialog'
 import { useEditor } from './state/store'
 
+const num = (v: string | null, fallback: number) => {
+  const n = Number(v)
+  return Number.isFinite(n) && n > 0 ? n : fallback
+}
+
 export default function App() {
   const [exportOpen, setExportOpen] = useState(false)
+  const [leftWidth, setLeftWidth] = useState(() => num(localStorage.getItem('hydronet:leftW'), 288))
+  const [rightWidth, setRightWidth] = useState(() => num(localStorage.getItem('hydronet:rightW'), 300))
+  // Fullscreen preview hides the side panels so the chart can be checked
+  // full-bleed before printing.
+  const [presentation, setPresentation] = useState(false)
+
+  useEffect(() => { localStorage.setItem('hydronet:leftW', String(leftWidth)) }, [leftWidth])
+  useEffect(() => { localStorage.setItem('hydronet:rightW', String(rightWidth)) }, [rightWidth])
+
+  useEffect(() => {
+    const onFs = () => setPresentation(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', onFs)
+    return () => document.removeEventListener('fullscreenchange', onFs)
+  }, [])
+
+  async function toggleFullscreen() {
+    try {
+      if (!document.fullscreenElement) await document.documentElement.requestFullscreen()
+      else await document.exitFullscreen()
+    } catch {
+      // Fullscreen API unavailable (e.g. permissions) → fall back to panel hide.
+      setPresentation((p) => !p)
+    }
+  }
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
@@ -39,14 +70,16 @@ export default function App() {
 
   return (
     <div className="app">
-      <TopBar onExport={() => setExportOpen(true)} />
+      <TopBar onExport={() => setExportOpen(true)} onToggleFullscreen={toggleFullscreen} fullscreen={presentation} />
       <div className="app__body">
-        <Sidebar />
+        {!presentation && <Sidebar width={leftWidth} />}
+        {!presentation && <Resizer side="left" width={leftWidth} setWidth={setLeftWidth} />}
         <div className="app__center">
           <ChartCanvas />
           <StatusBar />
         </div>
-        <Inspector />
+        {!presentation && <Resizer side="right" width={rightWidth} setWidth={setRightWidth} />}
+        {!presentation && <Inspector width={rightWidth} />}
       </div>
       {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
     </div>
