@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build output
+dist/
+build/
+*/dist/
+*.tsbuildinfo
+
+# Logs (ABS_RULE: program logs live in error.log; keep them local, not in VCS)
+error.log
+*.log
+logs/
+
+# Runtime project data (file-based storage)
+server/data/*.json
+!server/data/.gitkeep
+
+# Environment / editor / tooling
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/
+.omc/
+
+# Electron packaging output (future)
+out/
+release/
+*.exe
+
+# Dev render / verification artifacts
+preview.png
+preview.svg
+**/preview.png
+**/preview.svg

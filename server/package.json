@@ -1,0 +1,15 @@
+{
+  "name": "hydronet-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Thin file-based persistence + centralized error logging for HydroNet",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "nanoid": "^5.0.9"
+  }
+}

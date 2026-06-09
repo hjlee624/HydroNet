@@ -1,0 +1,133 @@
+# HydroNet — 댐·양수발전 시공 및 시운전 마일스톤 관리 프로그램
+
+> 댐과 양수발전 건설 현장의 공종별 흐름(Flow)을 그물망(Network)처럼 연결하여, 시공부터 시운전까지의 마일스톤을 직관적으로 편집하고 A4~A0 대형 도면으로 깨짐 없이 출력하는 건설사업관리 프로그램.
+
+![milestone](DESIGN/milestone%20sample.png)
+
+기본 샘플 프로젝트(`OO댐 시공·시운전 마일스톤`)는 위 `DESIGN/milestone sample.png`와 동일한 형태의 마일스톤 공정표로 렌더링됩니다.
+
+---
+
+## ✨ 주요 기능
+
+### ① 공종별 공정 · 마일스톤 관리
+- **댐/양수발전 맞춤 템플릿** — 가설공·가물막이·접근수로·조절부·도류부·여수로·감세지·취수탑·제수변실·부대공·시운전 등 표준 공종 12종 기본 제공
+- **가변형 시운전 모드** — 상단 `시운전` 토글로 시운전 공정을 즉시 포함/제외 (일반 댐 ↔ 양수발전)
+- **마일스톤(◆)** — 초기 담수, 준공, 상업운전 등 핵심 전환점을 다이아몬드로 표시
+
+### ② 화살표 연계(네트워크 그래프) 엔진
+- **드래그 연결** — 공정을 선택하면 끝점에 나타나는 ●를 다른 공정으로 끌어 화살표 생성
+- **직교 라우팅** — 바 위치가 바뀌어도 화살표가 우회하여 깔끔하게 연결
+- **연쇄 수정(CPM)** — 선행 공정 기간이 늘어나면 후행 공정이 자동으로 뒤로 밀리고(`연쇄 자동`), 전체 준공일과 주공정(Critical Path)을 실시간 재계산
+
+### ③ 용지 설정 · 고해상도 출력
+- **가상 캔버스** — A4·A3·A2·A1·A0 규격과 가로/세로 방향 선택
+- **벡터 렌더링(SVG)** — 화면과 동일한 SVG 원본을 용지 DPI로 래스터화하여 A0에서도 글씨·화살표가 깨지지 않음
+- **원클릭 내보내기** — `SVG`(벡터 원본) · `PNG`(무손실) · `JPG`(경량) · `PDF`(인쇄용 용지 규격)
+
+### ④ 우기(雨期) 보정 시각화
+- 장마철 구간을 회색 음영 밴드로 연도별 자동 표시 (댐 공사 일정 검토용)
+
+---
+
+## 🧱 기술 스택
+
+| 영역 | 선택 | 비고 |
+|---|---|---|
+| 프론트엔드 | **React 18 + Vite + TypeScript** | 모든 핵심 로직(엔진·렌더·출력)을 클라이언트에서 수행 |
+| 상태 관리 | **zustand** | 경량(undo/redo·자동저장 포함) |
+| 다이어그램 | **SVG 직접 렌더링** | 외부 차트 라이브러리 미사용 → 번들 경량 |
+| 출력 | **Canvas + jsPDF** | SVG→고해상도 PNG/JPG/PDF |
+| 백엔드 | **Express (Node)** | 파일 기반 저장 + 중앙 `error.log` |
+
+> **경량 설계** — 모든 무거운 연산은 브라우저에서 수행하고 백엔드는 파일 저장/로깅만 담당합니다. 추후 **Electron** 으로 감싸 인터넷이 없는 오지 현장에서도 단독 실행되는 `.exe` 배포가 가능하도록 설계했습니다.
+
+---
+
+## 📂 프로젝트 구조
+
+```
+HydroNet/
+├─ client/                  # React + Vite 프론트엔드
+│  ├─ src/
+│  │  ├─ engine/            # 순수 로직 (DOM 비의존)
+│  │  │  ├─ scheduling.ts   #  · CPM(주공정/여유), 연쇄 수정, 재계산
+│  │  │  ├─ layout.ts       #  · 좌표/레인 스태킹/타임라인/우기 밴드
+│  │  │  ├─ routing.ts      #  · 의존성 화살표 직교 라우팅
+│  │  │  ├─ paper.ts        #  · A4~A0 용지 치수/픽셀 산정
+│  │  │  └─ dates.ts        #  · 날짜 ↔ Day offset 변환
+│  │  ├─ components/        # ChartSvg, ChartCanvas, TopBar, Sidebar, Inspector …
+│  │  ├─ export/exporter.ts # SVG/PNG/JPG/PDF 내보내기
+│  │  ├─ state/             # zustand 스토어, API 클라이언트, 에러 로거
+│  │  ├─ data/sampleProject.ts  # 기본 샘플(= milestone sample.png)
+│  │  └─ styles/            # 디자인 토큰 + 전역 CSS
+│  └─ scripts/              # smoke.ts(엔진 검증), render-preview.ts(이미지 렌더)
+├─ server/                  # Express 백엔드 (파일 저장 + error.log)
+│  ├─ src/index.js
+│  └─ data/                 # 프로젝트 JSON 저장소
+├─ error.log                # 모든 프로그램 오류 기록 (ABS_RULE)
+└─ package.json             # 루트 (dev 동시 실행)
+```
+
+---
+
+## 🚀 실행 방법
+
+### 사전 준비
+- Node.js 18 이상 (개발은 Node 24 기준)
+
+### 설치
+```bash
+npm install        # 루트 + client + server 일괄 설치 (postinstall)
+```
+
+### 개발 모드 (서버 + 클라이언트 동시 실행)
+```bash
+npm run dev
+# 클라이언트: http://localhost:5173
+# 서버 API : http://localhost:4000  (Vite가 /api 프록시)
+```
+> 서버를 띄우지 않아도 클라이언트는 동작합니다 — 이 경우 프로젝트는 브라우저 `localStorage`에 저장됩니다.
+
+### 배포 빌드
+```bash
+npm run build      # client/dist 생성
+node server/src/index.js   # dist가 있으면 서버가 정적 호스팅
+```
+
+### 검증 스크립트
+```bash
+cd client
+npx tsx scripts/smoke.ts            # 엔진(CPM/레이아웃/라우팅) 무결성 검사
+npx tsx scripts/render-preview.ts   # preview.png 로 마일스톤 출력 미리보기
+```
+
+---
+
+## ⌨️ 단축키
+
+| 키 | 동작 |
+|---|---|
+| `Ctrl/⌘ + S` | 저장 |
+| `Ctrl/⌘ + Z` / `Ctrl + Y` | 실행 취소 / 다시 실행 |
+| `Delete` / `Backspace` | 선택한 공정·연결 삭제 |
+| `Esc` | 연결 드래그 취소 |
+
+조작: 바를 **드래그**하여 이동, 선택 후 우측 끝 **●를 다른 공정으로 드래그**하여 연결.
+
+---
+
+## 🛡️ 개발 절대 원칙 (ABS_RULE) 준수
+
+- **오류 로깅** — 클라이언트/서버의 모든 오류는 루트 `error.log`에 기록됩니다. (`state/logger.ts` → `POST /api/log` → 서버 append). 식별된 오류는 수정 후 재발하지 않도록 관리합니다.
+- **GitHub 연동** — 본 저장소는 https://github.com/hjlee624/HydroNet.git 와 함께 갑니다. 주요 내용 변경 시 README도 함께 갱신합니다.
+- **.gitignore** — `node_modules`, 빌드 산출물, `error.log`, 런타임 프로젝트 데이터, 미리보기 산출물 제외.
+
+---
+
+## 🗺️ 로드맵
+
+- [x] 1~4단계: 공정 엔진 · CPM · 화살표 라우팅 · 도면 출력
+- [ ] 5단계: 현장 데이터 기반 안정화, 대용량 렌더링 최적화
+- [ ] 기상 데이터 연동(우기 자동 보정), 보수보강 전용 타임라인
+- [ ] **Electron 패키징** → 오프라인 `.exe` 배포

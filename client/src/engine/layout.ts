@@ -1,0 +1,293 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Layout engine — turns the data model into absolute pixel geometry.
+//
+// Produces everything the SVG renderer needs: lane bands, stacked task bars /
+// milestone diamonds, the year + month timeline header, and the 우기 bands.
+// Pure & deterministic so on-screen and exported output are identical.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { Category, Project, Task } from '../types/model'
+import {
+  MONTH_LABELS_KO,
+  addMonths,
+  dateToDay,
+  dayToDate,
+  monthInRange,
+  parseISO,
+  startOfMonth,
+  toISO,
+} from './dates'
+
+export interface LaidTask {
+  task: Task
+  categoryId: string
+  x: number
+  y: number
+  w: number
+  h: number
+  cx: number // centre (milestone / link anchor)
+  cy: number
+  startX: number
+  endX: number
+  subRow: number
+  isMilestone: boolean
+  critical: boolean
+}
+
+export interface LaidCategory {
+  id: string
+  name: string
+  color: string
+  y: number
+  height: number
+  subRows: number
+  collapsed: boolean
+}
+
+export interface MonthTick {
+  x: number
+  width: number
+  label: string
+  monthIndex0: number
+  year: number
+  isYearStart: boolean
+}
+
+export interface YearTick {
+  x: number
+  width: number
+  year: number
+}
+
+export interface RainyRect {
+  x: number
+  width: number
+  label: string
+  y: number
+  height: number
+}
+
+export interface LayoutModel {
+  contentWidth: number
+  contentHeight: number
+  labelWidth: number
+  headerHeight: number
+  chartTop: number
+  chartHeight: number
+  pxPerDay: number
+  rowHeight: number
+  barHeight: number
+  domainStartDay: number
+  domainEndDay: number
+  xOf: (day: number) => number
+  dayOf: (x: number) => number
+  tasks: LaidTask[]
+  categories: LaidCategory[]
+  months: MonthTick[]
+  years: YearTick[]
+  rainyRects: RainyRect[]
+}
+
+const LABEL_FONT_PX = 10.5
+
+/** Rough text width estimate (CJK glyphs ~1.85× Latin). Avoids DOM measuring. */
+function estimateTextWidth(text: string, fontPx = LABEL_FONT_PX): number {
+  let units = 0
+  for (const ch of text) units += ch.charCodeAt(0) > 0x2e80 ? 1.0 : 0.56
+  return units * fontPx
+}
+
+/** Greedy interval partition: assign each task the lowest non-overlapping row. */
+function stackTasks(tasks: Task[], pxPerDay: number): Map<string, number> {
+  const sorted = [...tasks].sort((a, b) => a.start - b.start || b.duration - a.duration)
+  const rowEnds: number[] = [] // last occupied x (px) per sub-row
+  const assignment = new Map<string, number>()
+  const gap = 8
+  for (const t of sorted) {
+    const startPx = t.start * pxPerDay
+    const barW = t.isMilestone ? 14 : Math.max(3, t.duration * pxPerDay)
+    const labelW = estimateTextWidth(t.name)
+    const endPx = startPx + Math.max(barW, labelW) + gap
+    let placed = -1
+    for (let r = 0; r < rowEnds.length; r++) {
+      if (startPx >= rowEnds[r]) {
+        placed = r
+        break
+      }
+    }
+    if (placed === -1) {
+      placed = rowEnds.length
+      rowEnds.push(endPx)
+    } else {
+      rowEnds[placed] = endPx
+    }
+    assignment.set(t.id, placed)
+  }
+  return assignment
+}
+
+export function computeLayout(project: Project): LayoutModel {
+  const { view } = project
+  const pxPerDay = view.pxPerDay
+  const rowHeight = view.rowHeight
+  const barHeight = Math.min(rowHeight * 0.34, 16)
+  const labelWidth = view.labelWidth
+  const headerHeight = view.headerHeight
+
+  const categories = project.categories
+    .filter((c) => project.commissioningEnabled || !c.isCommissioning)
+    .sort((a, b) => a.order - b.order)
+  const visibleCatIds = new Set(categories.map((c) => c.id))
+  const tasks = project.tasks.filter((t) => visibleCatIds.has(t.categoryId))
+
+  // ── Time domain: pad to whole months for a tidy axis ──
+  const minTaskDay = tasks.reduce((m, t) => Math.min(m, t.start), 0)
+  const maxTaskDay = tasks.reduce((m, t) => Math.max(m, t.start + t.duration), 30)
+  const startDate = startOfMonth(dayToDate(project.startDate, minTaskDay))
+  const endDate = addMonths(startOfMonth(dayToDate(project.startDate, maxTaskDay)), 2)
+  const domainStartDay = dateToDay(project.startDate, startDate)
+  const domainEndDay = dateToDay(project.startDate, endDate)
+
+  const xOf = (day: number) => labelWidth + (day - domainStartDay) * pxPerDay
+  const dayOf = (x: number) => (x - labelWidth) / pxPerDay + domainStartDay
+
+  // ── Lanes & sub-row stacking ──
+  const laidCategories: LaidCategory[] = []
+  const laidTasks: LaidTask[] = []
+  let cursorY = headerHeight
+  for (const cat of categories) {
+    const catTasks = tasks.filter((t) => t.categoryId === cat.id)
+    if (cat.collapsed) {
+      laidCategories.push({
+        id: cat.id, name: cat.name, color: cat.color,
+        y: cursorY, height: rowHeight, subRows: 0, collapsed: true,
+      })
+      cursorY += rowHeight
+      continue
+    }
+    const assignment = stackTasks(catTasks, pxPerDay)
+    const subRows = Math.max(1, catTasks.length ? Math.max(...catTasks.map((t) => assignment.get(t.id) ?? 0)) + 1 : 1)
+    const laneHeight = subRows * rowHeight
+    const laneY = cursorY
+
+    for (const t of catTasks) {
+      const sub = assignment.get(t.id) ?? 0
+      const rowMidY = laneY + sub * rowHeight + rowHeight / 2
+      const startX = xOf(t.start)
+      const endX = xOf(t.start + t.duration)
+      laidTasks.push({
+        task: t,
+        categoryId: cat.id,
+        x: startX,
+        y: rowMidY - barHeight / 2,
+        w: Math.max(3, endX - startX),
+        h: barHeight,
+        cx: t.isMilestone ? startX : startX,
+        cy: rowMidY,
+        startX,
+        endX: t.isMilestone ? startX : endX,
+        subRow: sub,
+        isMilestone: t.isMilestone,
+        critical: !!t.critical,
+      })
+    }
+
+    laidCategories.push({
+      id: cat.id, name: cat.name, color: cat.color,
+      y: laneY, height: laneHeight, subRows, collapsed: false,
+    })
+    cursorY += laneHeight
+  }
+
+  const chartTop = headerHeight
+  const chartHeight = cursorY - headerHeight
+  const contentHeight = cursorY
+  const contentWidth = xOf(domainEndDay)
+
+  // ── Timeline header: months + years ──
+  const months: MonthTick[] = []
+  const years: YearTick[] = []
+  let d = parseISO(toISO(startDate))
+  let yearStartX = xOf(domainStartDay)
+  let yearAcc = 0
+  let curYear = d.getFullYear()
+  while (d < endDate) {
+    const next = addMonths(d, 1)
+    const mStartDay = dateToDay(project.startDate, d)
+    const mEndDay = dateToDay(project.startDate, next)
+    const x = xOf(mStartDay)
+    const width = (mEndDay - mStartDay) * pxPerDay
+    const isYearStart = d.getMonth() === 0 || months.length === 0
+    months.push({
+      x, width,
+      label: MONTH_LABELS_KO[d.getMonth()],
+      monthIndex0: d.getMonth(),
+      year: d.getFullYear(),
+      isYearStart,
+    })
+    if (d.getFullYear() !== curYear) {
+      years.push({ x: yearStartX, width: yearAcc, year: curYear })
+      curYear = d.getFullYear()
+      yearStartX = x
+      yearAcc = width
+    } else {
+      yearAcc += width
+    }
+    d = next
+  }
+  years.push({ x: yearStartX, width: yearAcc, year: curYear })
+
+  // ── 우기 (rainy-season) bands, repeated per year ──
+  const rainyRects: RainyRect[] = []
+  for (const band of project.rainySeasons) {
+    let m = startOfMonth(startDate)
+    while (m < endDate) {
+      if (monthInRange(m.getMonth(), band.startMonth, band.endMonth)) {
+        const mStartDay = dateToDay(project.startDate, m)
+        const mEndDay = dateToDay(project.startDate, addMonths(m, 1))
+        const x = xOf(mStartDay)
+        const width = (mEndDay - mStartDay) * pxPerDay
+        // merge with previous contiguous month
+        const prev = rainyRects[rainyRects.length - 1]
+        if (prev && Math.abs(prev.x + prev.width - x) < 0.5 && prev.label === band.label) {
+          prev.width += width
+        } else {
+          rainyRects.push({ x, width, label: band.label, y: chartTop, height: chartHeight })
+        }
+      }
+      m = addMonths(m, 1)
+    }
+  }
+  // refresh band heights to final chart height
+  for (const r of rainyRects) { r.y = chartTop; r.height = chartHeight }
+
+  return {
+    contentWidth,
+    contentHeight,
+    labelWidth,
+    headerHeight,
+    chartTop,
+    chartHeight,
+    pxPerDay,
+    rowHeight,
+    barHeight,
+    domainStartDay,
+    domainEndDay,
+    xOf,
+    dayOf,
+    tasks: laidTasks,
+    categories: laidCategories,
+    months,
+    years,
+    rainyRects,
+  }
+}
+
+/** Lookup helper for the renderer / link routing. */
+export function laidTaskMap(model: LayoutModel): Map<string, LaidTask> {
+  return new Map(model.tasks.map((lt) => [lt.task.id, lt]))
+}
+
+export function categoryOf(categories: Category[], id: string): Category | undefined {
+  return categories.find((c) => c.id === id)
+}

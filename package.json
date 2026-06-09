@@ -1,0 +1,19 @@
+{
+  "name": "hydronet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "HydroNet — 댐·양수발전 시공 및 시운전 마일스톤 관리 프로그램",
+  "type": "module",
+  "scripts": {
+    "postinstall": "npm --prefix client install && npm --prefix server install",
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server start",
+    "build": "npm --prefix client run build",
+    "preview": "npm --prefix client run preview",
+    "start": "npm run dev"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.0"
+  }
+}
