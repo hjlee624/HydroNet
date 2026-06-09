@@ -37,8 +37,9 @@ function ChartSvgBase({
   showCriticalPath, showGrid, linkingGhost,
   onTaskPointerDown, onAnchorPointerDown, onTaskClick, onLinkClick, onBackgroundClick,
 }: Props) {
-  const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop } = model
+  const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
+  const chartBottom = chartTop + chartHeight
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
 
   return (
@@ -77,11 +78,11 @@ function ChartSvgBase({
       {showGrid && (
         <g>
           {model.months.map((m, i) => (
-            <line key={`mv-${i}`} x1={m.x} y1={chartTop} x2={m.x} y2={contentHeight}
+            <line key={`mv-${i}`} x1={m.x} y1={chartTop} x2={m.x} y2={chartBottom}
               stroke={colors.gridLine} strokeWidth={1} />
           ))}
           {model.years.map((y, i) => (
-            <line key={`yv-${i}`} x1={y.x} y1={0} x2={y.x} y2={contentHeight}
+            <line key={`yv-${i}`} x1={y.x} y1={headerTop} x2={y.x} y2={chartBottom}
               stroke={colors.gridLineStrong} strokeWidth={1} />
           ))}
           {model.categories.map((c) => (
@@ -91,8 +92,19 @@ function ChartSvgBase({
         </g>
       )}
 
-      {/* timeline header */}
-      <g>
+      {/* drawing title band (project / milestone name) — bold, top-centre */}
+      {titleHeight > 0 && (
+        <g>
+          <rect x={0} y={0} width={contentWidth} height={titleHeight} fill={colors.cream} />
+          <line x1={0} y1={titleHeight} x2={contentWidth} y2={titleHeight} stroke={colors.beigeDeep} strokeWidth={1} />
+          <text x={contentWidth / 2} y={titleHeight * 0.66} textAnchor="middle" fontSize={20} fontWeight={800} fill={colors.ink} style={{ fontFamily: fonts.display }}>
+            {title}
+          </text>
+        </g>
+      )}
+
+      {/* timeline header (offset below the title band) */}
+      <g transform={`translate(0, ${headerTop})`}>
         <rect x={labelWidth} y={0} width={contentWidth - labelWidth} height={headerHeight} fill={colors.cream} />
         <line x1={labelWidth} y1={yearRowH} x2={contentWidth} y2={yearRowH} stroke={colors.beigeDeep} strokeWidth={1} />
         {model.years.map((y, i) => (
@@ -116,11 +128,11 @@ function ChartSvgBase({
 
       {/* left label column */}
       <g>
-        <rect x={0} y={0} width={labelWidth} height={contentHeight} fill={colors.creamSoft} />
-        <line x1={labelWidth} y1={0} x2={labelWidth} y2={contentHeight} stroke={colors.hairlineStrong} strokeWidth={1} />
-        <rect x={0} y={0} width={labelWidth} height={headerHeight} fill={colors.cream} />
-        <text x={12} y={headerHeight * 0.4} fontSize={11} fontWeight={700} fill={colors.charcoal}>공종 / 마일스톤</text>
-        <text x={12} y={headerHeight * 0.78} fontSize={9.5} fill={colors.steel}>
+        <rect x={0} y={titleHeight} width={labelWidth} height={contentHeight - titleHeight} fill={colors.creamSoft} />
+        <line x1={labelWidth} y1={titleHeight} x2={labelWidth} y2={contentHeight} stroke={colors.hairlineStrong} strokeWidth={1} />
+        <rect x={0} y={headerTop} width={labelWidth} height={headerHeight} fill={colors.cream} />
+        <text x={12} y={headerTop + headerHeight * 0.4} fontSize={11} fontWeight={700} fill={colors.charcoal}>공종 / 마일스톤</text>
+        <text x={12} y={headerTop + headerHeight * 0.78} fontSize={9.5} fill={colors.steel}>
           착수 {toISO(dayToDate(project.startDate, 0)).slice(0, 7)}
         </text>
         {model.categories.map((c) => (
@@ -164,7 +176,7 @@ function ChartSvgBase({
           if (lt.isMilestone) {
             return (
               <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }} style={{ cursor: 'pointer' }}>
-                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" fontSize={10.5} fontWeight={600} fill={colors.ink}>
+                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" fontSize={11} fontWeight={700} fill={colors.ink}>
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
                 <polygon
@@ -211,6 +223,24 @@ function ChartSvgBase({
           )
         })}
       </g>
+
+      {/* footer: CI / logos (bottom-right) */}
+      {model.logos.length > 0 && (
+        <g>
+          <line x1={0} y1={chartBottom} x2={contentWidth} y2={chartBottom} stroke={colors.hairlineStrong} strokeWidth={1} />
+          {model.logos.map((lg, i) => (
+            <image
+              key={`logo-${i}`}
+              href={lg.src}
+              x={lg.x}
+              y={lg.y}
+              width={lg.w}
+              height={lg.h}
+              preserveAspectRatio="xMidYMid meet"
+            />
+          ))}
+        </g>
+      )}
 
       {/* linking ghost */}
       {linkingGhost && (

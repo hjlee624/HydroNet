@@ -68,6 +68,9 @@ export interface EditorState {
   setView: (patch: Partial<ViewSettings>) => void
   setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate'>>) => void
   toggleCommissioning: () => void
+  toggleTitle: () => void
+  addLogo: (dataUrl: string) => void
+  removeLogo: (index: number) => void
   setRainySeason: (startMonth: number, endMonth: number, label?: string) => void
   clearRainySeasons: () => void
 
@@ -93,6 +96,16 @@ export interface EditorState {
 // ── helpers ──
 const clone = <T>(o: T): T =>
   typeof structuredClone === 'function' ? structuredClone(o) : JSON.parse(JSON.stringify(o))
+
+/** Backfill fields that may be missing on older saved projects. */
+function normalize(project: Project): Project {
+  return {
+    ...project,
+    branding: project.branding ?? { logos: [] },
+    rainySeasons: project.rainySeasons ?? [],
+    view: { ...project.view, showTitle: project.view.showTitle !== false },
+  }
+}
 
 function withSchedule(project: Project): { project: Project; warnings: string[] } {
   const result = computeSchedule(project.tasks, project.links)
@@ -158,7 +171,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     past: [],
     future: [],
 
-    setProject: (p) => set({ project: withSchedule(p).project, past: [], future: [], dirty: false }),
+    setProject: (p) => set({ project: withSchedule(normalize(p)).project, past: [], future: [], dirty: false }),
     newProject: () => {
       const blank = createSampleProject()
       blank.id = `proj-${nanoid(8)}`
@@ -289,6 +302,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     setView: (patch) => commit((p) => { p.view = { ...p.view, ...patch } }, { history: false }),
     setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }),
     toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),
+    toggleTitle: () => commit((p) => { p.view.showTitle = p.view.showTitle === false }, { history: false }),
+    addLogo: (dataUrl) => commit((p) => {
+      if (!p.branding) p.branding = { logos: [] }
+      p.branding.logos.push(dataUrl)
+    }),
+    removeLogo: (index) => commit((p) => {
+      if (p.branding?.logos) p.branding.logos.splice(index, 1)
+    }),
     setRainySeason: (startMonth, endMonth, label = '우기') => commit((p) => {
       p.rainySeasons = [{ id: 'rs-1', label, startMonth, endMonth, efficiency: 0.7 }]
     }, { history: false }),

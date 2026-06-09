@@ -10,6 +10,7 @@ import type { Category, Link, Project, RainySeason, Task } from '../types/model'
 import { dateToDay, parseISO } from '../engine/dates'
 import { applyCascade } from '../engine/scheduling'
 import { lanePalette } from '../styles/theme'
+import { DEFAULT_CI } from './ciLogo'
 
 const START = '2026-01-01'
 const day = (iso: string) => dateToDay(START, parseISO(iso))
@@ -164,11 +165,13 @@ export function createSampleProject(): Project {
       showCriticalPath: true,
       showFloat: false,
       showGrid: true,
+      showTitle: true,
     },
     categories,
     tasks: consistentTasks,
     links,
     rainySeasons,
+    branding: { logos: [DEFAULT_CI] },
     commissioningEnabled: false,
     meta: { createdAt: now, updatedAt: now, schemaVersion: 1 },
   }

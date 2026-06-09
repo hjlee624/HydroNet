@@ -95,6 +95,13 @@ export interface ViewSettings {
   showCriticalPath: boolean
   showFloat: boolean
   showGrid: boolean
+  /** Show the bold drawing title (project name) centred at the top. */
+  showTitle: boolean
+}
+
+/** Drawing branding — CI/logo images embedded as data URLs (bottom-right). */
+export interface Branding {
+  logos: string[]
 }
 
 export interface ProjectMeta {
@@ -114,6 +121,7 @@ export interface Project {
   tasks: Task[]
   links: Link[]
   rainySeasons: RainySeason[]
+  branding: Branding
   /** When false, commissioning lanes/tasks are excluded (general dam mode). */
   commissioningEnabled: boolean
   meta: ProjectMeta

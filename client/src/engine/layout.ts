@@ -67,11 +67,27 @@ export interface RainyRect {
   height: number
 }
 
+export interface LogoRect {
+  src: string
+  x: number
+  y: number
+  w: number
+  h: number
+}
+
 export interface LayoutModel {
   contentWidth: number
   contentHeight: number
   labelWidth: number
   headerHeight: number
+  /** Y of the year/month header band (below the optional title band). */
+  headerTop: number
+  /** Height of the bold drawing-title band at the very top (0 when hidden). */
+  titleHeight: number
+  /** Drawing title text (project name); empty when hidden. */
+  title: string
+  /** Height of the bottom band hosting CI logos (0 when none). */
+  footerHeight: number
   chartTop: number
   chartHeight: number
   pxPerDay: number
@@ -86,7 +102,13 @@ export interface LayoutModel {
   months: MonthTick[]
   years: YearTick[]
   rainyRects: RainyRect[]
+  logos: LogoRect[]
 }
+
+const TITLE_BAND = 44
+const FOOTER_BAND = 92
+const LOGO_W = 168
+const LOGO_H = 60
 
 const LABEL_FONT_PX = 10.5
 
@@ -134,6 +156,11 @@ export function computeLayout(project: Project): LayoutModel {
   const labelWidth = view.labelWidth
   const headerHeight = view.headerHeight
 
+  const title = view.showTitle !== false && project.name ? project.name : ''
+  const titleHeight = title ? TITLE_BAND : 0
+  const logoSrcs = project.branding?.logos ?? []
+  const footerHeight = logoSrcs.length ? FOOTER_BAND : 0
+
   const categories = project.categories
     .filter((c) => project.commissioningEnabled || !c.isCommissioning)
     .sort((a, b) => a.order - b.order)
@@ -154,7 +181,8 @@ export function computeLayout(project: Project): LayoutModel {
   // ── Lanes & sub-row stacking ──
   const laidCategories: LaidCategory[] = []
   const laidTasks: LaidTask[] = []
-  let cursorY = headerHeight
+  const headerTop = titleHeight
+  let cursorY = titleHeight + headerHeight
   for (const cat of categories) {
     const catTasks = tasks.filter((t) => t.categoryId === cat.id)
     if (cat.collapsed) {
@@ -199,10 +227,20 @@ export function computeLayout(project: Project): LayoutModel {
     cursorY += laneHeight
   }
 
-  const chartTop = headerHeight
-  const chartHeight = cursorY - headerHeight
-  const contentHeight = cursorY
+  const chartTop = titleHeight + headerHeight
+  const chartHeight = cursorY - chartTop
+  const footerTop = cursorY
+  const contentHeight = cursorY + footerHeight
   const contentWidth = xOf(domainEndDay)
+
+  // ── CI logos in the bottom-right footer band (rightmost = index 0) ──
+  const logos: LogoRect[] = logoSrcs.map((src, i) => ({
+    src,
+    x: contentWidth - 18 - LOGO_W - i * (LOGO_W + 14),
+    y: footerTop + (footerHeight - LOGO_H) / 2,
+    w: LOGO_W,
+    h: LOGO_H,
+  }))
 
   // ── Timeline header: months + years ──
   const months: MonthTick[] = []
@@ -266,6 +304,10 @@ export function computeLayout(project: Project): LayoutModel {
     contentHeight,
     labelWidth,
     headerHeight,
+    headerTop,
+    titleHeight,
+    title,
+    footerHeight,
     chartTop,
     chartHeight,
     pxPerDay,
@@ -280,6 +322,7 @@ export function computeLayout(project: Project): LayoutModel {
     months,
     years,
     rainyRects,
+    logos,
   }
 }
 

@@ -1,6 +1,7 @@
 // Right panel — context-sensitive properties. Shows the selected activity or
 // link editor; when nothing is selected, the project / paper / 우기 settings.
 
+import type { ChangeEvent } from 'react'
 import { useEditor } from '../state/store'
 import { dateToDay, dayToDate, parseISO, toISO } from '../engine/dates'
 import { PAPER_SIZES } from '../engine/paper'
@@ -133,6 +134,20 @@ function ProjectInspector() {
   const project = useEditor((s) => s.project)
   const a = useEditor.getState
   const rainy = project.rainySeasons[0]
+  const logos = project.branding?.logos ?? []
+
+  function onUploadLogo(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    if (file.size > 2 * 1024 * 1024) {
+      window.alert('CI 이미지는 2MB 이하만 추가할 수 있습니다.')
+      return
+    }
+    const reader = new FileReader()
+    reader.onload = () => { if (typeof reader.result === 'string') a().addLogo(reader.result) }
+    reader.readAsDataURL(file)
+  }
 
   return (
     <>
@@ -183,6 +198,31 @@ function ProjectInspector() {
         <input type="checkbox" checked={project.view.showGrid} onChange={(e) => a().setView({ showGrid: e.target.checked })} />
         격자 표시
       </label>
+
+      <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
+      <div className="panel__title" style={{ marginBottom: 10 }}>도면 제목 / CI</div>
+      <label className="toggle" style={{ display: 'flex', marginBottom: 10 }}>
+        <input type="checkbox" checked={project.view.showTitle !== false} onChange={() => a().toggleTitle()} />
+        상단 중앙에 도면 제목(볼드) 표시
+      </label>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+        {logos.map((src, i) => (
+          <div key={i} style={{ position: 'relative', border: '1px solid var(--hairline-strong)', borderRadius: 8, padding: 5, background: '#fff' }}>
+            <img src={src} alt={`CI ${i + 1}`} style={{ height: 34, maxWidth: 116, objectFit: 'contain', display: 'block' }} />
+            <button
+              className="icon-btn"
+              title="삭제"
+              style={{ position: 'absolute', top: -9, right: -9, width: 20, height: 20, background: 'var(--canvas)', border: '1px solid var(--hairline-strong)', borderRadius: 9999 }}
+              onClick={() => a().removeLogo(i)}
+            >×</button>
+          </div>
+        ))}
+      </div>
+      <label className="btn btn--sm" style={{ cursor: 'pointer' }}>
+        ＋ CI 이미지 추가
+        <input type="file" accept="image/png,image/jpeg,image/gif,image/svg+xml" hidden onChange={onUploadLogo} />
+      </label>
+      <p className="note">우측 하단에 표시되며 도면 출력(PNG·JPG·PDF·SVG)에 함께 포함됩니다. PNG·JPG·GIF·SVG 지원 (2MB 이하).</p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>우기(雨期) 보정</div>
