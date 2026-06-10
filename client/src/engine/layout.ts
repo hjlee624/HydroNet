@@ -34,6 +34,14 @@ export interface LaidTask {
   critical: boolean
 }
 
+/** A named 세부공종 (sub-work) block within a lane, used for the left labels. */
+export interface LaidSubGroup {
+  name: string
+  y: number
+  height: number
+  rows: number
+}
+
 export interface LaidCategory {
   id: string
   name: string
@@ -42,6 +50,8 @@ export interface LaidCategory {
   height: number
   subRows: number
   collapsed: boolean
+  /** Labelled sub-work blocks (empty when no task carries a subName). */
+  subGroups: LaidSubGroup[]
 }
 
 export interface MonthTick {
@@ -108,6 +118,10 @@ export interface LayoutModel {
 
 const TITLE_BAND = 44
 const FOOTER_BAND = 92
+
+/** Vertical band reserved at the top of a lane for the 공종 name when the lane
+ *  also carries named 세부공종 sub-labels (keeps the two from overlapping). */
+const CATEGORY_HEADER_INSET = 20
 
 const LABEL_FONT_PX = 10.5
 
@@ -188,41 +202,79 @@ export function computeLayout(project: Project): LayoutModel {
     if (cat.collapsed) {
       laidCategories.push({
         id: cat.id, name: cat.name, color: cat.color,
-        y: cursorY, height: rowHeight, subRows: 0, collapsed: true,
+        y: cursorY, height: rowHeight, subRows: 0, collapsed: true, subGroups: [],
       })
       cursorY += rowHeight
       continue
     }
-    const assignment = stackTasks(catTasks, pxPerDay)
-    const subRows = Math.max(1, catTasks.length ? Math.max(...catTasks.map((t) => assignment.get(t.id) ?? 0)) + 1 : 1)
-    const laneHeight = subRows * rowHeight
     const laneY = cursorY
 
+    // Partition the lane's tasks into 세부공종 groups (tasks without a subName
+    // share the unnamed '' group, rendered directly under the category). Named
+    // groups are ordered by their earliest task so the timeline reads top-down.
+    const groupMap = new Map<string, Task[]>()
     for (const t of catTasks) {
-      const sub = assignment.get(t.id) ?? 0
-      const rowMidY = laneY + sub * rowHeight + rowHeight / 2
-      const startX = xOf(t.start)
-      const endX = xOf(t.start + t.duration)
-      laidTasks.push({
-        task: t,
-        categoryId: cat.id,
-        x: startX,
-        y: rowMidY - barHeight / 2,
-        w: Math.max(3, endX - startX),
-        h: barHeight,
-        cx: t.isMilestone ? startX : startX,
-        cy: rowMidY,
-        startX,
-        endX: t.isMilestone ? startX : endX,
-        subRow: sub,
-        isMilestone: t.isMilestone,
-        critical: !!t.critical,
-      })
+      const key = (t.subName ?? '').trim()
+      const arr = groupMap.get(key)
+      if (arr) arr.push(t)
+      else groupMap.set(key, [t])
+    }
+    const orderedGroups = [...groupMap.entries()].sort((a, b) => {
+      if (a[0] === '' && b[0] !== '') return -1
+      if (b[0] === '' && a[0] !== '') return 1
+      const aMin = Math.min(...a[1].map((t) => t.start))
+      const bMin = Math.min(...b[1].map((t) => t.start))
+      return aMin - bMin
+    })
+
+    // Reserve a header band for the 공종 name only when named sub-groups exist,
+    // so the category name never overlaps the first 세부공종 label.
+    const hasNamed = orderedGroups.some(([name]) => name !== '')
+    const headerInset = hasNamed ? CATEGORY_HEADER_INSET : 0
+
+    const subGroups: LaidSubGroup[] = []
+    let rowCursor = 0 // rows consumed within this lane so far
+    for (const [name, gtasks] of orderedGroups) {
+      const assignment = stackTasks(gtasks, pxPerDay)
+      const gRows = Math.max(1, Math.max(...gtasks.map((t) => assignment.get(t.id) ?? 0)) + 1)
+      const groupRowStart = rowCursor
+      for (const t of gtasks) {
+        const sub = assignment.get(t.id) ?? 0
+        const rowMidY = laneY + headerInset + (groupRowStart + sub) * rowHeight + rowHeight / 2
+        const startX = xOf(t.start)
+        const endX = xOf(t.start + t.duration)
+        laidTasks.push({
+          task: t,
+          categoryId: cat.id,
+          x: startX,
+          y: rowMidY - barHeight / 2,
+          w: Math.max(3, endX - startX),
+          h: barHeight,
+          cx: t.isMilestone ? startX : startX,
+          cy: rowMidY,
+          startX,
+          endX: t.isMilestone ? startX : endX,
+          subRow: groupRowStart + sub,
+          isMilestone: t.isMilestone,
+          critical: !!t.critical,
+        })
+      }
+      if (name !== '') {
+        subGroups.push({
+          name,
+          y: laneY + headerInset + groupRowStart * rowHeight,
+          height: gRows * rowHeight,
+          rows: gRows,
+        })
+      }
+      rowCursor += gRows
     }
 
+    const subRows = Math.max(1, rowCursor)
+    const laneHeight = headerInset + subRows * rowHeight
     laidCategories.push({
       id: cat.id, name: cat.name, color: cat.color,
-      y: laneY, height: laneHeight, subRows, collapsed: false,
+      y: laneY, height: laneHeight, subRows, collapsed: false, subGroups,
     })
     cursorY += laneHeight
   }

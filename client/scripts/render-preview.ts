@@ -26,6 +26,7 @@ let svg = renderToStaticMarkup(
     project: sp,
     selectedTaskId: process.env.HN_SELECT || null,
     selectedLinkId: null,
+    selectedTextRole: null,
     showCriticalPath: true,
     showGrid: true,
     linkingGhost: null,
@@ -35,6 +36,7 @@ let svg = renderToStaticMarkup(
     onLogoResizePointerDown: noop,
     onTaskClick: noop,
     onLinkClick: noop,
+    onTextClick: noop,
     onBackgroundClick: noop,
   }),
 )

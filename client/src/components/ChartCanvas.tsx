@@ -21,6 +21,7 @@ export function ChartCanvas() {
   const zoom = useEditor((s) => s.zoom)
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
+  const selectedTextRole = useEditor((s) => s.selectedTextRole)
   const linking = useEditor((s) => s.linking)
 
   const paperRef = useRef<HTMLDivElement>(null)
@@ -157,6 +158,7 @@ export function ChartCanvas() {
           project={project}
           selectedTaskId={selectedTaskId}
           selectedLinkId={selectedLinkId}
+          selectedTextRole={selectedTextRole}
           showCriticalPath={project.view.showCriticalPath}
           showGrid={project.view.showGrid}
           linkingGhost={linking ? ghost : null}
@@ -166,6 +168,7 @@ export function ChartCanvas() {
           onLogoResizePointerDown={onLogoResizePointerDown}
           onTaskClick={(_, id) => useEditor.getState().selectTask(id)}
           onLinkClick={(_, id) => useEditor.getState().selectLink(id)}
+          onTextClick={(role) => useEditor.getState().selectTextRole(role)}
           onBackgroundClick={() => useEditor.getState().selectTask(null)}
         />
       </div>

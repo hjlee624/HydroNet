@@ -9,7 +9,7 @@
 import type { Category, Link, Project, RainySeason, Task } from '../types/model'
 import { dateToDay, parseISO } from '../engine/dates'
 import { applyCascade } from '../engine/scheduling'
-import { lanePalette } from '../styles/theme'
+import { lanePalette, DEFAULT_PALETTE } from '../styles/theme'
 import { DEFAULT_CI } from './ciLogo'
 
 const START = '2026-01-01'
@@ -48,6 +48,8 @@ interface TaskDef {
   start: string
   dur: number
   milestone?: boolean
+  /** 세부공종 (sub-work) label shown on the left column. */
+  sub?: string
 }
 
 const TASKS: TaskDef[] = [
@@ -58,10 +60,10 @@ const TASKS: TaskDef[] = [
   // 공사용도로
   { id: 't-r1', cat: 'c-road', name: '공사용도로 개설', start: '2026-02-15', dur: 120 },
   { id: 't-r2', cat: 'c-road', name: '일괄관리도로', start: '2026-06-20', dur: 150 },
-  // 가물막이 (critical spine start)
-  { id: 't-cf1', cat: 'c-coffer', name: '상류 가물막이', start: '2026-05-01', dur: 90 },
-  { id: 't-cf2', cat: 'c-coffer', name: '하류 가물막이', start: '2026-05-20', dur: 80 },
-  { id: 't-cf3', cat: 'c-coffer', name: '하천 우회', start: '2026-08-10', dur: 55 },
+  // 가물막이 (critical spine start) — demonstrates 세부공종 left labels
+  { id: 't-cf1', cat: 'c-coffer', name: '상류 가물막이 축조', start: '2026-05-01', dur: 90, sub: '상류 가물막이' },
+  { id: 't-cf2', cat: 'c-coffer', name: '하류 가물막이 축조', start: '2026-05-20', dur: 80, sub: '하류 가물막이' },
+  { id: 't-cf3', cat: 'c-coffer', name: '하천 우회', start: '2026-08-10', dur: 55, sub: '유수전환' },
   // 접근수로 (critical)
   { id: 't-ap1', cat: 'c-approach', name: '접근수로 굴착', start: '2026-07-30', dur: 120 },
   { id: 't-ap2', cat: 'c-approach', name: '접근수로 콘크리트', start: '2026-11-27', dur: 95 },
@@ -105,6 +107,7 @@ const tasks: Task[] = TASKS.map((t) => ({
   start: day(t.start),
   duration: t.dur,
   isMilestone: !!t.milestone,
+  ...(t.sub ? { subName: t.sub } : {}),
 }))
 
 let linkSeq = 0
@@ -159,18 +162,20 @@ export function createSampleProject(): Project {
     view: {
       pxPerDay: 1.5,
       rowHeight: 46,
-      labelWidth: 132,
+      labelWidth: 150,
       headerHeight: 56,
       scale: 'month',
       showCriticalPath: true,
       showFloat: false,
       showGrid: true,
       showTitle: true,
+      textStyles: {},
     },
     categories,
     tasks: consistentTasks,
     links,
     rainySeasons,
+    palette: [...DEFAULT_PALETTE],
     branding: { logos: [{ src: DEFAULT_CI, w: 168, h: 60 }] },
     commissioningEnabled: false,
     meta: { createdAt: now, updatedAt: now, schemaVersion: 1 },

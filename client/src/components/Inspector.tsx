@@ -1,29 +1,120 @@
-// Right panel — context-sensitive properties. Shows the selected activity or
-// link editor; when nothing is selected, the project / paper / 우기 settings.
+// Right panel — context-sensitive properties. Shows the text-style editor when
+// a chart text is selected, else the selected activity / link editor, else the
+// project / paper / 우기 settings.
 
+import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useEditor } from '../state/store'
 import { dateToDay, dayToDate, parseISO, toISO } from '../engine/dates'
-import { PAPER_SIZES } from '../engine/paper'
-import type { LinkType, PaperSize } from '../types/model'
+import { PAPER_SIZES, DPI_OPTIONS } from '../engine/paper'
+import { PALETTE_MAX } from '../types/model'
+import type { LinkType, PaperSize, TextRole } from '../types/model'
+import { TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS, FONT_FAMILY_OPTIONS } from '../styles/theme'
 
 export function Inspector({ width }: { width: number }) {
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
+  const selectedTextRole = useEditor((s) => s.selectedTextRole)
+
+  const heading = selectedTextRole ? '텍스트 스타일'
+    : selectedTaskId ? '공정 속성'
+      : selectedLinkId ? '연결 속성'
+        : '도면 · 프로젝트'
 
   return (
     <aside className="panel panel--right" style={{ width }}>
       <div className="panel__header">
-        <span className="panel__title">
-          {selectedTaskId ? '공정 속성' : selectedLinkId ? '연결 속성' : '도면 · 프로젝트'}
-        </span>
+        <span className="panel__title">{heading}</span>
       </div>
       <div className="panel__scroll">
-        {selectedTaskId ? <TaskInspector id={selectedTaskId} />
-          : selectedLinkId ? <LinkInspector id={selectedLinkId} />
-            : <ProjectInspector />}
+        {selectedTextRole ? <TextStyleInspector role={selectedTextRole} />
+          : selectedTaskId ? <TaskInspector id={selectedTaskId} />
+            : selectedLinkId ? <LinkInspector id={selectedLinkId} />
+              : <ProjectInspector />}
       </div>
     </aside>
+  )
+}
+
+/** Number input that commits on blur / Enter (not per keystroke) so multi-digit
+ *  entry isn't clamped mid-typing — same guard as the zoom field. */
+function PtInput({ value, min, max, onCommit, maxWidth, disabled }: {
+  value: number; min: number; max: number; onCommit: (v: number) => void; maxWidth?: number; disabled?: boolean
+}) {
+  const [text, setText] = useState(String(value))
+  useEffect(() => { setText(String(value)) }, [value])
+  function commit() {
+    const v = Number(text)
+    if (Number.isFinite(v) && v > 0) {
+      // Reflect the actually-applied (clamped) value even when the store ref
+      // doesn't change — e.g. typing >max while already at max.
+      const clamped = Math.max(min, Math.min(max, v))
+      setText(String(clamped))
+      onCommit(clamped)
+    } else {
+      setText(String(value))
+    }
+  }
+  return (
+    <input
+      className="input"
+      type="number"
+      min={min}
+      max={max}
+      step={1}
+      disabled={disabled}
+      style={maxWidth ? { maxWidth } : undefined}
+      value={text}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+    />
+  )
+}
+
+function TextStyleInspector({ role }: { role: TextRole }) {
+  const styles = useEditor((s) => s.project.view.textStyles)
+  const a = useEditor.getState
+  const d = TEXT_ROLE_DEFAULTS[role]
+  const cur = styles?.[role] ?? {}
+  const size = cur.fontSize ?? d.fontSize
+  const color = cur.color ?? d.color
+  const family = cur.fontFamily ?? ''
+
+  return (
+    <>
+      <div className="field">
+        <label>대상 텍스트</label>
+        <div style={{ fontSize: 13, color: 'var(--charcoal)', fontWeight: 600, padding: '4px 0' }}>
+          {TEXT_ROLE_LABELS[role]}
+        </div>
+        <p className="note">차트에서 같은 종류의 텍스트 전체에 적용됩니다.</p>
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label>글자 크기 (pt)</label>
+          <PtInput value={size} min={6} max={120} onCommit={(v) => a().setTextStyle(role, { fontSize: v })} />
+        </div>
+        <div className="field" style={{ maxWidth: 64 }}>
+          <label>색상</label>
+          <input className="input" style={{ padding: 2 }} type="color" value={color}
+            onChange={(e) => a().setTextStyle(role, { color: e.target.value })} />
+        </div>
+      </div>
+      <div className="field">
+        <label>글꼴</label>
+        <select className="select" value={family}
+          onChange={(e) => a().setTextStyle(role, { fontFamily: e.target.value || undefined })}>
+          <option value="">기본 글꼴</option>
+          {FONT_FAMILY_OPTIONS.map((f) => <option key={f.label} value={f.value}>{f.label}</option>)}
+        </select>
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
+        <button className="btn btn--sm" style={{ flex: 1 }} onClick={() => a().resetTextStyle(role)}>기본값 초기화</button>
+        <button className="btn btn--sm" style={{ flex: 1 }} onClick={() => a().selectTextRole(null)}>닫기</button>
+      </div>
+      <p className="note">차트의 다른 텍스트를 클릭하면 그 텍스트 스타일 편집으로 전환됩니다.</p>
+    </>
   )
 }
 
@@ -35,6 +126,8 @@ function TaskInspector({ id }: { id: string }) {
 
   const startISO = toISO(dayToDate(project.startDate, task.start))
   const finishISO = toISO(dayToDate(project.startDate, task.start + task.duration))
+  const currentColor = task.color ?? project.categories.find((c) => c.id === task.categoryId)?.color ?? '#7c93a8'
+  const palette = project.palette ?? []
 
   return (
     <>
@@ -48,6 +141,11 @@ function TaskInspector({ id }: { id: string }) {
           {project.categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
       </div>
+      <div className="field">
+        <label>세부공종 (선택)</label>
+        <input className="input" value={task.subName ?? ''} placeholder="예: 상류 가물막이"
+          onChange={(e) => a().updateTask(id, { subName: e.target.value }, { history: false })} />
+      </div>
       <div className="field-row">
         <div className="field">
           <label>시작일</label>
@@ -56,8 +154,8 @@ function TaskInspector({ id }: { id: string }) {
         </div>
         <div className="field" style={{ maxWidth: 96 }}>
           <label>기간(일)</label>
-          <input className="input" type="number" min={0} value={task.duration} disabled={task.isMilestone}
-            onChange={(e) => a().updateTask(id, { duration: Math.max(0, Number(e.target.value)) })} />
+          <PtInput value={task.duration} min={1} max={100000} disabled={task.isMilestone}
+            onCommit={(v) => a().updateTask(id, { duration: v })} />
         </div>
       </div>
       <div className="field">
@@ -70,13 +168,42 @@ function TaskInspector({ id }: { id: string }) {
         <div className="field" style={{ maxWidth: 64 }}>
           <label>색상</label>
           <input className="input" style={{ padding: 2 }} type="color"
-            value={task.color ?? project.categories.find((c) => c.id === task.categoryId)?.color ?? '#7c93a8'}
-            onChange={(e) => a().updateTask(id, { color: e.target.value })} />
+            value={currentColor}
+            onChange={(e) => a().updateTask(id, { color: e.target.value }, { history: false })} />
         </div>
         <div className="field">
           <label>종료일</label>
           <input className="input" value={finishISO} disabled />
         </div>
+      </div>
+
+      <div className="field">
+        <label>Palette · 즐겨찾기 (최대 {PALETTE_MAX})</label>
+        <div className="palette">
+          {Array.from({ length: PALETTE_MAX }).map((_, i) => {
+            const c = palette[i]
+            return c ? (
+              <button
+                key={i}
+                type="button"
+                className="palette__sw"
+                style={{ background: c }}
+                title={`${c} · 클릭 적용 / 우클릭 삭제`}
+                onClick={() => a().updateTask(id, { color: c })}
+                onContextMenu={(e) => { e.preventDefault(); a().removePaletteColor(i) }}
+              />
+            ) : (
+              <button
+                key={i}
+                type="button"
+                className="palette__sw palette__sw--empty"
+                title="현재 색상을 즐겨찾기에 추가"
+                onClick={() => a().addPaletteColor(currentColor)}
+              >＋</button>
+            )
+          })}
+        </div>
+        <p className="note">색을 클릭하면 이 공정에 적용됩니다. 빈 칸 ＋ 로 현재 색을 저장(최대 {PALETTE_MAX}개), 우클릭으로 삭제합니다.</p>
       </div>
 
       <div style={{ background: 'var(--cream)', borderRadius: 8, padding: '10px 12px', margin: '6px 0 12px', fontSize: 12, color: 'var(--slate)' }}>
@@ -89,7 +216,7 @@ function TaskInspector({ id }: { id: string }) {
       </div>
 
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteTask(id)}>공정 삭제</button>
-      <p className="note">바를 드래그해 이동하고, 선택 후 우측 끝의 동그라미를 다른 공정으로 끌어 연결합니다.</p>
+      <p className="note">바를 드래그해 이동하고, 선택 후 우측 끝의 동그라미를 다른 공정으로 끌어 연결합니다. 차트의 글자를 클릭하면 글꼴·크기·색을 바꿀 수 있습니다.</p>
     </>
   )
 }
@@ -135,6 +262,7 @@ function ProjectInspector() {
   const a = useEditor.getState
   const rainy = project.rainySeasons[0]
   const logos = project.branding?.logos ?? []
+  const titleSize = project.view.textStyles?.title?.fontSize ?? TEXT_ROLE_DEFAULTS.title.fontSize
 
   function onUploadLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -190,7 +318,7 @@ function ProjectInspector() {
         <div className="field">
           <label>출력 해상도(DPI)</label>
           <select className="select" value={project.paper.dpi} onChange={(e) => a().setPaper({ dpi: Number(e.target.value) })}>
-            {[96, 150, 200, 300].map((d) => <option key={d} value={d}>{d}</option>)}
+            {DPI_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
           </select>
         </div>
         <div className="field">
@@ -199,6 +327,7 @@ function ProjectInspector() {
             onChange={(e) => a().setView({ pxPerDay: Math.max(0.3, Number(e.target.value)) })} />
         </div>
       </div>
+      <p className="note">DPI 600은 A4~A2에서 원본 그대로 출력됩니다. A1·A0 등 큰 용지는 메모리 보호를 위해 자동으로 낮춰질 수 있습니다.</p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>표시 옵션</div>
@@ -217,7 +346,12 @@ function ProjectInspector() {
         <input type="checkbox" checked={project.view.showTitle !== false} onChange={() => a().toggleTitle()} />
         상단 중앙에 도면 제목(볼드) 표시
       </label>
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
+      <div className="field" style={{ maxWidth: 160 }}>
+        <label>제목 글자 크기 (pt)</label>
+        <PtInput value={titleSize} min={8} max={96} onCommit={(v) => a().setTextStyle('title', { fontSize: v })} />
+      </div>
+      <p className="note">제목을 차트에서 직접 클릭해도 같은 편집 창이 열립니다.</p>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10, marginTop: 6 }}>
         {logos.map((logo, i) => (
           <div key={i} style={{ position: 'relative', border: '1px solid var(--hairline-strong)', borderRadius: 8, padding: 5, background: '#fff' }}>
             <img src={logo.src} alt={`CI ${i + 1}`} style={{ height: 34, maxWidth: 116, objectFit: 'contain', display: 'block' }} />

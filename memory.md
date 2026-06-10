@@ -56,10 +56,13 @@ start-lan.bat            LAN 단일포트 서버 기동(기본 PORT=4020, 외부
 
 ## 4. 구현 완료 기능
 - 공종(12종)·공정·마일스톤(◆), 시운전 토글, 우기 음영 밴드.
+- **세부공종(Task.subName)** — 레인 내 subName으로 그룹화→좌측 라벨열에 공종명 아래 세부공종 행 표시. 그룹 정렬은 cascade 후 시작일 순. 공종명 겹침 방지용 레인 상단 `CATEGORY_HEADER_INSET=20px`(named 그룹 있을 때만). 샘플 가물막이에 상류/하류 가물막이·유수전환 시드.
 - 드래그: 바 이동, **바 양끝 핸들로 기간 리사이즈**, 끝점 ●로 의존성 연결.
-- CPM 주공정(빨강) 실시간, 연쇄 자동/일정 정렬/재계산.
+- CPM 주공정(빨강) 실시간, 연쇄 자동/일정 정렬/재계산. **재계산·일정정렬 시 변경 내역(시작일 이전→이후, Δ일) 중앙 팝업**(store.recalcReport → RecalcModal, Modal 컴포넌트).
+- **텍스트 역할별 스타일**(view.textStyles: Partial<Record<TextRole, {fontSize,fontFamily,color}>>) — 차트 모든 텍스트 클릭→우측 TextStyleInspector에서 pt/글꼴/색 조정. 기본값·라벨·글꼴옵션·resolveTextStyle은 `styles/theme.ts`. **글꼴은 inline style로 적용**(export 주입 CSS 규칙을 이김, §7 P2). 제목 크기는 ProjectInspector에 pt 입력도 제공.
+- **색상 즐겨찾기 팔레트**(Project.palette, PALETTE_MAX=10) — TaskInspector 색상/종료일 아래 5×2, ＋저장/클릭적용/우클릭삭제, 10 초과 금지.
 - 도면: 상단 중앙 **볼드 제목**, 우측 하단 **CI 로고**(도면 위 모서리 드래그로 크기 조절, 인스펙터 ◀▶로 순서변경, ＋업로드).
-- 출력: SVG/PNG/JPG/PDF(용지/DPI/방향), `data-export-hide` 오버레이 제거.
+- 출력: SVG/PNG/JPG/PDF(용지/방향/**DPI 96~600**), `data-export-hide` 오버레이 제거. paper.ts 캡 상향(MAX_PIXEL_AREA 2.4e8, MAX_DIMENSION 16000) → A4~A2 600DPI 원본, 대형은 자동 클램프.
 - 패널 좌우 **드래그 리사이즈**(폭 자동저장), **배율 슬라이더+숫자입력**(차트 전체 균일 줌, CSS transform), **전체화면 미리보기**(Esc).
 - undo/redo, 자동저장(서버/로컬), 단축키(Ctrl+S/Z/Y, Delete, Esc).
 - LAN 접속(서버 0.0.0.0, 빌드본+API 단일포트), `error.log`(ABS_RULE).
@@ -89,11 +92,14 @@ cd client && npm run build                       # tsc --noEmit + vite
 - **내보내기**: 화면 전용 오버레이엔 `data-export-hide="1"` → exporter가 clone에서 제거. SPA catch-all은 확장자 있는 누락 경로에 404(폰트가 HTML로 응답되지 않게).
 - **줌**: layout은 기준 배율로 계산, zoom은 `.paper`에 CSS `transform: scale()`. 포인터 좌표는 `/zoom` 역보정(`ChartCanvas.toContent`).
 - **CPM**: 바는 항상 `task.start`에 그림. ES는 start로 바닥. applyCascade=위반 공정만 뒤로(슬랙 보존), reschedule=최조기 압축. 샘플은 생성 시 applyCascade로 링크 일관성 확보.
-- **배율 입력**: 숫자 input은 로컬 텍스트 상태로 두고 blur/Enter에만 setZoom(매 키 클램프 버그 방지).
+- **배율 입력**: 숫자 input은 로컬 텍스트 상태로 두고 blur/Enter에만 setZoom(매 키 클램프 버그 방지). → 동일 패턴을 Inspector `PtInput`(글자 크기·제목 크기)에도 적용.
+- **텍스트 글꼴(export)**: exporter가 `text{font-family:…Medium}` CSS를 주입 → **CSS 규칙이 SVG presentation attribute를 이김**. 그래서 역할별 글꼴은 반드시 **inline `style={{fontFamily}}`** 로 적용해야 출력물(PNG/PDF)에 반영됨(attribute로 주면 출력 시 사라짐). fontSize/fontWeight/fill은 attribute로 OK(주입 규칙이 안 건드림).
+- **차트 텍스트 클릭=역할 선택**: 이제 공정/마일스톤의 *이름 텍스트* 클릭은 텍스트 스타일 편집(역할 선택)으로 동작. 공정 *선택*은 바/다이아몬드 클릭 또는 좌측 사이드바로. (의도된 동작 변경)
+- **세부공종 레이아웃**: 그룹은 `(subName ?? '').trim()`로 묶고 '' 그룹 우선, 나머지는 min start 순. named 그룹 존재 시 레인 상단 20px 헤더 인셋으로 공종명 분리. 빈 그룹 `Math.max(...[])` 회피(그룹은 항상 ≥1 task).
 - **TS 빌드**: 단일 tsconfig + `tsc --noEmit`(프로젝트 레퍼런스 X). zustand는 `create<T>()(...)` 커리드 형태. React 이벤트 타입은 `import type { PointerEvent as RPointerEvent }`로(UMD 전역 회피).
 
 ## 8. 향후 후보(미구현)
 - Electron 패키징(`.exe`, 오프라인). 출력물 폰트 임베딩(base64, 한글 OTF 수 MB 부담). 라벨 충돌 자동 회피. 기상 데이터 우기 자동보정 / 보수보강 전용 타임라인. dev→main 머지·운영 배포 절차.
 
 ## 9. 진행 이력(요약)
-초기 풀스택 구현 → 멀티에이전트 리뷰 수정(서버 동시쓰기·export 무음실패) → 빈화면 수정 → 도면 제목+CI → 패널리사이즈·전체줌·전체화면·LAN → 배율 컨트롤·바 기간 리사이즈·README 이미지(init.png) → KoPub 글꼴 → 배율입력 버그·CI 드래그크기/순서 → LAN 폰트 번들 서빙 → **dev 폴더 분리(이 문서) + dev 브랜치 + 포트 4020**.
+초기 풀스택 구현 → 멀티에이전트 리뷰 수정(서버 동시쓰기·export 무음실패) → 빈화면 수정 → 도면 제목+CI → 패널리사이즈·전체줌·전체화면·LAN → 배율 컨트롤·바 기간 리사이즈·README 이미지(init.png) → KoPub 글꼴 → 배율입력 버그·CI 드래그크기/순서 → LAN 폰트 번들 서빙 → dev 폴더 분리 + dev 브랜치 + 포트 4020 → **6대 개선(텍스트 역할 스타일 클릭편집·세부공종 좌측라벨·제목 pt입력·재계산 결과 팝업·DPI 600·색상 즐겨찾기 팔레트) + 멀티에이전트 적대적 리뷰**.

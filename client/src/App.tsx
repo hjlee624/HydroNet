@@ -9,6 +9,7 @@ import { ChartCanvas } from './components/ChartCanvas'
 import { Inspector } from './components/Inspector'
 import { StatusBar } from './components/StatusBar'
 import { ExportDialog } from './components/ExportDialog'
+import { RecalcModal } from './components/RecalcModal'
 import { useEditor } from './state/store'
 
 const num = (v: string | null, fallback: number) => {
@@ -82,6 +83,7 @@ export default function App() {
         {!presentation && <Inspector width={rightWidth} />}
       </div>
       {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
+      <RecalcModal />
     </div>
   )
 }

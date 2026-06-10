@@ -1,13 +1,18 @@
 // Pure SVG renderer for the milestone chart. Draws the full content (header +
 // lanes + bars + milestones + dependency arrows + 우기 bands) at 1:1 into an
 // <svg id="hydronet-chart"> which both the screen and the exporter consume.
+//
+// Every text resolves its size/family/colour through resolveTextStyle(role,…),
+// so the user can click any label and restyle that whole role. font-family is
+// applied via inline `style` (not a presentation attribute) so it beats the
+// exporter's injected `text{font-family:…}` rule.
 
 import { memo } from 'react'
-import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
-import type { Project } from '../types/model'
+import type { CSSProperties, MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
+import type { Project, TextRole } from '../types/model'
 import type { LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
-import { colors, fonts } from '../styles/theme'
+import { colors, fonts, resolveTextStyle } from '../styles/theme'
 import { dayToDate, toISO } from '../engine/dates'
 
 export interface LinkingGhost { x1: number; y1: number; x2: number; y2: number }
@@ -18,6 +23,7 @@ interface Props {
   project: Project
   selectedTaskId: string | null
   selectedLinkId: string | null
+  selectedTextRole: TextRole | null
   showCriticalPath: boolean
   showGrid: boolean
   linkingGhost: LinkingGhost | null
@@ -27,6 +33,7 @@ interface Props {
   onLogoResizePointerDown: (e: RPointerEvent, index: number) => void
   onTaskClick: (e: RMouseEvent, id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
+  onTextClick: (role: TextRole) => void
   onBackgroundClick: () => void
 }
 
@@ -35,14 +42,31 @@ function diamond(cx: number, cy: number, r: number): string {
 }
 
 function ChartSvgBase({
-  model, routed, project, selectedTaskId, selectedLinkId,
+  model, routed, project, selectedTaskId, selectedLinkId, selectedTextRole,
   showCriticalPath, showGrid, linkingGhost,
-  onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown, onTaskClick, onLinkClick, onBackgroundClick,
+  onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
+  onTaskClick, onLinkClick, onTextClick, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
   const chartBottom = chartTop + chartHeight
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
+
+  // Resolve a styleable text role into the props every <text> needs. font-family
+  // goes through `style` so it survives rasterised export; click selects the role.
+  function roleAttrs(role: TextRole) {
+    const s = resolveTextStyle(role, project.view.textStyles)
+    const style: CSSProperties = { fontFamily: s.fontFamily, cursor: 'pointer' }
+    return {
+      fontSize: s.fontSize,
+      fontWeight: s.fontWeight,
+      fill: s.fill,
+      style,
+      'data-text-role': role,
+      className: selectedTextRole === role ? 'tr-selected' : undefined,
+      onClick: (e: RMouseEvent<SVGTextElement>) => { e.stopPropagation(); onTextClick(role) },
+    }
+  }
 
   return (
     <svg
@@ -62,15 +86,16 @@ function ChartSvgBase({
         </marker>
       </defs>
 
-      {/* background */}
-      <rect x={0} y={0} width={contentWidth} height={contentHeight} fill={colors.canvas} />
+      {/* background — screen-only; the exporter supplies its own (white, or none
+          for transparent PNG), so this is flagged data-export-hide. */}
+      <rect data-export-hide="1" x={0} y={0} width={contentWidth} height={contentHeight} fill={colors.canvas} />
 
       {/* 우기 bands */}
       {project.rainySeasons.length > 0 && model.rainyRects.map((r, i) => (
         <g key={`rainy-${i}`}>
           <rect x={r.x} y={r.y} width={r.width} height={r.height} fill={colors.rainyBand} />
           <rect x={r.x} y={chartTop} width={r.width} height={16} fill={colors.rainyBandStroke} />
-          <text x={r.x + r.width / 2} y={chartTop + 11.5} textAnchor="middle" fontSize={10.5} fill="#46566e" fontWeight={500}>
+          <text x={r.x + r.width / 2} y={chartTop + 11.5} textAnchor="middle" {...roleAttrs('rainyLabel')}>
             {r.label}
           </text>
         </g>
@@ -99,7 +124,7 @@ function ChartSvgBase({
         <g>
           <rect x={0} y={0} width={contentWidth} height={titleHeight} fill={colors.cream} />
           <line x1={0} y1={titleHeight} x2={contentWidth} y2={titleHeight} stroke={colors.beigeDeep} strokeWidth={1} />
-          <text x={contentWidth / 2} y={titleHeight * 0.66} textAnchor="middle" fontSize={20} fontWeight={700} fill={colors.ink} style={{ fontFamily: fonts.bold }}>
+          <text x={contentWidth / 2} y={titleHeight * 0.66} textAnchor="middle" {...roleAttrs('title')}>
             {title}
           </text>
         </g>
@@ -112,7 +137,7 @@ function ChartSvgBase({
         {model.years.map((y, i) => (
           <g key={`yr-${i}`}>
             {i > 0 && <line x1={y.x} y1={0} x2={y.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={1} />}
-            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" fontSize={13} fontWeight={500} fill={colors.ink}>
+            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" {...roleAttrs('axisYear')}>
               {y.year}
             </text>
           </g>
@@ -120,7 +145,7 @@ function ChartSvgBase({
         {model.months.map((m, i) => (
           <g key={`mo-${i}`}>
             <line x1={m.x} y1={yearRowH} x2={m.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={0.75} />
-            <text x={m.x + m.width / 2} y={yearRowH + (headerHeight - yearRowH) * 0.62} textAnchor="middle" fontSize={10} fill={colors.slate}>
+            <text x={m.x + m.width / 2} y={yearRowH + (headerHeight - yearRowH) * 0.62} textAnchor="middle" {...roleAttrs('axisMonth')}>
               {m.label}
             </text>
           </g>
@@ -133,18 +158,26 @@ function ChartSvgBase({
         <rect x={0} y={titleHeight} width={labelWidth} height={contentHeight - titleHeight} fill={colors.creamSoft} />
         <line x1={labelWidth} y1={titleHeight} x2={labelWidth} y2={contentHeight} stroke={colors.hairlineStrong} strokeWidth={1} />
         <rect x={0} y={headerTop} width={labelWidth} height={headerHeight} fill={colors.cream} />
-        <text x={12} y={headerTop + headerHeight * 0.4} fontSize={11} fontWeight={700} fill={colors.charcoal} style={{ fontFamily: fonts.bold }}>공종 / 마일스톤</text>
-        <text x={12} y={headerTop + headerHeight * 0.78} fontSize={9.5} fill={colors.steel}>
+        <text x={12} y={headerTop + headerHeight * 0.4} {...roleAttrs('headerTitle')}>공종 / 마일스톤</text>
+        <text x={12} y={headerTop + headerHeight * 0.82} {...roleAttrs('headerSub')}>
           착수 {toISO(dayToDate(project.startDate, 0)).slice(0, 7)}
         </text>
-        {model.categories.map((c) => (
-          <g key={`lbl-${c.id}`}>
-            <rect x={6} y={c.y + c.height / 2 - 7} width={4} height={14} rx={2} fill={c.color} />
-            <text x={18} y={c.y + c.height / 2 + 4} fontSize={12} fontWeight={700} fill={colors.charcoal} style={{ fontFamily: fonts.bold }}>
-              {c.name}
-            </text>
-          </g>
-        ))}
+        {model.categories.map((c) => {
+          const hasSubs = c.subGroups.length > 0
+          const swatchY = hasSubs ? c.y + 4 : c.y + c.height / 2 - 7
+          const nameY = hasSubs ? c.y + 15 : c.y + c.height / 2 + 4
+          return (
+            <g key={`lbl-${c.id}`}>
+              <rect x={6} y={swatchY} width={4} height={14} rx={2} fill={c.color} />
+              <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>{c.name}</text>
+              {hasSubs && c.subGroups.map((sg, i) => (
+                <text key={`sg-${i}`} x={26} y={sg.y + sg.height / 2 + 4} {...roleAttrs('subCategoryLabel')}>
+                  {sg.name}
+                </text>
+              ))}
+            </g>
+          )
+        })}
       </g>
 
       {/* dependency arrows (under bars' selection ring, over grid) */}
@@ -178,7 +211,7 @@ function ChartSvgBase({
           if (lt.isMilestone) {
             return (
               <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }} style={{ cursor: 'pointer' }}>
-                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" fontSize={11} fontWeight={500} fill={colors.ink}>
+                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" {...roleAttrs('milestoneName')}>
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
                 <polygon
@@ -189,7 +222,7 @@ function ChartSvgBase({
                   strokeWidth={selected ? 2.5 : 1.5}
                   onPointerDown={(e) => onTaskPointerDown(e, t.id)}
                 />
-                <text x={lt.cx} y={lt.cy + milestoneR + 12} textAnchor="middle" fontSize={9} fill={colors.steel}>
+                <text x={lt.cx} y={lt.cy + milestoneR + 12} textAnchor="middle" {...roleAttrs('milestoneDate')}>
                   {toISO(dayToDate(project.startDate, t.start)).slice(2)}
                 </text>
               </g>
@@ -197,7 +230,7 @@ function ChartSvgBase({
           }
           return (
             <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}>
-              <text x={lt.x} y={lt.y - 3.5} fontSize={10.5} fill={colors.charcoal} fontWeight={500}>
+              <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')}>
                 {t.name}
               </text>
               <rect
@@ -209,7 +242,7 @@ function ChartSvgBase({
                 strokeWidth={selected ? 2.4 : 1}
                 onPointerDown={(e) => onTaskPointerDown(e, t.id)}
               />
-              <text x={lt.x} y={lt.y + lt.h + 10.5} fontSize={9} fill={colors.steel}>
+              <text x={lt.x} y={lt.y + lt.h + 10.5} {...roleAttrs('taskDuration')}>
                 {t.duration}일
               </text>
               {/* resize grips (drag to change duration) + link anchor (drag to connect) */}

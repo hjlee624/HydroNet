@@ -11,6 +11,30 @@ export type Orientation = 'landscape' | 'portrait'
 export type LinkType = 'FS' | 'SS' | 'FF' | 'SF'
 export type LabelPosition = 'above' | 'below' | 'inside'
 
+/** Every distinct text element on the drawing that can be individually styled. */
+export type TextRole =
+  | 'title'
+  | 'categoryLabel'
+  | 'subCategoryLabel'
+  | 'headerTitle'
+  | 'headerSub'
+  | 'taskName'
+  | 'taskDuration'
+  | 'milestoneName'
+  | 'milestoneDate'
+  | 'axisYear'
+  | 'axisMonth'
+  | 'rainyLabel'
+
+/** Per-role typography override. Any omitted field falls back to the role default. */
+export interface TextStyle {
+  /** Font size in chart units (≈ pt on screen). */
+  fontSize?: number
+  /** CSS font-family string; empty/undefined = role default. */
+  fontFamily?: string
+  color?: string
+}
+
 /** A 공종 (work-type) lane on the left of the chart. */
 export interface Category {
   id: ID
@@ -38,6 +62,8 @@ export interface Task {
   color?: string
   labelPosition?: LabelPosition
   note?: string
+  /** Optional 세부공종 (sub-work) grouping label, shown on the left label column. */
+  subName?: string
 
   // ── Computed by the CPM engine (never persisted as authoritative) ──
   es?: number // early start
@@ -97,6 +123,8 @@ export interface ViewSettings {
   showGrid: boolean
   /** Show the bold drawing title (project name) centred at the top. */
   showTitle: boolean
+  /** Per-role typography overrides for the chart texts (empty = all defaults). */
+  textStyles?: Partial<Record<TextRole, TextStyle>>
 }
 
 /** A CI/logo image (data URL) with its on-drawing box size in px. */
@@ -129,9 +157,14 @@ export interface Project {
   links: Link[]
   rainySeasons: RainySeason[]
   branding: Branding
+  /** Favourite colours (즐겨찾기) for quick bar recolouring. Capped at 10. */
+  palette: string[]
   /** When false, commissioning lanes/tasks are excluded (general dam mode). */
   commissioningEnabled: boolean
   meta: ProjectMeta
 }
+
+/** Hard cap on the favourite-colour palette (2 rows × 5). */
+export const PALETTE_MAX = 10
 
 export const SCHEMA_VERSION = 1

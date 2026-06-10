@@ -8,10 +8,12 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type {
-  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, Task, ViewSettings,
+  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, Task, TextRole, TextStyle, ViewSettings,
 } from '../types/model'
+import { PALETTE_MAX } from '../types/model'
 import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
 import { createSampleProject } from '../data/sampleProject'
+import { DEFAULT_PALETTE } from '../styles/theme'
 import { saveProject } from './api'
 import { logInfo, logWarn } from './logger'
 
@@ -22,16 +24,38 @@ interface LinkingState {
   pointer: { x: number; y: number } | null
 }
 
+/** One task whose start moved during a 재계산 / 일정 정렬 pass. */
+export interface RecalcChange {
+  id: ID
+  name: string
+  oldStart: number
+  newStart: number
+  deltaDays: number
+}
+
+/** Summary of what a reschedule/cascade changed, shown in the 재계산 popup. */
+export interface RecalcReport {
+  kind: 'reschedule' | 'cascade'
+  changes: RecalcChange[]
+  totalMoved: number
+  /** Project start date (ISO) so the modal can render absolute dates. */
+  startDate: string
+}
+
 export interface EditorState {
   project: Project
   selectedTaskId: ID | null
   selectedLinkId: ID | null
   selectedCategoryId: ID | null
+  /** When set, the inspector shows the text-style editor for this role. */
+  selectedTextRole: TextRole | null
   linking: LinkingState | null
   zoom: number
   autoCascade: boolean
   dirty: boolean
   warnings: string[]
+  /** Last reschedule/cascade diff; non-null drives the 재계산 popup. */
+  recalcReport: RecalcReport | null
   past: Project[]
   future: Project[]
 
@@ -42,7 +66,7 @@ export interface EditorState {
 
   // tasks
   addTask: (categoryId: ID, partial?: Partial<Task>) => ID
-  updateTask: (id: ID, patch: Partial<Task>) => void
+  updateTask: (id: ID, patch: Partial<Task>, opts?: { history?: boolean }) => void
   setTaskStartLive: (id: ID, startDay: number) => void
   setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
@@ -77,16 +101,26 @@ export interface EditorState {
   setRainySeason: (startMonth: number, endMonth: number, label?: string) => void
   clearRainySeasons: () => void
 
+  // typography
+  setTextStyle: (role: TextRole, patch: Partial<TextStyle>) => void
+  resetTextStyle: (role: TextRole) => void
+
+  // favourite-colour palette (즐겨찾기)
+  addPaletteColor: (color: string) => void
+  removePaletteColor: (index: number) => void
+
   // scheduling
   recompute: () => void
   cascadeNow: () => void
   rescheduleNow: () => void
   setAutoCascade: (v: boolean) => void
+  closeRecalcReport: () => void
 
   // selection / view
   selectTask: (id: ID | null) => void
   selectLink: (id: ID | null) => void
   selectCategory: (id: ID | null) => void
+  selectTextRole: (role: TextRole | null) => void
   setZoom: (z: number) => void
 
   // history & persistence
@@ -117,11 +151,19 @@ function normalizeLogos(logos: unknown): LogoItem[] {
 
 /** Backfill fields that may be missing on older saved projects. */
 function normalize(project: Project): Project {
+  const palette = Array.isArray(project.palette) && project.palette.length
+    ? project.palette.slice(0, PALETTE_MAX)
+    : [...DEFAULT_PALETTE]
   return {
     ...project,
     branding: { logos: normalizeLogos(project.branding?.logos) },
     rainySeasons: project.rainySeasons ?? [],
-    view: { ...project.view, showTitle: project.view.showTitle !== false },
+    palette,
+    view: {
+      ...project.view,
+      showTitle: project.view.showTitle !== false,
+      textStyles: project.view.textStyles ?? {},
+    },
   }
 }
 
@@ -133,6 +175,22 @@ function withSchedule(project: Project): { project: Project; warnings: string[] 
     return c ? { ...t, es: c.es, ef: c.ef, ls: c.ls, lf: c.lf, totalFloat: c.totalFloat, critical: c.critical } : t
   })
   return { project: { ...project, tasks }, warnings: result.warnings }
+}
+
+/** Diff the task starts before/after a schedule mutation into a popup report. */
+function buildRecalcReport(
+  kind: RecalcReport['kind'],
+  before: Map<ID, number>,
+  after: Project,
+): RecalcReport {
+  const changes: RecalcChange[] = []
+  for (const t of after.tasks) {
+    const old = before.get(t.id)
+    if (old === undefined || old === t.start) continue
+    changes.push({ id: t.id, name: t.name, oldStart: old, newStart: t.start, deltaDays: t.start - old })
+  }
+  changes.sort((a, b) => Math.abs(b.deltaDays) - Math.abs(a.deltaDays))
+  return { kind, changes, totalMoved: changes.length, startDate: after.startDate }
 }
 
 let saveTimer: ReturnType<typeof setTimeout> | null = null
@@ -174,18 +232,20 @@ export const useEditor = create<EditorState>()((set, get) => {
     scheduleSave(get)
   }
 
-  const initial = withSchedule(createSampleProject()).project
+  const initial = withSchedule(normalize(createSampleProject())).project
 
   return {
     project: initial,
     selectedTaskId: null,
     selectedLinkId: null,
     selectedCategoryId: null,
+    selectedTextRole: null,
     linking: null,
     zoom: 1,
     autoCascade: true,
     dirty: false,
     warnings: [],
+    recalcReport: null,
     past: [],
     future: [],
 
@@ -222,12 +282,14 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selectedTaskId: id, selectedLinkId: null })
       return id
     },
-    updateTask: (id, patch) => {
+    updateTask: (id, patch, opts) => {
       const affectsSchedule = 'start' in patch || 'duration' in patch
+      // Live-ish edits (free-text subName, color-picker drag) pass history:false to
+      // avoid flooding the undo stack with one entry per keystroke / drag step.
       commit((p) => {
         const t = p.tasks.find((x) => x.id === id)
         if (t) Object.assign(t, patch)
-      }, { cascade: affectsSchedule })
+      }, { cascade: affectsSchedule, history: opts?.history ?? true })
     },
     setTaskStartLive: (id, startDay) => {
       // No history push (gesture already snapshotted); cascade respected.
@@ -354,26 +416,57 @@ export const useEditor = create<EditorState>()((set, get) => {
     }, { history: false }),
     clearRainySeasons: () => commit((p) => { p.rainySeasons = [] }, { history: false }),
 
+    setTextStyle: (role, patch) => commit((p) => {
+      const next = { ...(p.view.textStyles ?? {}) }
+      next[role] = { ...(next[role] ?? {}), ...patch }
+      p.view = { ...p.view, textStyles: next }
+    }, { history: false }),
+    resetTextStyle: (role) => commit((p) => {
+      if (!p.view.textStyles) return
+      const next = { ...p.view.textStyles }
+      delete next[role]
+      p.view = { ...p.view, textStyles: next }
+    }, { history: false }),
+
+    addPaletteColor: (color) => commit((p) => {
+      const c = (color || '').trim()
+      if (!c) return
+      const cur = p.palette ?? []
+      if (cur.some((x) => x.toLowerCase() === c.toLowerCase())) return
+      if (cur.length >= PALETTE_MAX) return // never exceed 10
+      p.palette = [...cur, c]
+    }, { history: false }),
+    removePaletteColor: (index) => commit((p) => {
+      if (!p.palette) return
+      p.palette = p.palette.filter((_, i) => i !== index)
+    }, { history: false }),
+
     recompute: () => set((s) => ({ project: withSchedule(s.project).project })),
     cascadeNow: () => {
+      const before = new Map(get().project.tasks.map((t) => [t.id, t.start]))
       commit((p) => {
         const r = applyCascade(p.tasks, p.links)
         p.tasks = r.tasks
       })
+      set({ recalcReport: buildRecalcReport('cascade', before, get().project) })
       logInfo('연쇄 일정 정렬을 적용했습니다.')
     },
     rescheduleNow: () => {
+      const before = new Map(get().project.tasks.map((t) => [t.id, t.start]))
       commit((p) => {
         const r = reschedule(p.tasks, p.links)
         p.tasks = r.tasks
       })
+      set({ recalcReport: buildRecalcReport('reschedule', before, get().project) })
       logInfo('전체 일정을 최조기(最早期)로 재계산했습니다.')
     },
     setAutoCascade: (v) => set({ autoCascade: v }),
+    closeRecalcReport: () => set({ recalcReport: null }),
 
-    selectTask: (id) => set({ selectedTaskId: id, selectedLinkId: null }),
-    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null }),
+    selectTask: (id) => set({ selectedTaskId: id, selectedLinkId: null, selectedTextRole: null }),
+    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTextRole: null }),
     selectCategory: (id) => set({ selectedCategoryId: id }),
+    selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedLinkId: null }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
 
     beginGesture: () => set((s) => ({ past: [...s.past, clone(s.project)].slice(-HISTORY_LIMIT), future: [] })),

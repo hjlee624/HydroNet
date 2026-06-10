@@ -3,6 +3,8 @@
 // These are the single source of truth for colours used by both the React
 // chrome and the SVG chart renderer (so exports match the on-screen look).
 
+import type { TextRole, TextStyle } from '../types/model'
+
 export const colors = {
   // Brand & accent (sunset)
   primary: '#FA5111', // saturated brand orange — CTAs, active, critical path
@@ -96,3 +98,67 @@ export const lanePalette = [
   '#B08A4F', // bronze (부대공)
   '#8089A8', // slate-violet
 ]
+
+/** Seed favourites for the 즐겨찾기 palette (exactly 10: 2 rows × 5). */
+export const DEFAULT_PALETTE: string[] = [...lanePalette, '#E12D1B', '#2E7D6B']
+
+// ── Per-role chart typography defaults ──────────────────────────────────────
+// Every styleable text on the drawing resolves to one of these unless the user
+// has overridden it via project.view.textStyles. Sizes are in chart units.
+
+export const TEXT_ROLE_DEFAULTS: Record<TextRole, Required<TextStyle>> = {
+  title:            { fontSize: 20,   fontFamily: KOPUB_BOLD,   color: colors.ink },
+  categoryLabel:    { fontSize: 12,   fontFamily: KOPUB_BOLD,   color: colors.charcoal },
+  subCategoryLabel: { fontSize: 11,   fontFamily: KOPUB_MEDIUM, color: colors.slate },
+  headerTitle:      { fontSize: 14,   fontFamily: KOPUB_BOLD,   color: colors.charcoal },
+  headerSub:        { fontSize: 12,   fontFamily: KOPUB_MEDIUM, color: colors.steel },
+  taskName:         { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: colors.charcoal },
+  taskDuration:     { fontSize: 9,    fontFamily: KOPUB_MEDIUM, color: colors.steel },
+  milestoneName:    { fontSize: 13,   fontFamily: KOPUB_MEDIUM, color: colors.ink },
+  milestoneDate:    { fontSize: 9,    fontFamily: KOPUB_MEDIUM, color: colors.steel },
+  axisYear:         { fontSize: 13,   fontFamily: KOPUB_MEDIUM, color: colors.ink },
+  axisMonth:        { fontSize: 10,   fontFamily: KOPUB_MEDIUM, color: colors.slate },
+  rainyLabel:       { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: '#46566e' },
+}
+
+/** Human-friendly Korean labels for the text-style inspector. */
+export const TEXT_ROLE_LABELS: Record<TextRole, string> = {
+  title: '도면 제목',
+  categoryLabel: '공종 이름',
+  subCategoryLabel: '세부공종 이름',
+  headerTitle: '좌측 헤더(공종/마일스톤)',
+  headerSub: '좌측 헤더(착수)',
+  taskName: '공정 이름',
+  taskDuration: '공정 기간',
+  milestoneName: '마일스톤 이름',
+  milestoneDate: '마일스톤 날짜',
+  axisYear: '연도 축',
+  axisMonth: '월 축',
+  rainyLabel: '우기 라벨',
+}
+
+/** Selectable 글꼴 options for the text-style inspector (export-safe Windows faces). */
+export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [
+  { label: 'KoPub 굵게 (Bold)', value: KOPUB_BOLD },
+  { label: 'KoPub 보통 (Medium)', value: KOPUB_MEDIUM },
+  { label: '맑은 고딕', value: "'Malgun Gothic', sans-serif" },
+  { label: '바탕 (명조)', value: "'Batang', '바탕', serif" },
+  { label: '굴림', value: "'Gulim', '굴림', sans-serif" },
+  { label: '돋움', value: "'Dotum', '돋움', sans-serif" },
+]
+
+/** Resolve a role to its concrete style, merging the user override over the default. */
+export function resolveTextStyle(
+  role: TextRole,
+  overrides?: Partial<Record<TextRole, TextStyle>>,
+): { fontSize: number; fontFamily: string; fill: string; fontWeight: number } {
+  const d = TEXT_ROLE_DEFAULTS[role]
+  const o = overrides?.[role]
+  const fontFamily = (o?.fontFamily && o.fontFamily.trim()) || d.fontFamily
+  return {
+    fontSize: o?.fontSize ?? d.fontSize,
+    fontFamily,
+    fill: (o?.color && o.color.trim()) || d.color,
+    fontWeight: /Bold/i.test(fontFamily) ? 700 : 500,
+  }
+}

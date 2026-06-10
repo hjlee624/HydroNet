@@ -13,6 +13,9 @@ export const PAPER_MM: Record<PaperSize, { w: number; h: number }> = {
 
 export const PAPER_SIZES: PaperSize[] = ['A4', 'A3', 'A2', 'A1', 'A0']
 
+/** Selectable export DPIs. 400·600 enable high-fidelity prints on A4~A2. */
+export const DPI_OPTIONS: number[] = [96, 150, 200, 300, 400, 600]
+
 export function paperMm(size: PaperSize, orientation: Orientation): { w: number; h: number } {
   const base = PAPER_MM[size]
   return orientation === 'landscape' ? { w: base.h, h: base.w } : { w: base.w, h: base.h }
@@ -24,9 +27,10 @@ export function mmToPx(mm: number, dpi: number): number {
   return Math.round((mm / MM_PER_INCH) * dpi)
 }
 
-/** Safety cap so giant A0@300dpi rasters don't blow the canvas/memory limit. */
-const MAX_PIXEL_AREA = 1.1e8 // ~110 MP
-const MAX_DIMENSION = 16000
+/** Safety cap so giant rasters don't blow the canvas/memory limit. Raised so
+ *  A4~A2 reach a true 600dpi; larger sheets still auto-clamp (with a notice). */
+const MAX_PIXEL_AREA = 2.4e8 // ~240 MP (under Chrome's 2^28 canvas-area limit)
+const MAX_DIMENSION = 16000  // widely-safe single-axis canvas limit
 
 export interface PaperPx {
   wPx: number

@@ -387,31 +387,97 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .statusbar .stat strong { color: var(--charcoal); font-weight: 600; }
 .statusbar .warn { color: var(--primary-deep); }
 
-/* ── Export dialog ── */
+/* ── Modal (export dialog, 재계산 popup) ── */
+@keyframes hn-fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hn-modal-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
 .modal-backdrop {
   position: fixed; inset: 0;
   background: rgba(27, 23, 18, 0.4);
   display: flex; align-items: center; justify-content: center;
   z-index: 50;
+  animation: hn-fade-in 0.18s ease both;
 }
+.modal-backdrop.is-closing { animation: hn-fade-in 0.17s ease both; animation-direction: reverse; }
 .modal {
+  position: relative;
   width: 460px;
+  max-width: calc(100vw - 32px);
+  max-height: calc(100vh - 48px);
+  display: flex;
+  flex-direction: column;
   background: var(--cream-soft);
   border: 1px solid var(--beige-deep);
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-modal);
   overflow: hidden;
 }
+.modal--anim { animation: hn-modal-pop 0.2s cubic-bezier(0.2, 0.7, 0.3, 1) both; }
+.modal--anim.is-closing { animation: hn-modal-pop 0.17s ease both; animation-direction: reverse; }
+@media (prefers-reduced-motion: reduce) {
+  .modal-backdrop, .modal--anim { animation-duration: 0.001s; }
+}
+.modal__x {
+  position: absolute; top: 10px; right: 12px;
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; background: transparent; color: var(--steel);
+  font-size: 20px; line-height: 1; border-radius: 8px;
+  z-index: 1;
+}
+.modal__x:hover { background: var(--cream-deeper); color: var(--ink); }
 .modal__header {
   padding: 18px 22px 10px;
 }
 .modal__title { font-family: var(--font-display); font-size: 22px; color: var(--ink); margin: 0; }
 .modal__sub { font-size: 12px; color: var(--steel); margin-top: 2px; }
-.modal__body { padding: 8px 22px 4px; }
+.modal__body { padding: 8px 22px 4px; flex: 1; min-height: 0; overflow-y: auto; }
 .modal__footer {
   display: flex; justify-content: flex-end; gap: 8px;
   padding: 14px 22px 18px;
 }
+
+/* ── Favourite-colour palette (즐겨찾기, 5×2) ── */
+.palette { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; }
+.palette__sw {
+  height: 26px; padding: 0;
+  border-radius: 6px;
+  border: 1px solid var(--hairline-strong);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+.palette__sw:hover { transform: scale(1.08); }
+.palette__sw--empty {
+  background: var(--cream-soft); color: var(--stone);
+  border-style: dashed;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 14px; line-height: 1;
+}
+
+/* ── 재계산 / 일정 정렬 diff list ── */
+.recalc-list { margin: 2px -4px 4px; }
+.recalc-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px; border-radius: 8px; font-size: 13px;
+}
+.recalc-row:nth-child(odd) { background: var(--cream); }
+.recalc-name {
+  flex: 1; min-width: 0; color: var(--charcoal); font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.recalc-dates { display: flex; align-items: center; gap: 6px; color: var(--slate); font-variant-numeric: tabular-nums; }
+.recalc-from { color: var(--stone); }
+.recalc-arrow { color: var(--primary); }
+.recalc-delta { min-width: 54px; text-align: right; font-weight: 600; font-variant-numeric: tabular-nums; }
+.recalc-delta.pos { color: var(--primary-deep); }
+.recalc-delta.neg { color: #2e7d6b; }
+
+/* ── Click-to-style chart texts ── */
+#hydronet-chart text[data-text-role] { cursor: pointer; }
+#hydronet-chart text[data-text-role]:hover { opacity: 0.55; }
+#hydronet-chart .tr-selected { filter: drop-shadow(0 0 2.5px var(--primary)); }
 .seg {
   display: flex; gap: 4px; flex-wrap: wrap;
 }
