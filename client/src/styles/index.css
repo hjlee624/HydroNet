@@ -542,6 +542,37 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .recalc-delta.pos { color: var(--primary-deep); }
 .recalc-delta.neg { color: #2e7d6b; }
 
+/* ── Help dialog ── */
+.help { font-size: 13px; color: var(--charcoal); line-height: 1.6; }
+.help-sec { margin-bottom: 16px; }
+.help-sec:last-child { margin-bottom: 2px; }
+.help-sec h3 {
+  margin: 0 0 6px;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.4px;
+  color: var(--primary-deep);
+  text-transform: uppercase;
+}
+.help-sec p { margin: 0; color: var(--slate); }
+.help-sec ul { margin: 0; padding-left: 18px; }
+.help-sec li { margin: 3px 0; color: var(--slate); }
+.help-sec b { color: var(--charcoal); font-weight: 600; }
+.help-kbd {
+  display: inline-block;
+  min-width: 16px; text-align: center;
+  padding: 1px 6px;
+  font-family: var(--font-ui); font-size: 11px; font-weight: 600;
+  color: var(--ink);
+  background: var(--canvas);
+  border: 1px solid var(--hairline-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  line-height: 1.5;
+}
+.help-keys { width: 100%; border-collapse: collapse; }
+.help-keys td { padding: 5px 4px; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+.help-keys td:first-child { white-space: nowrap; width: 44%; }
+.help-keys td:last-child { color: var(--slate); }
+
 /* ── Click-to-style chart texts ── */
 #hydronet-chart text[data-text-role] { cursor: pointer; }
 #hydronet-chart text[data-text-role]:hover { opacity: 0.55; }

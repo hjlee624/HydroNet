@@ -3,6 +3,7 @@
 
 import { useEffect, useState } from 'react'
 import { useEditor } from '../state/store'
+import { HelpDialog } from './HelpDialog'
 
 interface TopBarProps {
   onExport: () => void
@@ -20,6 +21,8 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const canRedo = useEditor((s) => s.future.length > 0)
 
   const a = useEditor.getState
+
+  const [helpOpen, setHelpOpen] = useState(false)
 
   // Local text state for the zoom field so multi-digit entry isn't clamped on
   // every keystroke; commit (apply) only on blur / Enter.
@@ -100,11 +103,14 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </div>
 
         <span className={`save-state ${dirty ? 'dirty' : ''}`}>{dirty ? '● 저장 중…' : '저장됨'}</span>
+        <button className="btn btn--icon btn--sm" title="도움말 · 사용 방법" aria-label="도움말" onClick={() => setHelpOpen(true)}>?</button>
         <button className="btn btn--sm" title="출력 전 전체 화면 미리보기 (Esc 종료)" onClick={onToggleFullscreen}>
           {fullscreen ? '⤢ 종료' : '⤢ 전체 화면'}
         </button>
         <button className="btn btn--primary" onClick={onExport}>도면 출력</button>
       </div>
+
+      {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
     </header>
   )
 }

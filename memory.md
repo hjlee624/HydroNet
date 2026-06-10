@@ -70,6 +70,7 @@ start-lan.bat            LAN 단일포트 서버 기동(기본 PORT=4020, 외부
 - 패널 좌우 **드래그 리사이즈**(폭 자동저장), **배율 슬라이더+숫자입력**(차트 전체 균일 줌, CSS transform), **전체화면 미리보기**(Esc).
 - **Photoshop식 캔버스 도구**(store.navMode: edit|zoom|pan): `Z`=줌(휠로 커서 기준 확대/축소 — 휠 후 useLayoutEffect[zoom]에서 scrollLeft/Top 보정), `H`=핸드(드래그 스크롤), `V`/`Esc`=편집 복귀. App 전역 keydown이 navMode 설정(입력중·ctrl/meta/alt 제외). 편집 핸들러는 navMode!=='edit'면 stopPropagation 전에 early-return → pan 핸들러로 버블. 휠은 .canvas-wrap 비-passive 네이티브 리스너로 preventDefault. 상단 배지+커서(zoom-in/grab)로 모드 표시(ChartCanvas는 .canvas-host로 감쌈).
 - undo/redo, 자동저장(서버/로컬), 단축키(Ctrl+S/Z/Y, Delete, Esc).
+- **도움말 모달**(TopBar `?` → HelpDialog, Modal 재사용): 사용법·마우스 조작·캔버스 도구(Z/H/V/Esc)·단축키 안내. 실기능과 일치하게 유지할 것.
 - LAN 접속(서버 0.0.0.0, 빌드본+API 단일포트), `error.log`(ABS_RULE).
 
 ## 5. 실행 / 검증 명령 (dev 폴더에서)
