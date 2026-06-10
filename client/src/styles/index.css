@@ -139,6 +139,25 @@ input, select, textarea {
 .save-state { font-size: 12px; color: var(--steel); min-width: 64px; }
 .save-state.dirty { color: var(--primary); }
 
+/* ── Zoom control (slider + number) ── */
+.zoomctl { display: flex; align-items: center; gap: 6px; }
+.zoom-slider {
+  width: 92px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+.zoom-num {
+  width: 50px;
+  height: 28px;
+  text-align: right;
+  padding: 0 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 6px;
+  background: var(--canvas);
+}
+.zoom-num:focus { outline: none; border: 2px solid var(--primary); padding: 0 5px; }
+.zoom-pct { font-size: 12px; color: var(--steel); }
+
 /* ── Buttons ── */
 .btn {
   display: inline-flex;

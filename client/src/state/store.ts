@@ -44,6 +44,7 @@ export interface EditorState {
   addTask: (categoryId: ID, partial?: Partial<Task>) => ID
   updateTask: (id: ID, patch: Partial<Task>) => void
   setTaskStartLive: (id: ID, startDay: number) => void
+  setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
   toggleMilestone: (id: ID) => void
 
@@ -216,6 +217,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       commit((p) => {
         const t = p.tasks.find((x) => x.id === id)
         if (t) t.start = Math.max(0, Math.round(startDay))
+      }, { history: false, cascade: true })
+    },
+    setTaskSpanLive: (id, startDay, duration) => {
+      // Live edge-resize of a bar (start + duration). Gesture already snapshotted.
+      commit((p) => {
+        const t = p.tasks.find((x) => x.id === id)
+        if (t && !t.isMilestone) {
+          t.start = Math.max(0, Math.round(startDay))
+          t.duration = Math.max(1, Math.round(duration))
+        }
       }, { history: false, cascade: true })
     },
     deleteTask: (id) => {

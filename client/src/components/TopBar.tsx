@@ -60,10 +60,30 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </label>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
 
-        <div className="topbar__actions" title="확대/축소">
-          <button className="btn btn--icon btn--sm" onClick={() => a().setZoom(zoom - 0.2)}>−</button>
-          <span style={{ fontSize: 12, color: 'var(--steel)', width: 40, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
-          <button className="btn btn--icon btn--sm" onClick={() => a().setZoom(zoom + 0.2)}>＋</button>
+        <div className="zoomctl" title="배율 (전체 확대/축소)">
+          <button className="btn btn--icon btn--sm" title="축소" onClick={() => a().setZoom(zoom - 0.1)}>−</button>
+          <input
+            className="zoom-slider"
+            type="range"
+            min={25}
+            max={400}
+            step={5}
+            value={Math.round(zoom * 100)}
+            onChange={(e) => a().setZoom(Number(e.target.value) / 100)}
+            aria-label="배율 슬라이더"
+          />
+          <input
+            className="zoom-num"
+            type="number"
+            min={10}
+            max={600}
+            step={5}
+            value={Math.round(zoom * 100)}
+            onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) a().setZoom(v / 100) }}
+            aria-label="배율 입력"
+          />
+          <span className="zoom-pct">%</span>
+          <button className="btn btn--icon btn--sm" title="확대" onClick={() => a().setZoom(zoom + 0.1)}>＋</button>
         </div>
 
         <span className={`save-state ${dirty ? 'dirty' : ''}`}>{dirty ? '● 저장 중…' : '저장됨'}</span>

@@ -23,6 +23,7 @@ interface Props {
   linkingGhost: LinkingGhost | null
   onTaskPointerDown: (e: RPointerEvent, id: string) => void
   onAnchorPointerDown: (e: RPointerEvent, id: string) => void
+  onBarResizePointerDown: (e: RPointerEvent, id: string, edge: 'start' | 'end') => void
   onTaskClick: (e: RMouseEvent, id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
   onBackgroundClick: () => void
@@ -35,7 +36,7 @@ function diamond(cx: number, cy: number, r: number): string {
 function ChartSvgBase({
   model, routed, project, selectedTaskId, selectedLinkId,
   showCriticalPath, showGrid, linkingGhost,
-  onTaskPointerDown, onAnchorPointerDown, onTaskClick, onLinkClick, onBackgroundClick,
+  onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onTaskClick, onLinkClick, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
@@ -210,14 +211,28 @@ function ChartSvgBase({
               <text x={lt.x} y={lt.y + lt.h + 10.5} fontSize={9} fill={colors.steel}>
                 {t.duration}일
               </text>
-              {/* link anchor on the finish edge */}
+              {/* resize grips (drag to change duration) + link anchor (drag to connect) */}
               {selected && (
-                <circle
-                  className="chart-anchor"
-                  cx={lt.endX} cy={lt.cy} r={5.5}
-                  fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
-                  onPointerDown={(e) => { e.stopPropagation(); onAnchorPointerDown(e, t.id) }}
-                />
+                <>
+                  <rect
+                    x={lt.startX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
+                    fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
+                    style={{ cursor: 'ew-resize' }}
+                    onPointerDown={(e) => { e.stopPropagation(); onBarResizePointerDown(e, t.id, 'start') }}
+                  />
+                  <rect
+                    x={lt.endX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
+                    fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
+                    style={{ cursor: 'ew-resize' }}
+                    onPointerDown={(e) => { e.stopPropagation(); onBarResizePointerDown(e, t.id, 'end') }}
+                  />
+                  <circle
+                    className="chart-anchor"
+                    cx={lt.endX + 11} cy={lt.cy} r={5.5}
+                    fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
+                    onPointerDown={(e) => { e.stopPropagation(); onAnchorPointerDown(e, t.id) }}
+                  />
+                </>
               )}
             </g>
           )

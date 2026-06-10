@@ -11,6 +11,7 @@ import { ChartSvg, type LinkingGhost } from './ChartSvg'
 
 type Drag =
   | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
+  | { kind: 'resize'; taskId: string; edge: 'start' | 'end'; startDay: number; endDay: number; started: boolean }
   | { kind: 'link'; fromId: string }
   | null
 
@@ -54,6 +55,21 @@ export function ChartCanvas() {
     window.addEventListener('pointerup', onWindowUp)
   }
 
+  function onBarResizePointerDown(e: RPointerEvent, id: string, edge: 'start' | 'end') {
+    e.stopPropagation()
+    e.preventDefault()
+    const store = useEditor.getState()
+    const task = project.tasks.find((t) => t.id === id)
+    if (!task) return
+    store.selectTask(id)
+    dragRef.current = {
+      kind: 'resize', taskId: id, edge,
+      startDay: task.start, endDay: task.start + task.duration, started: false,
+    }
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
   function onAnchorPointerDown(e: RPointerEvent, id: string) {
     e.stopPropagation()
     e.preventDefault()
@@ -79,6 +95,15 @@ export function ChartCanvas() {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
+    } else if (drag.kind === 'resize') {
+      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      const day = model.dayOf(x)
+      if (drag.edge === 'end') {
+        useEditor.getState().setTaskSpanLive(drag.taskId, drag.startDay, day - drag.startDay)
+      } else {
+        const s = Math.max(0, Math.min(drag.endDay - 1, Math.round(day)))
+        useEditor.getState().setTaskSpanLive(drag.taskId, s, drag.endDay - s)
+      }
     } else {
       setGhostFrom(drag.fromId, x, y)
     }
@@ -121,6 +146,7 @@ export function ChartCanvas() {
           linkingGhost={linking ? ghost : null}
           onTaskPointerDown={onTaskPointerDown}
           onAnchorPointerDown={onAnchorPointerDown}
+          onBarResizePointerDown={onBarResizePointerDown}
           onTaskClick={(_, id) => useEditor.getState().selectTask(id)}
           onLinkClick={(_, id) => useEditor.getState().selectLink(id)}
           onBackgroundClick={() => useEditor.getState().selectTask(null)}
