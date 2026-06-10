@@ -40,9 +40,10 @@ function serializeSvg(svg: SVGSVGElement, content: ContentSize, opts: { backgrou
     rect.setAttribute('fill', opts.background)
     clone.insertBefore(rect, clone.firstChild)
   }
-  // Inline a font hint so rasterisers pick a Korean-capable face.
+  // Default exported text to KoPub Medium; bold elements (title / 공종) carry an
+  // inline font-family that overrides this rule.
   const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
-  style.textContent = `text{font-family:'Inter','Malgun Gothic','Pretendard',sans-serif;}`
+  style.textContent = `text{font-family:'KoPubWorld Dotum_Pro Medium','KoPubWorldDotum_Pro Medium','Malgun Gothic',sans-serif;}`
   clone.insertBefore(style, clone.firstChild)
 
   return new XMLSerializer().serializeToString(clone)

@@ -1,6 +1,39 @@
 /* HydroNet global styles — Mistral editorial system (cream/orange/sunset).
-   System fonts only, so the build stays light and renders offline in the
-   future Electron .exe. */
+   Typeface: KoPubWorld Dotum_Pro (Bold for titles & 공종, Medium for the rest).
+   Prefers the installed system font (local) so exports also use it; falls back
+   to bundled OTF in /fonts, then Malgun Gothic. See client/public/fonts/README.txt */
+
+/* Unified UI family: weight 400–500 → Medium, 600–900 → Bold (KoPub has no
+   weight axis, so each weight is mapped to a separate face). */
+@font-face {
+  font-family: 'KoPubWorld Dotum';
+  font-style: normal;
+  font-weight: 100 550;
+  src: local('KoPubWorld Dotum_Pro Medium'), local('KoPubWorldDotum_Pro Medium'),
+       url('/fonts/KoPubWorld Dotum_Pro Medium.otf') format('opentype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'KoPubWorld Dotum';
+  font-style: normal;
+  font-weight: 551 900;
+  src: local('KoPubWorld Dotum_Pro Bold'), local('KoPubWorldDotum_Pro Bold'),
+       url('/fonts/KoPubWorld Dotum_Pro Bold.otf') format('opentype');
+  font-display: swap;
+}
+/* Explicit per-weight families used by the chart SVG (export-safe). */
+@font-face {
+  font-family: 'KoPubWorld Dotum_Pro Medium';
+  src: local('KoPubWorld Dotum_Pro Medium'), local('KoPubWorldDotum_Pro Medium'),
+       url('/fonts/KoPubWorld Dotum_Pro Medium.otf') format('opentype');
+  font-display: swap;
+}
+@font-face {
+  font-family: 'KoPubWorld Dotum_Pro Bold';
+  src: local('KoPubWorld Dotum_Pro Bold'), local('KoPubWorldDotum_Pro Bold'),
+       url('/fonts/KoPubWorld Dotum_Pro Bold.otf') format('opentype');
+  font-display: swap;
+}
 
 :root {
   --primary: #fa5111;
@@ -30,8 +63,10 @@
   --radius-md: 8px;
   --radius-lg: 12px;
 
-  --font-ui: 'Inter', 'Pretendard', -apple-system, system-ui, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif;
-  --font-display: 'Nanum Myeongjo', Georgia, 'Times New Roman', serif;
+  --font-ui: 'KoPubWorld Dotum', 'Malgun Gothic', 'Apple SD Gothic Neo', -apple-system, system-ui, sans-serif;
+  --font-bold: 'KoPubWorld Dotum_Pro Bold', 'KoPubWorld Dotum', 'Malgun Gothic', sans-serif;
+  --font-medium: 'KoPubWorld Dotum_Pro Medium', 'KoPubWorld Dotum', 'Malgun Gothic', sans-serif;
+  --font-display: var(--font-bold);
   --shadow-card: rgba(0, 0, 0, 0.04) 0 4px 12px 0;
   --shadow-modal: rgba(0, 0, 0, 0.12) 0 16px 48px -8px;
   --sunset-stripe: linear-gradient(90deg, var(--primary) 0%, var(--sunshine-700) 28%, var(--sunshine-500) 52%, var(--yellow) 76%, var(--cream) 100%);
@@ -49,6 +84,7 @@ body {
   color: var(--ink);
   background: var(--surface);
   font-size: 14px;
+  font-weight: 500; /* default → KoPubWorld Dotum Medium (600+ → Bold) */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
 }

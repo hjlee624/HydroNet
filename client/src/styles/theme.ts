@@ -48,11 +48,19 @@ export const colors = {
   barBorder: '#5A6E82',
 } as const
 
+// KoPubWorld Dotum_Pro — explicit per-weight families so the chart SVG renders
+// (and exports) with the correct face. `bold` for titles & 공종, `medium` for
+// everything else. Both fall back to Malgun Gothic when the font is absent.
+const KOPUB_MEDIUM = `'KoPubWorld Dotum_Pro Medium', 'KoPubWorldDotum_Pro Medium', 'Malgun Gothic', sans-serif`
+const KOPUB_BOLD = `'KoPubWorld Dotum_Pro Bold', 'KoPubWorldDotum_Pro Bold', 'Malgun Gothic', sans-serif`
+
 export const fonts = {
-  display: `'PP Editorial Old', 'Nanum Myeongjo', Georgia, 'Times New Roman', serif`,
-  ui: `'Inter', 'Pretendard', -apple-system, system-ui, 'Malgun Gothic', sans-serif`,
+  bold: KOPUB_BOLD,
+  medium: KOPUB_MEDIUM,
+  display: KOPUB_BOLD,
+  ui: `'KoPubWorld Dotum', 'Malgun Gothic', -apple-system, system-ui, sans-serif`,
   mono: `'JetBrains Mono', 'SF Mono', Menlo, Consolas, monospace`,
-  chart: `'Inter', 'Pretendard', 'Malgun Gothic', sans-serif`,
+  chart: KOPUB_MEDIUM,
 }
 
 export const radius = {

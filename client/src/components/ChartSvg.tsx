@@ -49,7 +49,7 @@ function ChartSvgBase({
       width={contentWidth}
       height={contentHeight}
       viewBox={`0 0 ${contentWidth} ${contentHeight}`}
-      style={{ fontFamily: fonts.chart }}
+      style={{ fontFamily: fonts.medium, fontWeight: 500 }}
       onClick={onBackgroundClick}
     >
       <defs>
@@ -69,7 +69,7 @@ function ChartSvgBase({
         <g key={`rainy-${i}`}>
           <rect x={r.x} y={r.y} width={r.width} height={r.height} fill={colors.rainyBand} />
           <rect x={r.x} y={chartTop} width={r.width} height={16} fill={colors.rainyBandStroke} />
-          <text x={r.x + r.width / 2} y={chartTop + 11.5} textAnchor="middle" fontSize={10.5} fill="#46566e" fontWeight={600}>
+          <text x={r.x + r.width / 2} y={chartTop + 11.5} textAnchor="middle" fontSize={10.5} fill="#46566e" fontWeight={500}>
             {r.label}
           </text>
         </g>
@@ -98,7 +98,7 @@ function ChartSvgBase({
         <g>
           <rect x={0} y={0} width={contentWidth} height={titleHeight} fill={colors.cream} />
           <line x1={0} y1={titleHeight} x2={contentWidth} y2={titleHeight} stroke={colors.beigeDeep} strokeWidth={1} />
-          <text x={contentWidth / 2} y={titleHeight * 0.66} textAnchor="middle" fontSize={20} fontWeight={800} fill={colors.ink} style={{ fontFamily: fonts.display }}>
+          <text x={contentWidth / 2} y={titleHeight * 0.66} textAnchor="middle" fontSize={20} fontWeight={700} fill={colors.ink} style={{ fontFamily: fonts.bold }}>
             {title}
           </text>
         </g>
@@ -111,7 +111,7 @@ function ChartSvgBase({
         {model.years.map((y, i) => (
           <g key={`yr-${i}`}>
             {i > 0 && <line x1={y.x} y1={0} x2={y.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={1} />}
-            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" fontSize={13} fontWeight={700} fill={colors.ink}>
+            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" fontSize={13} fontWeight={500} fill={colors.ink}>
               {y.year}
             </text>
           </g>
@@ -132,14 +132,14 @@ function ChartSvgBase({
         <rect x={0} y={titleHeight} width={labelWidth} height={contentHeight - titleHeight} fill={colors.creamSoft} />
         <line x1={labelWidth} y1={titleHeight} x2={labelWidth} y2={contentHeight} stroke={colors.hairlineStrong} strokeWidth={1} />
         <rect x={0} y={headerTop} width={labelWidth} height={headerHeight} fill={colors.cream} />
-        <text x={12} y={headerTop + headerHeight * 0.4} fontSize={11} fontWeight={700} fill={colors.charcoal}>공종 / 마일스톤</text>
+        <text x={12} y={headerTop + headerHeight * 0.4} fontSize={11} fontWeight={700} fill={colors.charcoal} style={{ fontFamily: fonts.bold }}>공종 / 마일스톤</text>
         <text x={12} y={headerTop + headerHeight * 0.78} fontSize={9.5} fill={colors.steel}>
           착수 {toISO(dayToDate(project.startDate, 0)).slice(0, 7)}
         </text>
         {model.categories.map((c) => (
           <g key={`lbl-${c.id}`}>
             <rect x={6} y={c.y + c.height / 2 - 7} width={4} height={14} rx={2} fill={c.color} />
-            <text x={18} y={c.y + c.height / 2 + 4} fontSize={12} fontWeight={600} fill={colors.charcoal}>
+            <text x={18} y={c.y + c.height / 2 + 4} fontSize={12} fontWeight={700} fill={colors.charcoal} style={{ fontFamily: fonts.bold }}>
               {c.name}
             </text>
           </g>
@@ -177,7 +177,7 @@ function ChartSvgBase({
           if (lt.isMilestone) {
             return (
               <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }} style={{ cursor: 'pointer' }}>
-                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" fontSize={11} fontWeight={700} fill={colors.ink}>
+                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" fontSize={11} fontWeight={500} fill={colors.ink}>
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
                 <polygon
