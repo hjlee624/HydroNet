@@ -69,6 +69,7 @@ export interface RainyRect {
 
 export interface LogoRect {
   src: string
+  index: number
   x: number
   y: number
   w: number
@@ -107,8 +108,6 @@ export interface LayoutModel {
 
 const TITLE_BAND = 44
 const FOOTER_BAND = 92
-const LOGO_W = 168
-const LOGO_H = 60
 
 const LABEL_FONT_PX = 10.5
 
@@ -158,8 +157,9 @@ export function computeLayout(project: Project): LayoutModel {
 
   const title = view.showTitle !== false && project.name ? project.name : ''
   const titleHeight = title ? TITLE_BAND : 0
-  const logoSrcs = project.branding?.logos ?? []
-  const footerHeight = logoSrcs.length ? FOOTER_BAND : 0
+  const logoItems = project.branding?.logos ?? []
+  const maxLogoH = logoItems.reduce((m, l) => Math.max(m, l.h), 0)
+  const footerHeight = logoItems.length ? Math.max(FOOTER_BAND, maxLogoH + 28) : 0
 
   const categories = project.categories
     .filter((c) => project.commissioningEnabled || !c.isCommissioning)
@@ -233,14 +233,15 @@ export function computeLayout(project: Project): LayoutModel {
   const contentHeight = cursorY + footerHeight
   const contentWidth = xOf(domainEndDay)
 
-  // ── CI logos in the bottom-right footer band (rightmost = index 0) ──
-  const logos: LogoRect[] = logoSrcs.map((src, i) => ({
-    src,
-    x: contentWidth - 18 - LOGO_W - i * (LOGO_W + 14),
-    y: footerTop + (footerHeight - LOGO_H) / 2,
-    w: LOGO_W,
-    h: LOGO_H,
-  }))
+  // ── CI logos in the bottom-right footer band (rightmost = index 0),
+  //    stacked leftward by their individual widths ──
+  let rightX = contentWidth - 18
+  const logos: LogoRect[] = logoItems.map((lg, i) => {
+    const x = rightX - lg.w
+    const rect: LogoRect = { src: lg.src, index: i, x, y: footerTop + (footerHeight - lg.h) / 2, w: lg.w, h: lg.h }
+    rightX = x - 14
+    return rect
+  })
 
   // ── Timeline header: months + years ──
   const months: MonthTick[] = []

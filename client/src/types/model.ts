@@ -99,9 +99,16 @@ export interface ViewSettings {
   showTitle: boolean
 }
 
-/** Drawing branding — CI/logo images embedded as data URLs (bottom-right). */
+/** A CI/logo image (data URL) with its on-drawing box size in px. */
+export interface LogoItem {
+  src: string
+  w: number
+  h: number
+}
+
+/** Drawing branding — CI/logo images placed bottom-right (resizable, orderable). */
 export interface Branding {
-  logos: string[]
+  logos: LogoItem[]
 }
 
 export interface ProjectMeta {

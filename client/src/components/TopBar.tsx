@@ -1,6 +1,7 @@
 // Top application bar — brand, project name, history, schedule actions, zoom,
 // commissioning toggle and the export entry point.
 
+import { useEffect, useState } from 'react'
 import { useEditor } from '../state/store'
 
 interface TopBarProps {
@@ -19,6 +20,16 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const canRedo = useEditor((s) => s.future.length > 0)
 
   const a = useEditor.getState
+
+  // Local text state for the zoom field so multi-digit entry isn't clamped on
+  // every keystroke; commit (apply) only on blur / Enter.
+  const [zoomText, setZoomText] = useState(() => String(Math.round(zoom * 100)))
+  useEffect(() => { setZoomText(String(Math.round(zoom * 100))) }, [zoom])
+  function commitZoom() {
+    const v = Number(zoomText)
+    if (Number.isFinite(v) && v > 0) a().setZoom(v / 100)
+    else setZoomText(String(Math.round(zoom * 100)))
+  }
 
   return (
     <header className="topbar">
@@ -78,8 +89,10 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
             min={10}
             max={600}
             step={5}
-            value={Math.round(zoom * 100)}
-            onChange={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && v > 0) a().setZoom(v / 100) }}
+            value={zoomText}
+            onChange={(e) => setZoomText(e.target.value)}
+            onBlur={commitZoom}
+            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
             aria-label="배율 입력"
           />
           <span className="zoom-pct">%</span>

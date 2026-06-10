@@ -8,7 +8,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type {
-  Category, ID, Link, LinkType, PaperSettings, Project, Task, ViewSettings,
+  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, Task, ViewSettings,
 } from '../types/model'
 import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
 import { createSampleProject } from '../data/sampleProject'
@@ -70,7 +70,9 @@ export interface EditorState {
   setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate'>>) => void
   toggleCommissioning: () => void
   toggleTitle: () => void
-  addLogo: (dataUrl: string) => void
+  addLogo: (src: string, w?: number, h?: number) => void
+  setLogoSize: (index: number, w: number, h: number) => void
+  moveLogo: (index: number, dir: -1 | 1) => void
   removeLogo: (index: number) => void
   setRainySeason: (startMonth: number, endMonth: number, label?: string) => void
   clearRainySeasons: () => void
@@ -98,11 +100,26 @@ export interface EditorState {
 const clone = <T>(o: T): T =>
   typeof structuredClone === 'function' ? structuredClone(o) : JSON.parse(JSON.stringify(o))
 
+/** Migrate logos that may be plain strings (older schema) into LogoItem[]. */
+function normalizeLogos(logos: unknown): LogoItem[] {
+  if (!Array.isArray(logos)) return []
+  return logos
+    .map((l): LogoItem | null => {
+      if (typeof l === 'string') return { src: l, w: 168, h: 60 }
+      if (l && typeof l === 'object' && typeof (l as LogoItem).src === 'string') {
+        const o = l as Partial<LogoItem>
+        return { src: o.src as string, w: Number(o.w) || 168, h: Number(o.h) || 60 }
+      }
+      return null
+    })
+    .filter((l): l is LogoItem => l !== null)
+}
+
 /** Backfill fields that may be missing on older saved projects. */
 function normalize(project: Project): Project {
   return {
     ...project,
-    branding: project.branding ?? { logos: [] },
+    branding: { logos: normalizeLogos(project.branding?.logos) },
     rainySeasons: project.rainySeasons ?? [],
     view: { ...project.view, showTitle: project.view.showTitle !== false },
   }
@@ -314,9 +331,20 @@ export const useEditor = create<EditorState>()((set, get) => {
     setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }),
     toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),
     toggleTitle: () => commit((p) => { p.view.showTitle = p.view.showTitle === false }, { history: false }),
-    addLogo: (dataUrl) => commit((p) => {
+    addLogo: (src, w = 168, h = 60) => commit((p) => {
       if (!p.branding) p.branding = { logos: [] }
-      p.branding.logos.push(dataUrl)
+      p.branding.logos.push({ src, w, h })
+    }),
+    setLogoSize: (index, w, h) => commit((p) => {
+      const lg = p.branding?.logos?.[index]
+      if (lg) { lg.w = Math.max(32, Math.round(w)); lg.h = Math.max(16, Math.round(h)) }
+    }, { history: false }),
+    moveLogo: (index, dir) => commit((p) => {
+      const arr = p.branding?.logos
+      if (!arr) return
+      const j = index + dir
+      if (j < 0 || j >= arr.length) return
+      const tmp = arr[index]; arr[index] = arr[j]; arr[j] = tmp
     }),
     removeLogo: (index) => commit((p) => {
       if (p.branding?.logos) p.branding.logos.splice(index, 1)

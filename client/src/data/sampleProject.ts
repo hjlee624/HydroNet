@@ -171,7 +171,7 @@ export function createSampleProject(): Project {
     tasks: consistentTasks,
     links,
     rainySeasons,
-    branding: { logos: [DEFAULT_CI] },
+    branding: { logos: [{ src: DEFAULT_CI, w: 168, h: 60 }] },
     commissioningEnabled: false,
     meta: { createdAt: now, updatedAt: now, schemaVersion: 1 },
   }

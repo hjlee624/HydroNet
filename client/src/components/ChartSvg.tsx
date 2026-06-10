@@ -24,6 +24,7 @@ interface Props {
   onTaskPointerDown: (e: RPointerEvent, id: string) => void
   onAnchorPointerDown: (e: RPointerEvent, id: string) => void
   onBarResizePointerDown: (e: RPointerEvent, id: string, edge: 'start' | 'end') => void
+  onLogoResizePointerDown: (e: RPointerEvent, index: number) => void
   onTaskClick: (e: RMouseEvent, id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
   onBackgroundClick: () => void
@@ -36,7 +37,7 @@ function diamond(cx: number, cy: number, r: number): string {
 function ChartSvgBase({
   model, routed, project, selectedTaskId, selectedLinkId,
   showCriticalPath, showGrid, linkingGhost,
-  onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onTaskClick, onLinkClick, onBackgroundClick,
+  onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown, onTaskClick, onLinkClick, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
@@ -215,18 +216,21 @@ function ChartSvgBase({
               {selected && (
                 <>
                   <rect
+                    data-export-hide="1"
                     x={lt.startX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
                     fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
                     style={{ cursor: 'ew-resize' }}
                     onPointerDown={(e) => { e.stopPropagation(); onBarResizePointerDown(e, t.id, 'start') }}
                   />
                   <rect
+                    data-export-hide="1"
                     x={lt.endX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
                     fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
                     style={{ cursor: 'ew-resize' }}
                     onPointerDown={(e) => { e.stopPropagation(); onBarResizePointerDown(e, t.id, 'end') }}
                   />
                   <circle
+                    data-export-hide="1"
                     className="chart-anchor"
                     cx={lt.endX + 11} cy={lt.cy} r={5.5}
                     fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
@@ -239,20 +243,34 @@ function ChartSvgBase({
         })}
       </g>
 
-      {/* footer: CI / logos (bottom-right) */}
+      {/* footer: CI / logos (bottom-right). Dashed bounds + corner grip are
+          flagged data-export-hide so they never appear in exported output. */}
       {model.logos.length > 0 && (
         <g>
           <line x1={0} y1={chartBottom} x2={contentWidth} y2={chartBottom} stroke={colors.hairlineStrong} strokeWidth={1} />
-          {model.logos.map((lg, i) => (
-            <image
-              key={`logo-${i}`}
-              href={lg.src}
-              x={lg.x}
-              y={lg.y}
-              width={lg.w}
-              height={lg.h}
-              preserveAspectRatio="xMidYMid meet"
-            />
+          {model.logos.map((lg) => (
+            <g key={`logo-${lg.index}`}>
+              <image
+                href={lg.src}
+                x={lg.x}
+                y={lg.y}
+                width={lg.w}
+                height={lg.h}
+                preserveAspectRatio="xMidYMid meet"
+              />
+              <rect
+                data-export-hide="1"
+                x={lg.x} y={lg.y} width={lg.w} height={lg.h}
+                fill="none" stroke={colors.hairline} strokeWidth={1} strokeDasharray="3 3"
+              />
+              <rect
+                data-export-hide="1"
+                x={lg.x - 5} y={lg.y + lg.h - 5} width={11} height={11} rx={2}
+                fill={colors.primary} stroke={colors.canvas} strokeWidth={1}
+                style={{ cursor: 'nesw-resize' }}
+                onPointerDown={(e) => { e.stopPropagation(); onLogoResizePointerDown(e, lg.index) }}
+              />
+            </g>
           ))}
         </g>
       )}

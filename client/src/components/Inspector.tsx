@@ -145,7 +145,19 @@ function ProjectInspector() {
       return
     }
     const reader = new FileReader()
-    reader.onload = () => { if (typeof reader.result === 'string') a().addLogo(reader.result) }
+    reader.onload = () => {
+      const src = reader.result
+      if (typeof src !== 'string') return
+      // Size the default box to the image's own aspect ratio.
+      const probe = new Image()
+      probe.onload = () => {
+        const w = 168
+        const ratio = probe.naturalWidth ? probe.naturalHeight / probe.naturalWidth : 0.36
+        a().addLogo(src, w, Math.max(24, Math.round(w * ratio)))
+      }
+      probe.onerror = () => a().addLogo(src)
+      probe.src = src
+    }
     reader.readAsDataURL(file)
   }
 
@@ -206,15 +218,20 @@ function ProjectInspector() {
         상단 중앙에 도면 제목(볼드) 표시
       </label>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10 }}>
-        {logos.map((src, i) => (
+        {logos.map((logo, i) => (
           <div key={i} style={{ position: 'relative', border: '1px solid var(--hairline-strong)', borderRadius: 8, padding: 5, background: '#fff' }}>
-            <img src={src} alt={`CI ${i + 1}`} style={{ height: 34, maxWidth: 116, objectFit: 'contain', display: 'block' }} />
+            <img src={logo.src} alt={`CI ${i + 1}`} style={{ height: 34, maxWidth: 116, objectFit: 'contain', display: 'block' }} />
             <button
               className="icon-btn"
               title="삭제"
               style={{ position: 'absolute', top: -9, right: -9, width: 20, height: 20, background: 'var(--canvas)', border: '1px solid var(--hairline-strong)', borderRadius: 9999 }}
               onClick={() => a().removeLogo(i)}
             >×</button>
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 2, marginTop: 4 }}>
+              <button className="icon-btn" title="오른쪽으로 이동" disabled={i === 0} onClick={() => a().moveLogo(i, -1)}>◀</button>
+              <span style={{ fontSize: 10, color: 'var(--stone)', minWidth: 30, textAlign: 'center', lineHeight: '24px' }}>{logo.w}×{logo.h}</span>
+              <button className="icon-btn" title="왼쪽으로 이동" disabled={i === logos.length - 1} onClick={() => a().moveLogo(i, 1)}>▶</button>
+            </div>
           </div>
         ))}
       </div>
@@ -222,7 +239,7 @@ function ProjectInspector() {
         ＋ CI 이미지 추가
         <input type="file" accept="image/png,image/jpeg,image/gif,image/svg+xml" hidden onChange={onUploadLogo} />
       </label>
-      <p className="note">우측 하단에 표시되며 도면 출력(PNG·JPG·PDF·SVG)에 함께 포함됩니다. PNG·JPG·GIF·SVG 지원 (2MB 이하).</p>
+      <p className="note">우측 하단에 표시되며 도면 출력(PNG·JPG·PDF·SVG)에 함께 포함됩니다. 도면 위에서 좌하단 모서리 핸들을 드래그해 크기를 조절하고, ◀▶ 로 배치 순서를 바꿉니다. (PNG·JPG·GIF·SVG, 2MB 이하)</p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>우기(雨期) 보정</div>

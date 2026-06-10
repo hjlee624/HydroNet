@@ -25,6 +25,8 @@ interface ContentSize {
 /** Clone the live chart SVG as a standalone, namespaced document string. */
 function serializeSvg(svg: SVGSVGElement, content: ContentSize, opts: { background?: string }): string {
   const clone = svg.cloneNode(true) as SVGSVGElement
+  // Drop on-screen-only overlays (selection grips, link anchors, logo handles).
+  clone.querySelectorAll('[data-export-hide]').forEach((el) => el.remove())
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
   clone.setAttribute('width', String(content.width))

@@ -12,6 +12,7 @@ import { ChartSvg, type LinkingGhost } from './ChartSvg'
 type Drag =
   | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
   | { kind: 'resize'; taskId: string; edge: 'start' | 'end'; startDay: number; endDay: number; started: boolean }
+  | { kind: 'logo'; index: number; rightEdge: number; ratio: number; started: boolean }
   | { kind: 'link'; fromId: string }
   | null
 
@@ -70,6 +71,17 @@ export function ChartCanvas() {
     window.addEventListener('pointerup', onWindowUp)
   }
 
+  function onLogoResizePointerDown(e: RPointerEvent, index: number) {
+    e.stopPropagation()
+    e.preventDefault()
+    const lg = model.logos.find((l) => l.index === index)
+    if (!lg) return
+    // Right edge stays anchored; dragging the bottom-left grip scales the box.
+    dragRef.current = { kind: 'logo', index, rightEdge: lg.x + lg.w, ratio: lg.h / lg.w, started: false }
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
   function onAnchorPointerDown(e: RPointerEvent, id: string) {
     e.stopPropagation()
     e.preventDefault()
@@ -104,6 +116,10 @@ export function ChartCanvas() {
         const s = Math.max(0, Math.min(drag.endDay - 1, Math.round(day)))
         useEditor.getState().setTaskSpanLive(drag.taskId, s, drag.endDay - s)
       }
+    } else if (drag.kind === 'logo') {
+      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      const newW = Math.max(40, Math.min(900, drag.rightEdge - x))
+      useEditor.getState().setLogoSize(drag.index, newW, newW * drag.ratio)
     } else {
       setGhostFrom(drag.fromId, x, y)
     }
@@ -147,6 +163,7 @@ export function ChartCanvas() {
           onTaskPointerDown={onTaskPointerDown}
           onAnchorPointerDown={onAnchorPointerDown}
           onBarResizePointerDown={onBarResizePointerDown}
+          onLogoResizePointerDown={onLogoResizePointerDown}
           onTaskClick={(_, id) => useEditor.getState().selectTask(id)}
           onLinkClick={(_, id) => useEditor.getState().selectLink(id)}
           onBackgroundClick={() => useEditor.getState().selectTask(null)}
