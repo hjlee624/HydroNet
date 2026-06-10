@@ -24,6 +24,10 @@ interface LinkingState {
   pointer: { x: number; y: number } | null
 }
 
+/** Canvas interaction tool (Photoshop-style): edit = normal, zoom = wheel-zoom
+ *  at cursor, pan = drag-to-scroll. Esc returns to edit. */
+export type NavMode = 'edit' | 'zoom' | 'pan'
+
 /** One task whose start moved during a 재계산 / 일정 정렬 pass. */
 export interface RecalcChange {
   id: ID
@@ -51,6 +55,8 @@ export interface EditorState {
   selectedTextRole: TextRole | null
   linking: LinkingState | null
   zoom: number
+  /** Active canvas tool (edit / zoom / pan). */
+  navMode: NavMode
   autoCascade: boolean
   dirty: boolean
   warnings: string[]
@@ -122,6 +128,7 @@ export interface EditorState {
   selectCategory: (id: ID | null) => void
   selectTextRole: (role: TextRole | null) => void
   setZoom: (z: number) => void
+  setNavMode: (m: NavMode) => void
 
   // history & persistence
   beginGesture: () => void
@@ -242,6 +249,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedTextRole: null,
     linking: null,
     zoom: 1,
+    navMode: 'edit',
     autoCascade: true,
     dirty: false,
     warnings: [],
@@ -468,6 +476,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectCategory: (id) => set({ selectedCategoryId: id }),
     selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedLinkId: null }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
+    setNavMode: (m) => set({ navMode: m }),
 
     beginGesture: () => set((s) => ({ past: [...s.past, clone(s.project)].slice(-HISTORY_LIMIT), future: [] })),
     undo: () => {

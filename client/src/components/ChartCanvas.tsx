@@ -1,8 +1,12 @@
 // Interaction layer over ChartSvg: drag-to-move bars, drag-to-link from the
 // finish anchor, click selection, and zoom-aware layout. Pointer math maps
 // client coordinates into chart-content space (the paper is rendered 1:1).
+//
+// Photoshop-style navigation tools (store.navMode): in 'zoom' the mouse wheel
+// zooms centred on the cursor; in 'pan' a drag scrolls the view. Editing
+// gestures (move/resize/link/select) only run in 'edit'. Esc returns to edit.
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { PointerEvent as RPointerEvent } from 'react'
 import { useEditor } from '../state/store'
 import { computeLayout } from '../engine/layout'
@@ -19,14 +23,19 @@ type Drag =
 export function ChartCanvas() {
   const project = useEditor((s) => s.project)
   const zoom = useEditor((s) => s.zoom)
+  const navMode = useEditor((s) => s.navMode)
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
   const selectedTextRole = useEditor((s) => s.selectedTextRole)
   const linking = useEditor((s) => s.linking)
 
+  const wrapRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<Drag>(null)
+  const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
+  const zoomAnchor = useRef<{ cX: number; cY: number; clientX: number; clientY: number; z: number } | null>(null)
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
+  const [panning, setPanning] = useState(false)
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
@@ -41,7 +50,68 @@ export function ChartCanvas() {
     return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom }
   }
 
+  // ── Zoom-to-cursor: after a wheel-driven zoom commits, shift scroll so the
+  //    content point that was under the cursor stays under the cursor. ──
+  useLayoutEffect(() => {
+    const a = zoomAnchor.current
+    if (!a) return
+    zoomAnchor.current = null
+    const wrap = wrapRef.current, paper = paperRef.current
+    if (!wrap || !paper) return
+    const r = paper.getBoundingClientRect()
+    wrap.scrollLeft += (r.left + a.cX * a.z) - a.clientX
+    wrap.scrollTop += (r.top + a.cY * a.z) - a.clientY
+  }, [zoom])
+
+  // Native (non-passive) wheel listener so we can preventDefault while zooming.
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+    function onWheel(e: WheelEvent) {
+      const st = useEditor.getState()
+      if (st.navMode !== 'zoom') return // leave normal scroll alone
+      e.preventDefault()
+      const paper = paperRef.current
+      if (!paper) return
+      const z1 = st.zoom
+      const r = paper.getBoundingClientRect()
+      const cX = (e.clientX - r.left) / z1
+      const cY = (e.clientY - r.top) / z1
+      const z2 = Math.min(6, Math.max(0.25, z1 * (e.deltaY < 0 ? 1.12 : 1 / 1.12)))
+      if (Math.abs(z2 - z1) < 1e-4) return
+      zoomAnchor.current = { cX, cY, clientX: e.clientX, clientY: e.clientY, z: z2 }
+      st.setZoom(z2)
+    }
+    wrap.addEventListener('wheel', onWheel, { passive: false })
+    return () => wrap.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // ── Hand-tool panning (navMode === 'pan') ──
+  function onWrapPointerDown(e: RPointerEvent) {
+    if (useEditor.getState().navMode !== 'pan') return
+    const wrap = wrapRef.current
+    if (!wrap) return
+    e.preventDefault()
+    panRef.current = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }
+    setPanning(true)
+    window.addEventListener('pointermove', onPanMove)
+    window.addEventListener('pointerup', onPanUp)
+  }
+  function onPanMove(e: PointerEvent) {
+    const p = panRef.current, wrap = wrapRef.current
+    if (!p || !wrap) return
+    wrap.scrollLeft = p.sl - (e.clientX - p.x)
+    wrap.scrollTop = p.st - (e.clientY - p.y)
+  }
+  function onPanUp() {
+    window.removeEventListener('pointermove', onPanMove)
+    window.removeEventListener('pointerup', onPanUp)
+    panRef.current = null
+    setPanning(false)
+  }
+
   function onTaskPointerDown(e: RPointerEvent, id: string) {
+    if (useEditor.getState().navMode !== 'edit') return // let zoom/pan take over
     e.stopPropagation()
     e.preventDefault()
     const store = useEditor.getState()
@@ -58,6 +128,7 @@ export function ChartCanvas() {
   }
 
   function onBarResizePointerDown(e: RPointerEvent, id: string, edge: 'start' | 'end') {
+    if (useEditor.getState().navMode !== 'edit') return
     e.stopPropagation()
     e.preventDefault()
     const store = useEditor.getState()
@@ -73,6 +144,7 @@ export function ChartCanvas() {
   }
 
   function onLogoResizePointerDown(e: RPointerEvent, index: number) {
+    if (useEditor.getState().navMode !== 'edit') return
     e.stopPropagation()
     e.preventDefault()
     const lg = model.logos.find((l) => l.index === index)
@@ -84,6 +156,7 @@ export function ChartCanvas() {
   }
 
   function onAnchorPointerDown(e: RPointerEvent, id: string) {
+    if (useEditor.getState().navMode !== 'edit') return
     e.stopPropagation()
     e.preventDefault()
     const store = useEditor.getState()
@@ -103,6 +176,16 @@ export function ChartCanvas() {
   function onWindowMove(e: PointerEvent) {
     const drag = dragRef.current
     if (!drag) return
+    // If the user switched to a zoom/pan tool mid-drag (keyboard), abort the
+    // edit gesture cleanly instead of continuing to mutate the model.
+    if (useEditor.getState().navMode !== 'edit') {
+      window.removeEventListener('pointermove', onWindowMove)
+      window.removeEventListener('pointerup', onWindowUp)
+      dragRef.current = null
+      setGhost(null)
+      if (drag.kind === 'link') useEditor.getState().cancelLinking()
+      return
+    }
     const { x, y } = toContent(e.clientX, e.clientY)
     if (drag.kind === 'move') {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
@@ -143,35 +226,50 @@ export function ChartCanvas() {
     }
   }
 
+  const navClass = navMode === 'zoom' ? ' nav-zoom' : navMode === 'pan' ? ` nav-pan${panning ? ' panning' : ''}` : ''
+
   return (
-    <div className="canvas-wrap" onClick={() => useEditor.getState().selectTask(null)}>
-      <div className="paper-scale" style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}>
+    <div className="canvas-host">
+      {navMode !== 'edit' && (
+        <div className="nav-mode-badge" data-export-hide="1">
+          <span>{navMode === 'zoom' ? '🔍 줌 모드 · 스크롤로 확대/축소' : '✋ 이동 모드 · 드래그로 화면 이동'}</span>
+          <span className="nav-mode-esc">Esc 해제</span>
+        </div>
+      )}
       <div
-        ref={paperRef}
-        className="paper"
-        style={{ width: model.contentWidth, height: model.contentHeight, transform: `scale(${zoom})` }}
-        onClick={(e) => e.stopPropagation()}
+        ref={wrapRef}
+        className={`canvas-wrap${navClass}`}
+        onPointerDown={onWrapPointerDown}
+        onClick={() => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(null) }}
       >
-        <ChartSvg
-          model={model}
-          routed={routed}
-          project={project}
-          selectedTaskId={selectedTaskId}
-          selectedLinkId={selectedLinkId}
-          selectedTextRole={selectedTextRole}
-          showCriticalPath={project.view.showCriticalPath}
-          showGrid={project.view.showGrid}
-          linkingGhost={linking ? ghost : null}
-          onTaskPointerDown={onTaskPointerDown}
-          onAnchorPointerDown={onAnchorPointerDown}
-          onBarResizePointerDown={onBarResizePointerDown}
-          onLogoResizePointerDown={onLogoResizePointerDown}
-          onTaskClick={(_, id) => useEditor.getState().selectTask(id)}
-          onLinkClick={(_, id) => useEditor.getState().selectLink(id)}
-          onTextClick={(role) => useEditor.getState().selectTextRole(role)}
-          onBackgroundClick={() => useEditor.getState().selectTask(null)}
-        />
-      </div>
+        <div className="paper-scale" style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}>
+          <div
+            ref={paperRef}
+            className="paper"
+            style={{ width: model.contentWidth, height: model.contentHeight, transform: `scale(${zoom})` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <ChartSvg
+              model={model}
+              routed={routed}
+              project={project}
+              selectedTaskId={selectedTaskId}
+              selectedLinkId={selectedLinkId}
+              selectedTextRole={selectedTextRole}
+              showCriticalPath={project.view.showCriticalPath}
+              showGrid={project.view.showGrid}
+              linkingGhost={linking ? ghost : null}
+              onTaskPointerDown={onTaskPointerDown}
+              onAnchorPointerDown={onAnchorPointerDown}
+              onBarResizePointerDown={onBarResizePointerDown}
+              onLogoResizePointerDown={onLogoResizePointerDown}
+              onTaskClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(id) }}
+              onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
+              onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
+              onBackgroundClick={() => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(null) }}
+            />
+          </div>
+        </div>
       </div>
     </div>
   )

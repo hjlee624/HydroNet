@@ -253,21 +253,21 @@ function ChartSvgBase({
                     x={lt.startX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
                     fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
                     style={{ cursor: 'ew-resize' }}
-                    onPointerDown={(e) => { e.stopPropagation(); onBarResizePointerDown(e, t.id, 'start') }}
+                    onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'start')}
                   />
                   <rect
                     data-export-hide="1"
                     x={lt.endX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
                     fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
                     style={{ cursor: 'ew-resize' }}
-                    onPointerDown={(e) => { e.stopPropagation(); onBarResizePointerDown(e, t.id, 'end') }}
+                    onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'end')}
                   />
                   <circle
                     data-export-hide="1"
                     className="chart-anchor"
                     cx={lt.endX + 11} cy={lt.cy} r={5.5}
                     fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
-                    onPointerDown={(e) => { e.stopPropagation(); onAnchorPointerDown(e, t.id) }}
+                    onPointerDown={(e) => onAnchorPointerDown(e, t.id)}
                   />
                 </>
               )}
@@ -301,7 +301,7 @@ function ChartSvgBase({
                 x={lg.x - 5} y={lg.y + lg.h - 5} width={11} height={11} rx={2}
                 fill={colors.primary} stroke={colors.canvas} strokeWidth={1}
                 style={{ cursor: 'nesw-resize' }}
-                onPointerDown={(e) => { e.stopPropagation(); onLogoResizePointerDown(e, lg.index) }}
+                onPointerDown={(e) => onLogoResizePointerDown(e, lg.index)}
               />
             </g>
           ))}

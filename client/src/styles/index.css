@@ -326,6 +326,12 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .empty-hint { color: var(--stone); font-size: 12px; padding: 24px 12px; text-align: center; line-height: 1.6; }
 
 /* ── Chart canvas ── */
+.canvas-host {
+  flex: 1;
+  min-height: 0;
+  position: relative;
+  display: flex;
+}
 .canvas-wrap {
   flex: 1;
   overflow: auto;
@@ -334,6 +340,33 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
   background:
     radial-gradient(circle at 1px 1px, rgba(0,0,0,0.035) 1px, transparent 0) 0 0 / 22px 22px,
     var(--surface);
+}
+/* Photoshop-style tool cursors (override per-element cursors, incl. SVG texts). */
+.canvas-wrap.nav-zoom, .canvas-wrap.nav-zoom * { cursor: zoom-in !important; }
+.canvas-wrap.nav-pan, .canvas-wrap.nav-pan * { cursor: grab !important; }
+.canvas-wrap.nav-pan.panning, .canvas-wrap.nav-pan.panning * { cursor: grabbing !important; }
+
+/* Active-tool indicator badge (top-centre of the canvas viewport). */
+.nav-mode-badge {
+  position: absolute;
+  top: 14px; left: 50%;
+  transform: translateX(-50%);
+  z-index: 20;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 14px;
+  border-radius: 9999px;
+  background: rgba(27, 23, 18, 0.86);
+  color: var(--cream);
+  font-size: 12.5px; font-weight: 600; letter-spacing: 0.2px;
+  box-shadow: rgba(0, 0, 0, 0.22) 0 6px 18px -4px;
+  pointer-events: none;
+  animation: hn-fade-in 0.16s ease both;
+}
+.nav-mode-esc {
+  font-size: 11px; font-weight: 500;
+  color: var(--sunshine-500);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  border-radius: 6px; padding: 1px 6px;
 }
 .paper-scale {
   position: relative;

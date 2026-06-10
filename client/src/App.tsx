@@ -63,7 +63,14 @@ export default function App() {
         if (s.selectedTaskId) { e.preventDefault(); s.deleteTask(s.selectedTaskId) }
         else if (s.selectedLinkId) { e.preventDefault(); s.deleteLink(s.selectedLinkId) }
       }
-      if (e.key === 'Escape') s.cancelLinking()
+      // Photoshop-style canvas tools: Z = zoom (wheel), H = pan (drag), V/Esc = edit.
+      if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const k = e.key.toLowerCase()
+        if (k === 'z') { e.preventDefault(); s.setNavMode('zoom'); return }
+        if (k === 'h') { e.preventDefault(); s.setNavMode('pan'); return }
+        if (k === 'v') { e.preventDefault(); s.setNavMode('edit'); return }
+      }
+      if (e.key === 'Escape') { s.cancelLinking(); s.setNavMode('edit') }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
