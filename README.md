@@ -43,7 +43,9 @@ HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 �
 
 > **경량 설계** — 모든 무거운 연산은 브라우저에서 수행하고 백엔드는 파일 저장/로깅만 담당합니다. 추후 **Electron** 으로 감싸 인터넷이 없는 오지 현장에서도 단독 실행되는 `.exe` 배포가 가능하도록 설계했습니다.
 
-> **글꼴** — 화면·공정표에 **KoPubWorld Dotum_Pro**(제목·공종은 **Bold**, 나머지는 **Medium**)를 사용합니다. 화면과 **도면 출력** 모두에 적용하려면 시스템에 해당 OTF를 설치하세요(미설치 시 `Malgun Gothic`으로 자동 대체). 번들 사용법은 `client/public/fonts/README.txt` 참고.
+> **글꼴** — 화면·공정표에 **KoPubWorld Dotum_Pro**(제목·공종 **Bold**, 나머지 **Medium**). 폰트는 서버가 아니라 **접속한 각 PC(브라우저)** 에서 렌더링됩니다.
+> - **LAN 화면 적용**: `KoPubWorld Dotum_Pro Medium.otf` · `KoPubWorld Dotum_Pro Bold.otf` 2개를 `client/public/fonts/`에 넣고 **서버만 재시작**하면(서버가 `/fonts`를 직접 서빙 → 재빌드 불필요) 모든 LAN 클라이언트 화면에 자동 적용됩니다.
+> - **도면 출력물**: 래스터화 시 OS에 **설치된** 폰트만 사용되므로, 도면을 출력하는 PC에는 OTF를 **설치**하세요. 미설치·미번들 시 `Malgun Gothic` 대체. 자세한 안내: `client/public/fonts/README.txt`.
 
 ---
 

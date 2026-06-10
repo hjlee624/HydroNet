@@ -18,6 +18,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..', '..')
 const DATA_DIR = path.resolve(__dirname, '..', 'data')
 const CLIENT_DIST = path.resolve(ROOT, 'client', 'dist')
+const PUBLIC_FONTS = path.resolve(ROOT, 'client', 'public', 'fonts')
 const ERROR_LOG = path.resolve(ROOT, 'error.log')
 const PORT = process.env.PORT || 4000
 // Bind all interfaces by default so other PCs on the LAN can connect.
@@ -148,11 +149,20 @@ app.delete('/api/projects/:id', asyncRoute(async (req, res) => {
   }
 }))
 
+// Serve fonts straight from public/fonts so dropping the KoPub OTF files in
+// works WITHOUT a rebuild — every LAN client's browser then downloads them via
+// @font-face. (In the built client these also exist under dist/fonts.)
+if (fssync.existsSync(PUBLIC_FONTS)) app.use('/fonts', express.static(PUBLIC_FONTS))
+
 // Serve the built client when present (production / Electron).
 if (fssync.existsSync(CLIENT_DIST)) {
   app.use(express.static(CLIENT_DIST))
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api/')) return next()
+    // A path with a file extension that wasn't served by static is a genuine
+    // miss (e.g. a missing /fonts/*.otf) — return 404, not the SPA shell, so a
+    // missing font fails cleanly instead of loading HTML as a font.
+    if (/\.[a-zA-Z0-9]+$/.test(req.path)) return res.status(404).end()
     res.sendFile(path.join(CLIENT_DIST, 'index.html'))
   })
 }
