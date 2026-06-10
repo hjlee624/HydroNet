@@ -91,7 +91,7 @@ npm install        # 루트 + client + server 일괄 설치 (postinstall)
 ```bash
 npm run dev
 # 클라이언트: http://localhost:5173
-# 서버 API : http://localhost:4000  (Vite가 /api 프록시)
+# 서버 API : http://localhost:4020  (Vite가 /api 프록시)
 ```
 > 서버를 띄우지 않아도 클라이언트는 동작합니다 — 이 경우 프로젝트는 브라우저 `localStorage`에 저장됩니다.
 
@@ -104,21 +104,21 @@ node server/src/index.js   # dist가 있으면 서버가 정적 호스팅
 ### 🌐 LAN(사내망)에서 다른 PC로 접속
 오지 현장 사무실의 여러 PC가 한 대의 서버에 접속해 공유할 수 있습니다. 서버는
 `0.0.0.0`(모든 네트워크 인터페이스)에 바인딩되어 클라이언트(빌드본) + API를
-한 포트(기본 4000)로 함께 제공합니다.
+한 포트(기본 4020)로 함께 제공합니다. (개발=4020 / 운영=4000 권장)
 
 ```bat
 start-lan.bat          ◀ 더블클릭 (최초 1회 자동 빌드)
 ```
 실행하면 콘솔에 접속 주소가 표시됩니다:
 ```
-Local: http://127.0.0.1:4000/
-LAN:   http://192.168.x.x:4000/      ← 다른 PC는 이 주소로 접속
+Local: http://127.0.0.1:4020/
+LAN:   http://192.168.x.x:4020/      ← 다른 PC는 이 주소로 접속
 ```
-> 다른 PC에서 LAN 주소가 안 열리면 서버 PC의 Windows Defender 방화벽에서 TCP 4000 포트를 허용하세요:
+> 다른 PC에서 LAN 주소가 안 열리면 서버 PC의 Windows Defender 방화벽에서 TCP 4020 포트를 허용하세요:
 > ```
-> netsh advfirewall firewall add rule name="HydroNet 4000" dir=in action=allow protocol=TCP localport=4000
+> netsh advfirewall firewall add rule name="HydroNet 4020" dir=in action=allow protocol=TCP localport=4020
 > ```
-> 포트 변경: `set PORT=8020` 후 실행 (또는 환경변수 `PORT`/`HOST`).
+> 포트 변경: 실행 전 `set PORT=4000` 등으로 지정 가능(미지정 시 4020). 개발은 4020, 운영은 4000을 권장합니다.
 
 ### 검증 스크립트
 ```bash

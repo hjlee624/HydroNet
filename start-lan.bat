@@ -1,8 +1,8 @@
 @echo off
 setlocal
 cd /d "%~dp0"
-set PORT=4000
-set HOST=0.0.0.0
+if not defined PORT set PORT=4020
+if not defined HOST set HOST=0.0.0.0
 
 REM --- First run: install dependencies and build the client (served by the server) ---
 if not exist "client\dist\index.html" (

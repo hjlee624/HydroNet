@@ -20,7 +20,7 @@ const DATA_DIR = path.resolve(__dirname, '..', 'data')
 const CLIENT_DIST = path.resolve(ROOT, 'client', 'dist')
 const PUBLIC_FONTS = path.resolve(ROOT, 'client', 'public', 'fonts')
 const ERROR_LOG = path.resolve(ROOT, 'error.log')
-const PORT = process.env.PORT || 4000
+const PORT = process.env.PORT || 4020
 // Bind all interfaces by default so other PCs on the LAN can connect.
 const HOST = process.env.HOST || '0.0.0.0'
 
