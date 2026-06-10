@@ -176,10 +176,10 @@ export function computeLayout(project: Project): LayoutModel {
   const footerHeight = logoItems.length ? Math.max(FOOTER_BAND, maxLogoH + 28) : 0
 
   const categories = project.categories
-    .filter((c) => project.commissioningEnabled || !c.isCommissioning)
+    .filter((c) => (project.commissioningEnabled || !c.isCommissioning) && !c.hidden)
     .sort((a, b) => a.order - b.order)
   const visibleCatIds = new Set(categories.map((c) => c.id))
-  const tasks = project.tasks.filter((t) => visibleCatIds.has(t.categoryId))
+  const tasks = project.tasks.filter((t) => visibleCatIds.has(t.categoryId) && !t.hidden)
 
   // ── Time domain: pad to whole months for a tidy axis ──
   const minTaskDay = tasks.reduce((m, t) => Math.min(m, t.start), 0)
@@ -199,14 +199,8 @@ export function computeLayout(project: Project): LayoutModel {
   let cursorY = titleHeight + headerHeight
   for (const cat of categories) {
     const catTasks = tasks.filter((t) => t.categoryId === cat.id)
-    if (cat.collapsed) {
-      laidCategories.push({
-        id: cat.id, name: cat.name, color: cat.color,
-        y: cursorY, height: rowHeight, subRows: 0, collapsed: true, subGroups: [],
-      })
-      cursorY += rowHeight
-      continue
-    }
+    // The sidebar tree's collapse toggle is sidebar-only; the chart always lays
+    // a lane out in full (visibility is controlled by `hidden`, not `collapsed`).
     const laneY = cursorY
 
     // Partition the lane's tasks into 세부공종 groups (tasks without a subName

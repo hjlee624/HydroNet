@@ -41,10 +41,13 @@ export interface Category {
   name: string
   /** Bar fill colour for tasks in this lane (tasks may override). */
   color: string
+  /** Sidebar tree expand/collapse ONLY — does not affect the chart. */
   collapsed: boolean
   order: number
   /** Belongs to the 시운전(commissioning) group — hidden in "dam-only" mode. */
   isCommissioning?: boolean
+  /** ON/OFF visibility: when true the lane (and its tasks) are hidden from the chart. */
+  hidden?: boolean
 }
 
 /** A single 공정 (activity) drawn as a time-scaled bar, or a milestone diamond. */
@@ -64,6 +67,10 @@ export interface Task {
   note?: string
   /** Optional 세부공종 (sub-work) grouping label, shown on the left label column. */
   subName?: string
+  /** ON/OFF visibility: when true this activity is hidden from the chart. */
+  hidden?: boolean
+  /** Manual 주공정(CP) override: true = always critical, false = never, undefined = auto (CPM). */
+  forceCritical?: boolean
 
   // ── Computed by the CPM engine (never persisted as authoritative) ──
   es?: number // early start

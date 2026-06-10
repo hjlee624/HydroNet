@@ -164,6 +164,19 @@ function TaskInspector({ id }: { id: string }) {
           마일스톤(◆)으로 표시
         </label>
       </div>
+      <div className="field">
+        <label>주공정(Critical Path)</label>
+        <select className="select"
+          value={task.forceCritical === undefined ? 'auto' : task.forceCritical ? 'on' : 'off'}
+          onChange={(e) => {
+            const v = e.target.value
+            a().updateTask(id, { forceCritical: v === 'auto' ? undefined : v === 'on' })
+          }}>
+          <option value="auto">자동 (CPM 계산)</option>
+          <option value="on">주공정으로 지정</option>
+          <option value="off">주공정 제외</option>
+        </select>
+      </div>
       <div className="field-row">
         <div className="field" style={{ maxWidth: 64 }}>
           <label>색상</label>

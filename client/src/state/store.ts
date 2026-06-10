@@ -85,6 +85,11 @@ export interface EditorState {
   toggleCollapse: (id: ID) => void
   moveCategory: (id: ID, dir: -1 | 1) => void
 
+  // ON/OFF chart visibility
+  toggleCategoryVisible: (id: ID) => void
+  toggleTaskVisible: (id: ID) => void
+  setAllVisible: (visible: boolean) => void
+
   // links
   startLinking: (fromId: ID) => void
   updateLinkingPointer: (x: number, y: number) => void
@@ -179,7 +184,11 @@ function withSchedule(project: Project): { project: Project; warnings: string[] 
   const byId = new Map(result.tasks.map((t) => [t.id, t]))
   const tasks = project.tasks.map((t) => {
     const c = byId.get(t.id)
-    return c ? { ...t, es: c.es, ef: c.ef, ls: c.ls, lf: c.lf, totalFloat: c.totalFloat, critical: c.critical } : t
+    if (!c) return t
+    // Honour a manual 주공정 override for the displayed critical flag; the CPM
+    // values (es/ef/float) still come from the computed schedule.
+    const critical = t.forceCritical === undefined ? c.critical : t.forceCritical
+    return { ...t, es: c.es, ef: c.ef, ls: c.ls, lf: c.lf, totalFloat: c.totalFloat, critical }
   })
   return { project: { ...project, tasks }, warnings: result.warnings }
 }
@@ -371,6 +380,25 @@ export const useEditor = create<EditorState>()((set, get) => {
       const a = sorted[idx], b = sorted[swap]
       const ao = a.order; a.order = b.order; b.order = ao
     }),
+
+    toggleCategoryVisible: (id) => commit((p) => {
+      const c = p.categories.find((x) => x.id === id)
+      if (!c) return
+      c.hidden = !c.hidden
+      // Turning a lane ON also reveals its activities, so a 공종 switched back on
+      // (e.g. after 전체 OFF) never renders as an empty lane. The 공종 switch thus
+      // acts as the master for its own tasks.
+      if (!c.hidden) for (const t of p.tasks) if (t.categoryId === id) t.hidden = false
+    }, { history: false }),
+    toggleTaskVisible: (id) => commit((p) => {
+      const t = p.tasks.find((x) => x.id === id)
+      if (t) t.hidden = !t.hidden
+    }, { history: false }),
+    setAllVisible: (visible) => commit((p) => {
+      const hidden = !visible
+      for (const c of p.categories) c.hidden = hidden
+      for (const t of p.tasks) t.hidden = hidden
+    }, { history: false }),
 
     startLinking: (fromId) => set({ linking: { fromId, pointer: null }, selectedTaskId: fromId }),
     updateLinkingPointer: (x, y) => set((s) => (s.linking ? { linking: { ...s.linking, pointer: { x, y } } } : {})),

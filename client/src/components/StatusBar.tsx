@@ -10,7 +10,7 @@ export function StatusBar() {
 
   const visible = project.tasks.filter((t) => {
     const cat = project.categories.find((c) => c.id === t.categoryId)
-    return cat && (project.commissioningEnabled || !cat.isCommissioning)
+    return cat && (project.commissioningEnabled || !cat.isCommissioning) && !t.hidden && !cat.hidden
   })
   const ends = visible.map((t) => t.ef ?? t.start + t.duration)
   const starts = visible.map((t) => t.es ?? t.start)

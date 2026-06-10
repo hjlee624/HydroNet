@@ -56,6 +56,10 @@ start-lan.bat            LAN 단일포트 서버 기동(기본 PORT=4020, 외부
 
 ## 4. 구현 완료 기능
 - 공종(12종)·공정·마일스톤(◆), 시운전 토글, 우기 음영 밴드.
+- **사이드바 접기(collapsed)는 사이드바 트리 전용** — layout은 collapsed 무시(레인 항상 전체). 차트 표시/숨김은 별개의 `hidden`로.
+- **표시 ON/OFF**(Category.hidden·Task.hidden): 사이드바 행별 스위치 + 헤더 전체 스위치(setAllVisible). layout/StatusBar에서 hidden 필터(차트·출력에서 제외, 사이드바엔 흐리게 유지). CPM은 전체 기준으로 계산(hidden은 렌더 필터일 뿐).
+- **좌측 사이드바 드래그로 공종 이동**: .cat__task draggable → dataTransfer 'text/hn-task'=taskId, .cat가 드롭존 → updateTask(categoryId). 마일스톤도 동일.
+- **주공정 수동 지정**(Task.forceCritical: undefined=자동/true=지정/false=제외): withSchedule에서 `critical = forceCritical===undefined ? computed : forceCritical`. CPM es/ef/float는 그대로 계산. 차트에서 주공정 마일스톤 확대+빨강 헤일로+빨강 라벨, 주공정 공정명 빨강.
 - **세부공종(Task.subName)** — 레인 내 subName으로 그룹화→좌측 라벨열에 공종명 아래 세부공종 행 표시. 그룹 정렬은 cascade 후 시작일 순. 공종명 겹침 방지용 레인 상단 `CATEGORY_HEADER_INSET=20px`(named 그룹 있을 때만). 샘플 가물막이에 상류/하류 가물막이·유수전환 시드.
 - 드래그: 바 이동, **바 양끝 핸들로 기간 리사이즈**, 끝점 ●로 의존성 연결.
 - CPM 주공정(빨강) 실시간, 연쇄 자동/일정 정렬/재계산. **재계산·일정정렬 시 변경 내역(시작일 이전→이후, Δ일) 중앙 팝업**(store.recalcReport → RecalcModal, Modal 컴포넌트).

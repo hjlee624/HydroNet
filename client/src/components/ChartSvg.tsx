@@ -209,20 +209,25 @@ function ChartSvgBase({
           const selected = t.id === selectedTaskId
           const fill = crit ? colors.critical : (t.color ?? laneColor(model, lt.categoryId))
           if (lt.isMilestone) {
+            // Critical milestones are enlarged with a red halo so the critical
+            // path reads clearly even at the diamond markers.
+            const r = crit ? milestoneR * 1.45 : milestoneR
             return (
               <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }} style={{ cursor: 'pointer' }}>
-                <text x={lt.cx} y={lt.cy - milestoneR - 4} textAnchor="middle" {...roleAttrs('milestoneName')}>
+                <text x={lt.cx} y={lt.cy - r - 4} textAnchor="middle"
+                  {...roleAttrs('milestoneName')} {...(crit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
+                {crit && <polygon points={diamond(lt.cx, lt.cy, r + 5)} fill={colors.critical} opacity={0.2} />}
                 <polygon
                   data-task-id={t.id}
-                  points={diamond(lt.cx, lt.cy, milestoneR)}
+                  points={diamond(lt.cx, lt.cy, r)}
                   fill={crit ? colors.critical : colors.milestone}
-                  stroke={selected ? colors.primary : colors.canvas}
-                  strokeWidth={selected ? 2.5 : 1.5}
+                  stroke={selected ? colors.primary : crit ? '#ffffff' : colors.canvas}
+                  strokeWidth={selected ? 2.5 : crit ? 2 : 1.5}
                   onPointerDown={(e) => onTaskPointerDown(e, t.id)}
                 />
-                <text x={lt.cx} y={lt.cy + milestoneR + 12} textAnchor="middle" {...roleAttrs('milestoneDate')}>
+                <text x={lt.cx} y={lt.cy + r + 12} textAnchor="middle" {...roleAttrs('milestoneDate')}>
                   {toISO(dayToDate(project.startDate, t.start)).slice(2)}
                 </text>
               </g>
@@ -230,7 +235,7 @@ function ChartSvgBase({
           }
           return (
             <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}>
-              <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')}>
+              <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')} {...(crit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                 {t.name}
               </text>
               <rect

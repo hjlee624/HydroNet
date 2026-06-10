@@ -290,8 +290,43 @@ input, select, textarea {
 }
 .cat__task:hover { background: var(--cream-soft); }
 .cat__task.selected { background: var(--cream); color: var(--ink); }
-.cat__task .dur { margin-left: auto; color: var(--stone); font-size: 11px; }
+.cat__task .dur { color: var(--stone); font-size: 11px; }
 .cat__task.crit { color: var(--primary-deep); }
+.cat__task[draggable="true"] { cursor: grab; }
+.cat__task[draggable="true"]:active { cursor: grabbing; }
+
+/* Drag-to-move drop target highlight on a 공종 */
+.cat--drop {
+  outline: 2px dashed var(--primary);
+  outline-offset: -2px;
+  border-radius: var(--radius-md);
+  background: var(--cream-soft);
+}
+
+/* ON/OFF visibility dimming (chart show/hide; sidebar still lists them) */
+.cat__task.is-hidden { opacity: 0.45; }
+.cat.is-hidden .cat__name { opacity: 0.5; text-decoration: line-through; }
+
+/* ── ON/OFF switch ── */
+.sw {
+  width: 28px; height: 15px;
+  flex: 0 0 auto;
+  border: none; padding: 0;
+  border-radius: 9999px;
+  background: var(--hairline-strong);
+  position: relative; cursor: pointer;
+  transition: background 0.15s;
+}
+.sw.on { background: var(--primary); }
+.sw__knob {
+  position: absolute; top: 2px; left: 2px;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transition: left 0.15s;
+}
+.sw.on .sw__knob { left: 15px; }
 
 .icon-btn {
   width: 24px; height: 24px;
