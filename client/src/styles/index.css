@@ -623,8 +623,11 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 }
 .chip:hover { background: var(--cream-soft); }
 .chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
-.seg--sm { display: inline-flex; gap: 3px; flex-wrap: nowrap; }
-.seg--sm button { flex: 0 0 auto; height: 26px; min-width: 0; padding: 0 10px; font-size: 12px; }
+/* Higher specificity (.seg.seg--sm) so the compact sizing wins over the later
+   `.seg button` rule — they share specificity, so without this the full-size
+   `.seg` styling would override and 주공정 강조 등 긴 라벨이 박스를 넘침. */
+.seg.seg--sm { display: inline-flex; gap: 3px; flex-wrap: nowrap; }
+.seg.seg--sm button { flex: 0 0 auto; height: 26px; min-width: 0; padding: 0 12px; font-size: 12px; white-space: nowrap; }
 
 /* ── Inline rename (double-click a bar/milestone) ── */
 .inline-rename {
