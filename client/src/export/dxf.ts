@@ -182,8 +182,15 @@ export function projectToDxf(project: Project): string {
   for (const c of model.categories) {
     line('HN_GRID', model.labelWidth, c.y + c.height, model.contentWidth, c.y + c.height, 9)
   }
-  // label column + header separators
+  // label column right border + header/title dividers + header month-row ticks +
+  // outer drawing frame — all mirrored from the on-screen separators.
   line('HN_AXIS', model.labelWidth, model.titleHeight, model.labelWidth, model.contentHeight, 7)
+  const yearRowDxf = model.headerHeight * 0.46
+  if (model.titleHeight > 0) line('HN_AXIS', 0, model.titleHeight, model.contentWidth, model.titleHeight, 7) // 제목↔헤더
+  line('HN_AXIS', model.labelWidth, model.headerTop + yearRowDxf, model.contentWidth, model.headerTop + yearRowDxf, 7) // 연도↔월
+  line('HN_AXIS', model.labelWidth, model.chartTop, model.contentWidth, model.chartTop, 7) // 헤더↔차트
+  for (const m of model.months) line('HN_GRID', m.x, model.headerTop + yearRowDxf, m.x, model.chartTop, 9) // 월 눈금
+  polyline('HN_AXIS', [[0, 0], [model.contentWidth, 0], [model.contentWidth, model.contentHeight], [0, model.contentHeight]], true, 7) // 테두리
 
   // ── timeline axis text (years / months) ──
   {
@@ -271,7 +278,7 @@ export function projectToDxf(project: Project): string {
         solidRect(layer, lt.x, lt.y, lt.w, lt.h, aci(fill))
         polyline(layer, [[lt.x, lt.y], [lt.x + lt.w, lt.y], [lt.x + lt.w, lt.y + lt.h], [lt.x, lt.y + lt.h]], true, 7)
         textLeft('HN_TASKNAME', lt.x, lt.y - 3.5, t.name, tn.fontSize, crit ? 1 : 7)
-        textLeft('HN_DURATION', lt.x, lt.y + lt.h + 10.5, `${t.duration}일`, du.fontSize, 7)
+        textLeft('HN_DURATION', lt.x, lt.y + lt.h + du.fontSize * 0.85 + 3, `${t.duration}일`, du.fontSize, 7)
       }
     }
   }

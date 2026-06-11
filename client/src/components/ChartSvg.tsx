@@ -275,7 +275,7 @@ function ChartSvgBase({
                 strokeWidth={selected ? 2.4 : 1}
                 onPointerDown={(e) => onTaskPointerDown(e, t.id)}
               />
-              <text x={lt.x} y={lt.y + lt.h + 10.5} {...roleAttrs('taskDuration')}>
+              <text x={lt.x} y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3} {...roleAttrs('taskDuration')}>
                 {t.duration}일
               </text>
               {/* resize grips (drag to change duration) + link anchor (drag to connect) */}
@@ -358,6 +358,10 @@ function ChartSvgBase({
           ))}
         </g>
       )}
+
+      {/* outer drawing frame (테두리) */}
+      <rect x={0.5} y={0.5} width={contentWidth - 1} height={contentHeight - 1}
+        fill="none" stroke={colors.hairlineStrong} strokeWidth={1} />
 
       {/* linking ghost */}
       {linkingGhost && (

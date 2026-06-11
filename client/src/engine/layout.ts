@@ -147,6 +147,14 @@ function matchesFilter(t: Task, f?: LayoutFilter): boolean {
   return true
 }
 
+/** Rough label width (CJK glyph ≈ 1em, Latin ≈ 0.56em). Used to widen the left
+ *  label column so labels never overrun into the chart as fonts grow. */
+function estimateTextWidth(text: string, fontPx: number): number {
+  let units = 0
+  for (const ch of text) units += ch.charCodeAt(0) > 0x2e80 ? 1.0 : 0.56
+  return units * fontPx
+}
+
 export function computeLayout(project: Project, filter?: LayoutFilter): LayoutModel {
   const { view } = project
   const pxPerDay = view.pxPerDay
@@ -159,7 +167,6 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     Math.ceil(2 * Math.max(11.5 + 0.8 * fs('taskName'), 11 + 0.8 * fs('milestoneName'), 12 + fs('taskDuration'))),
   )
   const barHeight = Math.min(rowHeight * 0.34, 16)
-  const labelWidth = view.labelWidth
   const headerHeight = Math.max(
     view.headerHeight,
     Math.ceil((fs('axisYear') + fs('axisMonth')) * 1.6),
@@ -181,6 +188,22 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // When a filter is active, drop lanes that have no matching activities.
   const catsWithTasks = new Set(tasks.map((t) => t.categoryId))
   const categories = filterOn ? baseCats.filter((c) => catsWithTasks.has(c.id)) : baseCats
+
+  // Left label column widens to fit the longest 공종/세부공종/헤더 label at the
+  // current font sizes, so big text never overruns into the chart (and the
+  // top-left "공종/마일스톤"·착수일 never bleed into the timeline). Defaults fit 150.
+  const catFs = fs('categoryLabel'), subFs = fs('subCategoryLabel')
+  let labelWidth = Math.max(
+    view.labelWidth,
+    12 + estimateTextWidth('공종 / 마일스톤', fs('headerTitle')) + 10,
+    12 + estimateTextWidth('착수 0000-00', fs('headerSub')) + 10,
+  )
+  for (const c of categories) labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
+  for (const t of tasks) {
+    const sn = (t.subName ?? '').trim()
+    if (sn) labelWidth = Math.max(labelWidth, 26 + estimateTextWidth(sn, subFs) + 10)
+  }
+  labelWidth = Math.ceil(labelWidth)
 
   // ── Time domain: pad to whole months for a tidy axis ──
   const minTaskDay = tasks.reduce((m, t) => Math.min(m, t.start), 0)
@@ -390,43 +413,45 @@ export function fitToPaperView(
   paperWmm: number,
   paperHmm: number,
 ): { pxPerDay?: number; rowHeight?: number; fontScale?: number } {
-  const m = computeLayout(project)
   const target = paperWmm / paperHmm
-  const current = m.contentWidth / m.contentHeight
+  if (!Number.isFinite(target) || target <= 0) return {}
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
-  const out: { pxPerDay?: number; rowHeight?: number; fontScale?: number } = {}
-
-  // ── 1. Match aspect ratio (kill the export letterbox) by stretching the
-  //       deficient axis UP — never compress, so text/bars stay readable. ──
-  let contentWidthAfter = m.contentWidth
-  if (Number.isFinite(target) && Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
-    if (current < target) {
-      // Too narrow → widen the time axis: contentWidth = target × H.
-      const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
-      const px = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
-      // Only report a change (else a clamp-saturated value == current would slip
-      // past fitToPaper's no-op guard → false "fixed" toast + wasted recompute).
-      if (Math.abs(px - m.pxPerDay) > 1e-3) out.pxPerDay = px
-      contentWidthAfter = m.labelWidth + domainDays * px // achieved width (for fontScale)
-    } else {
-      // Too short → taller rows: contentHeight = contentWidth / target (width unchanged).
-      const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
-      const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
-      const rh = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
-      if (Math.abs(rh - m.rowHeight) > 1e-3) out.rowHeight = rh
-    }
-  }
-
-  // ── 2. Scale text so it stays legible on the sheet. After the fit the content
-  //       fills the page, so 1 content-px ≈ paperWmm/contentWidth mm. We size a
-  //       reference annotation to a target physical height, and only ever ENLARGE
-  //       (≥1) so a normal chart is never shrunk — fixes "text invisible on big
-  //       sheets" without touching well-sized charts. User-tunable afterwards. ──
   const REF_PX = 10.5    // taskName default — the reference annotation
   const TARGET_MM = 3.5  // legible printed height for that reference
-  const pxPerMm = contentWidthAfter / paperWmm
-  const fontScale = clamp((TARGET_MM * pxPerMm) / REF_PX, 1, 6)
-  if (Math.abs(fontScale - (project.view.fontScale ?? 1)) > 1e-3) out.fontScale = Number(fontScale.toFixed(3))
 
+  // The legibility fontScale changes labelWidth / rowHeight-floor / band heights,
+  // which feed back into the very content size we solve against — so a single pass
+  // leaves a residual margin on non-landscape sheets. Iterate to a fixed point
+  // (the coupling is weak & contractive, so a few passes converge). Each pass
+  // exactly hits the aspect for the CURRENT geometry, then re-derives fontScale.
+  let view = project.view
+  for (let i = 0; i < 4; i++) {
+    const m = computeLayout({ ...project, view })
+    const current = m.contentWidth / m.contentHeight
+    let { pxPerDay, rowHeight } = view
+    let contentWidthAfter = m.contentWidth
+    if (Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
+      if (current < target) {
+        // Too narrow → widen the time axis so contentWidth = target × H.
+        const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
+        pxPerDay = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
+        contentWidthAfter = m.labelWidth + domainDays * pxPerDay
+      } else {
+        // Too short → taller rows so contentHeight = contentWidth / target.
+        const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
+        const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
+        rowHeight = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
+      }
+    }
+    // Text legibility: size REF_PX to TARGET_MM on the sheet; only ever ENLARGE.
+    const fontScale = clamp((TARGET_MM * (contentWidthAfter / paperWmm)) / REF_PX, 1, 6)
+    view = { ...view, pxPerDay, rowHeight, fontScale }
+  }
+
+  // Net change vs the original view (so fitToPaper's no-op guard fires correctly).
+  const out: { pxPerDay?: number; rowHeight?: number; fontScale?: number } = {}
+  if (Math.abs(view.pxPerDay - project.view.pxPerDay) > 1e-3) out.pxPerDay = Number(view.pxPerDay.toFixed(4))
+  if (Math.abs(view.rowHeight - project.view.rowHeight) > 1e-3) out.rowHeight = Math.round(view.rowHeight)
+  if (Math.abs((view.fontScale ?? 1) - (project.view.fontScale ?? 1)) > 1e-3) out.fontScale = Number((view.fontScale ?? 1).toFixed(3))
   return out
 }

@@ -50,6 +50,14 @@ check(Math.abs(fittedAspect - paperAspect) / paperAspect < 0.02, `시트에 맞�
 check(Number.isFinite(fitted.contentWidth) && Number.isFinite(fitted.contentHeight), '맞춤 후 좌표 유한')
 check(fitPatch.fontScale === undefined || (Number.isFinite(fitPatch.fontScale) && fitPatch.fontScale >= 1), '맞춤 글자 배율은 유한하며 축소하지 않음(≥1)')
 
+// 3b-ii. Fit converges on a PORTRAIT sheet too (labelWidth↔fontScale feedback)
+const portraitPatch = fitToPaperView(scheduledProject, 210, 297) // A4 portrait
+const portraitFit = computeLayout({ ...scheduledProject, view: { ...scheduledProject.view, ...portraitPatch } })
+const portraitAspect = portraitFit.contentWidth / portraitFit.contentHeight
+const portraitTarget = 210 / 297
+console.log(`[Fit A4↕] paper=${portraitTarget.toFixed(3)} fitted=${portraitAspect.toFixed(3)} patch=${JSON.stringify(portraitPatch)}`)
+check(Math.abs(portraitAspect - portraitTarget) / portraitTarget < 0.03, `세로 용지도 맞춤이 수렴(여백≈0) (${portraitAspect.toFixed(3)} ≈ ${portraitTarget.toFixed(3)})`)
+
 // 3c. Enlarging text grows its band/rows so glyphs aren't clipped
 const bigText = computeLayout({ ...scheduledProject, view: { ...scheduledProject.view, fontScale: 3 } })
 console.log(`\n[Responsive] fontScale 3 → 제목 ${model.titleHeight}→${bigText.titleHeight}, 헤더 ${model.headerHeight}→${bigText.headerHeight}, 행 ${model.rowHeight}→${bigText.rowHeight}`)
