@@ -3,7 +3,7 @@
 // critical spine and milestones come out as expected. Run: npx tsx scripts/smoke.ts
 import { createSampleProject } from '../src/data/sampleProject'
 import { computeSchedule, applyCascade } from '../src/engine/scheduling'
-import { computeLayout } from '../src/engine/layout'
+import { computeLayout, fitToPaperView } from '../src/engine/layout'
 import { routeLinks } from '../src/engine/routing'
 import { paperPx } from '../src/engine/paper'
 
@@ -39,6 +39,15 @@ check(model.tasks.every((lt) => Number.isFinite(lt.x) && Number.isFinite(lt.w) &
 check(model.categories.length === 12, '일반 댐 모드에서 12개 공종 표시 (시운전 제외)')
 check(model.rainyRects.length >= 2, '우기 밴드가 연도별로 생성됨')
 check(model.months.length >= 24, '월 눈금이 2년 이상')
+
+// 3b. Fit-to-paper: content aspect ratio should match the sheet (no export letterbox)
+const fitPatch = fitToPaperView(scheduledProject, 841, 594) // A1 landscape
+const fitted = computeLayout({ ...scheduledProject, view: { ...scheduledProject.view, ...fitPatch } })
+const fittedAspect = fitted.contentWidth / fitted.contentHeight
+const paperAspect = 841 / 594
+console.log(`\n[Fit] A1↻ paper=${paperAspect.toFixed(3)}  fitted=${fittedAspect.toFixed(3)}  patch=${JSON.stringify(fitPatch)}`)
+check(Math.abs(fittedAspect - paperAspect) / paperAspect < 0.02, `시트에 맞추면 종횡비 일치 (도면 ${fittedAspect.toFixed(3)} ≈ 용지 ${paperAspect.toFixed(3)})`)
+check(Number.isFinite(fitted.contentWidth) && Number.isFinite(fitted.contentHeight), '맞춤 후 좌표 유한')
 
 // 4. Routing
 const routed = routeLinks(model, project.links)

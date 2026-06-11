@@ -360,3 +360,38 @@ export function laidTaskMap(model: LayoutModel): Map<string, LaidTask> {
 export function categoryOf(categories: Category[], id: string): Category | undefined {
   return categories.find((c) => c.id === id)
 }
+
+/**
+ * Solve the view density so the chart's aspect ratio matches a paper sheet
+ * (w×h in mm) — eliminating the export letterbox margin without distortion.
+ *
+ * The export rasterizer scales content into the page preserving aspect ratio, so
+ * the margin is zero exactly when contentWidth/contentHeight === paperW/paperH.
+ * The two axes are independent layout knobs (pxPerDay = time density, rowHeight =
+ * row density), so we only ever STRETCH the deficient axis UP — never compress —
+ * which keeps text and bars readable (the time axis carries no inherent aspect,
+ * and rows just get taller). Both inversions are exact because content size is
+ * affine in each knob. Returns the view param(s) to apply ({} when already fit).
+ */
+export function fitToPaperView(
+  project: Project,
+  paperWmm: number,
+  paperHmm: number,
+): { pxPerDay?: number; rowHeight?: number } {
+  const m = computeLayout(project)
+  const target = paperWmm / paperHmm
+  const current = m.contentWidth / m.contentHeight
+  if (!Number.isFinite(target) || !Number.isFinite(current) || Math.abs(current - target) < 1e-3) return {}
+  const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
+  if (current < target) {
+    // Too narrow for the sheet → widen the time axis: contentWidth = target × H.
+    const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
+    const targetW = target * m.contentHeight
+    return { pxPerDay: clamp((targetW - m.labelWidth) / domainDays, 0.1, 80) }
+  }
+  // Too short for the sheet → taller rows: contentHeight = contentWidth / target.
+  const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
+  const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
+  const targetH = m.contentWidth / target
+  return { rowHeight: clamp((targetH - fixedV) / totalRows, 16, 400) }
+}

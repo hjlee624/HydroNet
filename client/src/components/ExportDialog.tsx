@@ -1,11 +1,12 @@
 // Export modal — pick paper, orientation, DPI and format, then render the live
 // vector chart to SVG / PNG / JPG / PDF.
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useEditor, filterActive } from '../state/store'
 import { Modal } from './Modal'
 import { exportChart, type ExportFormat } from '../export/exporter'
 import { projectToDxf } from '../export/dxf'
+import { computeLayout } from '../engine/layout'
 import { PAPER_SIZES, paperPx, DPI_OPTIONS } from '../engine/paper'
 import type { PaperSize } from '../types/model'
 import { logError, logInfo } from '../state/logger'
@@ -45,6 +46,17 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const effectiveDpi = pro ? project.paper.dpi : Math.min(project.paper.dpi, 300)
   const paperEff = effectiveDpi === project.paper.dpi ? project.paper : { ...project.paper, dpi: effectiveDpi }
   const px = paperPx(paperEff)
+
+  // How far the drawing's aspect ratio is from the sheet's — i.e. how much margin
+  // the letterbox fit would leave. Drives the "fill the sheet" button below.
+  const fitInfo = useMemo(() => {
+    if (format === 'svg' || format === 'dxf') return null
+    const m = computeLayout(project)
+    const contentAspect = m.contentWidth / m.contentHeight
+    const paperAspect = px.wMm / px.hMm
+    const offPct = Math.round((Math.abs(contentAspect - paperAspect) / paperAspect) * 100)
+    return { offPct, fitted: offPct <= 1 }
+  }, [project, px.wMm, px.hMm, format])
 
   async function run() {
     const filename = (project.name || 'hydronet').replace(/[\\/:*?"<>|]/g, '_')
@@ -148,6 +160,18 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             출력 크기 ≈ <strong>{px.wPx.toLocaleString()} × {px.hPx.toLocaleString()} px</strong> ({px.effectiveDpi}dpi)
             {px.clamped && ' · 용량 보호로 자동 축소됨'}
           </p>
+          {fitInfo && (fitInfo.fitted ? (
+            <p className="note" style={{ color: 'var(--primary-deep)' }}>✓ 도면이 용지 비율에 맞아 여백 없이 꽉 차게 출력됩니다.</p>
+          ) : (
+            <div className="field" style={{ marginTop: 2 }}>
+              <button className="btn btn--sm" onClick={() => { a().fitToPaper(); setMsg('용지 비율에 맞춰 배율을 조정했습니다 — 여백 없이 출력됩니다.') }}>
+                ⤢ 여백 없이 시트에 맞추기
+              </button>
+              <p className="note">
+                현재 도면 비율이 용지와 약 <strong>{fitInfo.offPct}%</strong> 달라 여백이 생깁니다. 누르면 배율(시간축·행 높이)을 조정해 꽉 채웁니다 — 글자·막대 왜곡 없음.
+              </p>
+            </div>
+          ))}
         </>
       )}
 

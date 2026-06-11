@@ -12,6 +12,8 @@ import type {
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
 import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
+import { fitToPaperView } from '../engine/layout'
+import { paperMm } from '../engine/paper'
 import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
 import { createSampleProject } from '../data/sampleProject'
 import { DEFAULT_PALETTE } from '../styles/theme'
@@ -138,6 +140,9 @@ export interface EditorState {
   // project-level
   setPaper: (patch: Partial<PaperSettings>) => void
   setView: (patch: Partial<ViewSettings>) => void
+  /** Adjust the view density so the chart fills the current paper with no
+   *  export margin (matches content aspect ratio to the sheet). */
+  fitToPaper: () => void
   setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate'>>) => void
   toggleCommissioning: () => void
   toggleTitle: () => void
@@ -502,6 +507,17 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     setPaper: (patch) => commit((p) => { p.paper = { ...p.paper, ...patch } }, { history: false }),
     setView: (patch) => commit((p) => { p.view = { ...p.view, ...patch } }, { history: false }),
+    fitToPaper: () => {
+      const p = get().project
+      const { w, h } = paperMm(p.paper.size, p.paper.orientation)
+      const patch = fitToPaperView(p, w, h)
+      if (patch.pxPerDay === undefined && patch.rowHeight === undefined) {
+        logInfo('이미 용지 비율에 맞춰져 있어 여백이 없습니다.')
+        return
+      }
+      commit((d) => { d.view = { ...d.view, ...patch } }, { history: true })
+      logInfo('현재 용지 규격에 맞춰 여백 없이 채웠습니다.')
+    },
     setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }),
     toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),
     toggleTitle: () => commit((p) => { p.view.showTitle = p.view.showTitle === false }, { history: false }),
