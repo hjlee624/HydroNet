@@ -9,7 +9,6 @@ import { ChartCanvas } from './components/ChartCanvas'
 import { Inspector } from './components/Inspector'
 import { StatusBar } from './components/StatusBar'
 import { ViewBar } from './components/ViewBar'
-import { PaperBar } from './components/PaperBar'
 import { ExportDialog } from './components/ExportDialog'
 import { RecalcModal } from './components/RecalcModal'
 import { useEditor } from './state/store'
@@ -87,7 +86,6 @@ export default function App() {
         <div className="app__center">
           {!presentation && <ViewBar />}
           <ChartCanvas />
-          {!presentation && <PaperBar />}
           <StatusBar />
         </div>
         {!presentation && <Resizer side="right" width={rightWidth} setWidth={setRightWidth} />}

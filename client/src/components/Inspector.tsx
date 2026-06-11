@@ -2,11 +2,12 @@
 // a chart text is selected, else the selected activity / link editor, else the
 // project / paper / 우기 settings.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useEditor } from '../state/store'
 import { dateToDay, dayToDate, daysInMonth, parseISO, toISO } from '../engine/dates'
-import { PAPER_SIZES, DPI_OPTIONS } from '../engine/paper'
+import { computeLayout } from '../engine/layout'
+import { PAPER_SIZES, paperMm } from '../engine/paper'
 import { PALETTE_MAX } from '../types/model'
 import type { LinkType, PaperSize, TextRole } from '../types/model'
 import { TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS, FONT_FAMILY_OPTIONS } from '../styles/theme'
@@ -276,6 +277,20 @@ function LinkInspector({ id }: { id: string }) {
 function ProjectInspector() {
   const project = useEditor((s) => s.project)
   const a = useEditor.getState
+  const fontScale = project.view.fontScale ?? 1
+  // Margin the letterbox fit would leave = how far the drawing aspect is from
+  // the sheet. Changing the sheet auto-fits (one undoable step) so the preview
+  // conforms live; DPI is set later in the 도면 출력 dialog, not here.
+  const sheetOffPct = useMemo(() => {
+    const m = computeLayout(project)
+    const { w, h } = paperMm(project.paper.size, project.paper.orientation)
+    const contentAspect = m.contentWidth / m.contentHeight
+    const paperAspect = w / h
+    return Math.round((Math.abs(contentAspect - paperAspect) / paperAspect) * 100)
+  }, [project])
+  function setSheet(patch: { size?: PaperSize; orientation?: 'landscape' | 'portrait' }) {
+    a().beginGesture(); a().setPaper(patch); a().fitToPaper()
+  }
   const rainy = project.rainySeasons[0]
   const logos = project.branding?.logos ?? []
   const titleSize = project.view.textStyles?.title?.fontSize ?? TEXT_ROLE_DEFAULTS.title.fontSize
@@ -318,32 +333,36 @@ function ProjectInspector() {
       <div className="field-row">
         <div className="field">
           <label>용지 규격</label>
-          <select className="select" value={project.paper.size} onChange={(e) => a().setPaper({ size: e.target.value as PaperSize })}>
+          <select className="select" value={project.paper.size} onChange={(e) => setSheet({ size: e.target.value as PaperSize })}>
             {PAPER_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
           </select>
         </div>
         <div className="field">
           <label>방향</label>
-          <select className="select" value={project.paper.orientation} onChange={(e) => a().setPaper({ orientation: e.target.value as 'landscape' | 'portrait' })}>
+          <select className="select" value={project.paper.orientation} onChange={(e) => setSheet({ orientation: e.target.value as 'landscape' | 'portrait' })}>
             <option value="landscape">가로</option>
             <option value="portrait">세로</option>
           </select>
         </div>
       </div>
-      <div className="field-row">
-        <div className="field">
-          <label>출력 해상도(DPI)</label>
-          <select className="select" value={project.paper.dpi} onChange={(e) => a().setPaper({ dpi: Number(e.target.value) })}>
-            {DPI_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
-          </select>
-        </div>
-        <div className="field">
-          <label>밀도(px/일)</label>
-          <input className="input" type="number" min={0.5} step={0.5} value={project.view.pxPerDay}
-            onChange={(e) => a().setView({ pxPerDay: Math.max(0.3, Number(e.target.value)) })} />
-        </div>
+      <div className="field">
+        <label>글자 크기 <span style={{ color: 'var(--stone)', fontWeight: 400 }}>{Math.round(fontScale * 100)}%</span></label>
+        <input type="range" min={50} max={600} step={10} value={Math.round(fontScale * 100)}
+          onChange={(e) => a().setView({ fontScale: Number(e.target.value) / 100 })}
+          aria-label="글자 크기 배율" style={{ width: '100%', accentColor: 'var(--primary)' }} />
       </div>
-      <p className="note">DPI 600은 A4~A2에서 원본 그대로 출력됩니다. A1·A0 등 큰 용지는 메모리 보호를 위해 자동으로 낮춰질 수 있습니다.</p>
+      {sheetOffPct <= 1 ? (
+        <p className="note" style={{ color: 'var(--primary-deep)' }}>✓ 용지 비율에 맞아 여백 없이 출력됩니다.</p>
+      ) : (
+        <div className="field">
+          <button className="btn btn--sm" style={{ width: '100%' }}
+            title="도면 비율을 용지에 맞춰 여백 없이 채우고 글자 크기를 조정"
+            onClick={() => { a().beginGesture(); a().fitToPaper() }}>
+            ⤢ 여백 없이 시트에 맞추기 (현재 여백 약 {sheetOffPct}%)
+          </button>
+        </div>
+      )}
+      <p className="note">용지·방향을 바꾸면 자동으로 여백 없이 채워집니다. 출력 해상도(DPI)는 <b>도면 출력</b> 창에서 정합니다.</p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>표시 옵션</div>
