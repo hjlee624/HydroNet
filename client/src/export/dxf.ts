@@ -38,6 +38,17 @@ const ACI: Array<[number, number, number, number]> = [
   [8, 65, 65, 65], [9, 128, 128, 128], [250, 84, 84, 84], [252, 140, 140, 140], [254, 200, 200, 200],
 ]
 
+/** Encode a label for DXF group 1: non-ASCII (e.g. Korean) becomes \U+XXXX so it
+ *  renders regardless of the file's code page / DXF version (AutoCAD converts it). */
+function dxfText(s: string): string {
+  let out = ''
+  for (const ch of s) {
+    const cp = ch.codePointAt(0) ?? 0
+    out += cp < 128 ? ch : '\\U+' + cp.toString(16).toUpperCase().padStart(4, '0')
+  }
+  return out
+}
+
 function hexToRgb(hex: string): [number, number, number] {
   const m = /^#?([0-9a-f]{6})$/i.exec((hex || '').trim())
   if (!m) return [0, 0, 0]
@@ -108,13 +119,23 @@ export function projectToDxf(project: Project): string {
     // pts: BL, BR, TR, TL (perimeter); solidQuad re-orders to Z-order internally
     solidQuad(layer, [[x, y + h], [x + w, y + h], [x + w, y], [x, y]], color)
   }
-  /** Closed/open old-style POLYLINE (R12-safe). */
+  /** Closed/open old-style POLYLINE (R12-safe). Drops consecutive duplicate
+   *  vertices (and a redundant closing one) to avoid zero-length segments. */
   function polyline(layer: string, pts: Array<[number, number]>, closed: boolean, color?: number) {
-    if (pts.length < 2) return
+    const v: Array<[number, number]> = []
+    for (const p of pts) {
+      const last = v[v.length - 1]
+      if (!last || last[0] !== p[0] || last[1] !== p[1]) v.push(p)
+    }
+    if (closed && v.length > 1) {
+      const f = v[0], l = v[v.length - 1]
+      if (f[0] === l[0] && f[1] === l[1]) v.pop()
+    }
+    if (v.length < 2) return
     g(0, 'POLYLINE'); g(8, layer); if (color != null) g(62, color)
     g(66, 1); g(70, closed ? 1 : 0)
     g(10, '0.0'); g(20, '0.0'); g(30, '0.0')
-    for (const [px, py] of pts) {
+    for (const [px, py] of v) {
       g(0, 'VERTEX'); g(8, layer)
       g(10, num(px)); g(20, num(fy(py))); g(30, '0.0')
     }
@@ -129,9 +150,10 @@ export function projectToDxf(project: Project): string {
     const h = Math.max(1, heightPx * 0.72) // SVG font-size → DXF cap height
     g(0, 'TEXT'); g(8, layer); if (color != null) g(62, color)
     g(10, '0.0'); g(20, '0.0'); g(30, '0.0')
-    g(40, num(h)); g(1, s); g(50, '0.0')
-    g(72, 1); g(73, 0)
+    g(40, num(h)); g(1, dxfText(s)); g(50, '0.0')
+    g(72, 1) // centred — position comes from the 11/21 second alignment point
     g(11, num(x)); g(21, num(fy(y))); g(31, '0.0')
+    g(73, 0)
   }
   // Left/baseline text — insertion point in 10/20.
   function textLeft(layer: string, x: number, y: number, str: string, heightPx: number, color?: number) {
@@ -140,7 +162,7 @@ export function projectToDxf(project: Project): string {
     const h = Math.max(1, heightPx * 0.72)
     g(0, 'TEXT'); g(8, layer); if (color != null) g(62, color)
     g(10, num(x)); g(20, num(fy(y))); g(30, '0.0')
-    g(40, num(h)); g(1, s); g(50, '0.0'); g(72, 0)
+    g(40, num(h)); g(1, dxfText(s)); g(50, '0.0'); g(72, 0)
   }
 
   // ── 우기 bands (drawn first, behind everything) ──
@@ -266,6 +288,14 @@ export function projectToDxf(project: Project): string {
   hg(0, 'ENDSEC')
 
   hg(0, 'SECTION'); hg(2, 'TABLES')
+  // STYLE table — text will NOT render without a defined text style. STANDARD
+  // uses a Korean-capable TrueType font so 한글 labels display (CAD substitutes
+  // if absent). Non-ASCII is also \U+XXXX-escaped in the text strings.
+  hg(0, 'TABLE'); hg(2, 'STYLE'); hg(70, 1)
+  hg(0, 'STYLE'); hg(2, 'STANDARD'); hg(70, 0)
+  hg(40, '0.0'); hg(41, '1.0'); hg(50, '0.0'); hg(71, 0); hg(42, '2.5')
+  hg(3, 'malgun.ttf'); hg(4, '')
+  hg(0, 'ENDTAB')
   hg(0, 'TABLE'); hg(2, 'LAYER'); hg(70, LAYERS.length)
   for (const [name, color] of LAYERS) {
     hg(0, 'LAYER'); hg(2, name); hg(70, 0); hg(62, color); hg(6, 'CONTINUOUS')
