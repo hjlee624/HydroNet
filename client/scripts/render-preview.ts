@@ -15,7 +15,9 @@ import { ChartSvg } from '../src/components/ChartSvg'
 const noop = () => {}
 const project = createSampleProject()
 const sched = computeSchedule(project.tasks, project.links)
-const sp = { ...project, tasks: sched.tasks }
+// HN_FONTSCALE lets us eyeball that bigger fonts grow their boxes (no clipping).
+const fontScale = Number(process.env.HN_FONTSCALE) || 1
+const sp = { ...project, tasks: sched.tasks, view: { ...project.view, fontScale } }
 const model = computeLayout(sp)
 const routed = routeLinks(model, sp.links)
 

@@ -6,7 +6,8 @@
 // Pure & deterministic so on-screen and exported output are identical.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Category, Project, Task } from '../types/model'
+import type { Category, Project, Task, TextRole } from '../types/model'
+import { resolveTextStyle } from '../styles/theme'
 import {
   MONTH_LABELS_KO,
   addMonths,
@@ -149,13 +150,24 @@ function matchesFilter(t: Task, f?: LayoutFilter): boolean {
 export function computeLayout(project: Project, filter?: LayoutFilter): LayoutModel {
   const { view } = project
   const pxPerDay = view.pxPerDay
-  const rowHeight = view.rowHeight
+  // Bands & rows grow with the resolved text sizes, so enlarging a font expands
+  // its box instead of clipping the glyph (default sizes keep current geometry).
+  const fontScale = view.fontScale ?? 1
+  const fs = (role: TextRole) => resolveTextStyle(role, view.textStyles, fontScale).fontSize
+  const rowHeight = Math.max(
+    view.rowHeight,
+    Math.ceil(2 * Math.max(11.5 + 0.8 * fs('taskName'), 11 + 0.8 * fs('milestoneName'), 12 + fs('taskDuration'))),
+  )
   const barHeight = Math.min(rowHeight * 0.34, 16)
   const labelWidth = view.labelWidth
-  const headerHeight = view.headerHeight
+  const headerHeight = Math.max(
+    view.headerHeight,
+    Math.ceil((fs('axisYear') + fs('axisMonth')) * 1.6),
+    Math.ceil((fs('headerTitle') + fs('headerSub')) * 1.4),
+  )
 
   const title = view.showTitle !== false && project.name ? project.name : ''
-  const titleHeight = title ? TITLE_BAND : 0
+  const titleHeight = title ? Math.max(TITLE_BAND, Math.ceil(fs('title') * 1.5 + 12)) : 0
   const logoItems = project.branding?.logos ?? []
   const maxLogoH = logoItems.reduce((m, l) => Math.max(m, l.h), 0)
   const footerHeight = logoItems.length ? Math.max(FOOTER_BAND, maxLogoH + 28) : 0
@@ -197,7 +209,7 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     // in lock-step and the user can drag an activity to any exact row instead of
     // the engine auto-packing non-overlapping bars onto a shared row.
     const hasNamed = catTasks.some((t) => (t.subName ?? '').trim() !== '')
-    const headerInset = hasNamed ? CATEGORY_HEADER_INSET : 0
+    const headerInset = hasNamed ? Math.max(CATEGORY_HEADER_INSET, Math.ceil(fs('categoryLabel') * 1.4)) : 0
 
     catTasks.forEach((t, row) => {
       const rowMidY = laneY + headerInset + row * rowHeight + rowHeight / 2
@@ -391,7 +403,7 @@ export function fitToPaperView(
     if (current < target) {
       // Too narrow → widen the time axis: contentWidth = target × H.
       const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
-      const px = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.1, 80)
+      const px = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
       // Only report a change (else a clamp-saturated value == current would slip
       // past fitToPaper's no-op guard → false "fixed" toast + wasted recompute).
       if (Math.abs(px - m.pxPerDay) > 1e-3) out.pxPerDay = px
@@ -400,7 +412,7 @@ export function fitToPaperView(
       // Too short → taller rows: contentHeight = contentWidth / target (width unchanged).
       const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
       const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
-      const rh = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 400)
+      const rh = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
       if (Math.abs(rh - m.rowHeight) > 1e-3) out.rowHeight = rh
     }
   }

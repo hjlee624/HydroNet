@@ -100,8 +100,8 @@ function ChartSvgBase({
       {project.rainySeasons.length > 0 && model.rainyRects.map((r, i) => (
         <g key={`rainy-${i}`}>
           <rect x={r.x} y={r.y} width={r.width} height={r.height} fill={colors.rainyBand} />
-          <rect x={r.x} y={chartTop} width={r.width} height={16} fill={colors.rainyBandStroke} />
-          <text x={r.x + r.width / 2} y={chartTop + 11.5} textAnchor="middle" {...roleAttrs('rainyLabel')}>
+          <rect x={r.x} y={chartTop} width={r.width} height={Math.max(16, roleAttrs('rainyLabel').fontSize * 1.5)} fill={colors.rainyBandStroke} />
+          <text x={r.x + r.width / 2} y={chartTop + Math.max(16, roleAttrs('rainyLabel').fontSize * 1.5) * 0.72} textAnchor="middle" {...roleAttrs('rainyLabel')}>
             {r.label}
           </text>
         </g>

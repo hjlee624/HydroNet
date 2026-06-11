@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useEditor } from '../state/store'
 import { dateToDay, dayToDate, daysInMonth, parseISO, toISO } from '../engine/dates'
-import { computeLayout } from '../engine/layout'
+import { computeLayout, fitToPaperView } from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
 import { PALETTE_MAX } from '../types/model'
 import type { LinkType, PaperSize, TextRole } from '../types/model'
@@ -281,12 +281,15 @@ function ProjectInspector() {
   // Margin the letterbox fit would leave = how far the drawing aspect is from
   // the sheet. Changing the sheet auto-fits (one undoable step) so the preview
   // conforms live; DPI is set later in the 도면 출력 dialog, not here.
-  const sheetOffPct = useMemo(() => {
+  const fitState = useMemo(() => {
     const m = computeLayout(project)
     const { w, h } = paperMm(project.paper.size, project.paper.orientation)
-    const contentAspect = m.contentWidth / m.contentHeight
-    const paperAspect = w / h
-    return Math.round((Math.abs(contentAspect - paperAspect) / paperAspect) * 100)
+    const offPct = Math.round((Math.abs(m.contentWidth / m.contentHeight - w / h) / (w / h)) * 100)
+    // canFit = whether "맞춤" would actually change anything — so the button never
+    // advertises a margin it can't remove (e.g. at the density clamp limits).
+    const patch = fitToPaperView(project, w, h)
+    const canFit = patch.pxPerDay !== undefined || patch.rowHeight !== undefined || patch.fontScale !== undefined
+    return { offPct, canFit }
   }, [project])
   function setSheet(patch: { size?: PaperSize; orientation?: 'landscape' | 'portrait' }) {
     a().beginGesture(); a().setPaper(patch); a().fitToPaper()
@@ -351,14 +354,16 @@ function ProjectInspector() {
           onChange={(e) => a().setView({ fontScale: Number(e.target.value) / 100 })}
           aria-label="글자 크기 배율" style={{ width: '100%', accentColor: 'var(--primary)' }} />
       </div>
-      {sheetOffPct <= 1 ? (
-        <p className="note" style={{ color: 'var(--primary-deep)' }}>✓ 용지 비율에 맞아 여백 없이 출력됩니다.</p>
+      {!fitState.canFit ? (
+        fitState.offPct <= 1
+          ? <p className="note" style={{ color: 'var(--primary-deep)' }}>✓ 용지 비율에 맞아 여백 없이 출력됩니다.</p>
+          : <p className="note">여백 약 {fitState.offPct}% — 용지 방향/규격을 바꾸면 더 줄일 수 있습니다.</p>
       ) : (
         <div className="field">
           <button className="btn btn--sm" style={{ width: '100%' }}
             title="도면 비율을 용지에 맞춰 여백 없이 채우고 글자 크기를 조정"
             onClick={() => { a().beginGesture(); a().fitToPaper() }}>
-            ⤢ 여백 없이 시트에 맞추기 (현재 여백 약 {sheetOffPct}%)
+            ⤢ 여백 없이 시트에 맞추기{fitState.offPct > 1 ? ` (현재 여백 약 ${fitState.offPct}%)` : ''}
           </button>
         </div>
       )}

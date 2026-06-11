@@ -50,6 +50,13 @@ check(Math.abs(fittedAspect - paperAspect) / paperAspect < 0.02, `시트에 맞�
 check(Number.isFinite(fitted.contentWidth) && Number.isFinite(fitted.contentHeight), '맞춤 후 좌표 유한')
 check(fitPatch.fontScale === undefined || (Number.isFinite(fitPatch.fontScale) && fitPatch.fontScale >= 1), '맞춤 글자 배율은 유한하며 축소하지 않음(≥1)')
 
+// 3c. Enlarging text grows its band/rows so glyphs aren't clipped
+const bigText = computeLayout({ ...scheduledProject, view: { ...scheduledProject.view, fontScale: 3 } })
+console.log(`\n[Responsive] fontScale 3 → 제목 ${model.titleHeight}→${bigText.titleHeight}, 헤더 ${model.headerHeight}→${bigText.headerHeight}, 행 ${model.rowHeight}→${bigText.rowHeight}`)
+check(bigText.titleHeight > model.titleHeight, '글자 키우면 제목 칸이 커짐(잘림 방지)')
+check(bigText.rowHeight > model.rowHeight, '글자 키우면 행 높이가 커짐')
+check(bigText.headerHeight > model.headerHeight, '글자 키우면 헤더 칸이 커짐')
+
 // 4. Routing
 const routed = routeLinks(model, project.links)
 console.log(`\n[Routing] ${routed.length} arrows, critical=${routed.filter((r) => r.critical).length}`)
