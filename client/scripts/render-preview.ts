@@ -37,6 +37,7 @@ let svg = renderToStaticMarkup(
     onTaskClick: noop,
     onLinkClick: noop,
     onTextClick: noop,
+    onRainyResizePointerDown: noop,
     onBackgroundClick: noop,
   }),
 )

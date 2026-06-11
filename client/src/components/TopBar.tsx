@@ -4,6 +4,7 @@
 import { useEffect, useState } from 'react'
 import { useEditor } from '../state/store'
 import { HelpDialog } from './HelpDialog'
+import { LoadDialog } from './LoadDialog'
 
 interface TopBarProps {
   onExport: () => void
@@ -23,6 +24,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const a = useEditor.getState
 
   const [helpOpen, setHelpOpen] = useState(false)
+  const [loadOpen, setLoadOpen] = useState(false)
 
   // Local text state for the zoom field so multi-digit entry isn't clamped on
   // every keystroke; commit (apply) only on blur / Enter.
@@ -52,6 +54,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       <div className="topbar__actions">
         <button className="btn btn--sm btn--ghost" onClick={() => a().newProject()}>새로</button>
         <button className="btn btn--sm btn--ghost" onClick={() => a().loadSample()}>샘플</button>
+        <button className="btn btn--sm btn--ghost" title="임시저장된 작업 불러오기" onClick={() => setLoadOpen(true)}>불러오기</button>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
         <button className="btn btn--icon btn--sm" title="실행 취소 (Ctrl+Z)" disabled={!canUndo} onClick={() => a().undo()}>↶</button>
         <button className="btn btn--icon btn--sm" title="다시 실행 (Ctrl+Y)" disabled={!canRedo} onClick={() => a().redo()}>↷</button>
@@ -111,6 +114,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       </div>
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
+      {loadOpen && <LoadDialog onClose={() => setLoadOpen(false)} />}
     </header>
   )
 }

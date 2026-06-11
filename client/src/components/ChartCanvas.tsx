@@ -11,6 +11,7 @@ import type { PointerEvent as RPointerEvent } from 'react'
 import { useEditor } from '../state/store'
 import { computeLayout } from '../engine/layout'
 import { routeLinks } from '../engine/routing'
+import { dayToDate, daysInMonth } from '../engine/dates'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
 
 type Drag =
@@ -18,6 +19,7 @@ type Drag =
   | { kind: 'resize'; taskId: string; edge: 'start' | 'end'; startDay: number; endDay: number; started: boolean }
   | { kind: 'logo'; index: number; rightEdge: number; ratio: number; started: boolean }
   | { kind: 'link'; fromId: string }
+  | { kind: 'rainy'; seasonId: string; edge: 'start' | 'end'; started: boolean }
   | null
 
 export function ChartCanvas() {
@@ -155,6 +157,15 @@ export function ChartCanvas() {
     window.addEventListener('pointerup', onWindowUp)
   }
 
+  function onRainyResizePointerDown(e: RPointerEvent, seasonId: string, edge: 'start' | 'end') {
+    if (useEditor.getState().navMode !== 'edit') return
+    e.stopPropagation()
+    e.preventDefault()
+    dragRef.current = { kind: 'rainy', seasonId, edge, started: false }
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
   function onAnchorPointerDown(e: RPointerEvent, id: string) {
     if (useEditor.getState().navMode !== 'edit') return
     e.stopPropagation()
@@ -204,6 +215,15 @@ export function ChartCanvas() {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const newW = Math.max(40, Math.min(900, drag.rightEdge - x))
       useEditor.getState().setLogoSize(drag.index, newW, newW * drag.ratio)
+    } else if (drag.kind === 'rainy') {
+      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      const date = dayToDate(project.startDate, Math.round(model.dayOf(x)))
+      const m = date.getMonth() + 1
+      const d = Math.min(date.getDate(), daysInMonth(2001, m - 1)) // non-leap day model
+      // setRainySeason keeps start ≤ end and reuses (month, day) for every year,
+      // so dragging one edge of any year moves all years identically.
+      if (drag.edge === 'start') useEditor.getState().setRainySeason({ startMonth: m, startDay: d })
+      else useEditor.getState().setRainySeason({ endMonth: m, endDay: d })
     } else {
       setGhostFrom(drag.fromId, x, y)
     }
@@ -266,6 +286,7 @@ export function ChartCanvas() {
               onTaskClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(id) }}
               onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
               onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
+              onRainyResizePointerDown={onRainyResizePointerDown}
               onBackgroundClick={() => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(null) }}
             />
           </div>

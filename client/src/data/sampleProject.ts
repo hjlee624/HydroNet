@@ -146,7 +146,7 @@ const links: Link[] = [
 ]
 
 const rainySeasons: RainySeason[] = [
-  { id: 'rs-1', label: '우기', startMonth: 6, endMonth: 9, efficiency: 0.7 },
+  { id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 },
 ]
 
 export function createSampleProject(): Project {

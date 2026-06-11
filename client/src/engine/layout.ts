@@ -12,7 +12,7 @@ import {
   addMonths,
   dateToDay,
   dayToDate,
-  monthInRange,
+  daysInMonth,
   parseISO,
   startOfMonth,
   toISO,
@@ -75,6 +75,13 @@ export interface RainyRect {
   label: string
   y: number
   height: number
+  seasonId: string
+  /** Left/right edge x (= true band start/end clipped to the domain). */
+  startX: number
+  endX: number
+  /** Whether each edge is the real (draggable) band start/end and in-domain. */
+  showStart: boolean
+  showEnd: boolean
 }
 
 export interface LogoRect {
@@ -322,29 +329,39 @@ export function computeLayout(project: Project): LayoutModel {
   }
   years.push({ x: yearStartX, width: yearAcc, year: curYear })
 
-  // ── 우기 (rainy-season) bands, repeated per year ──
+  // ── 우기 (rainy-season) bands — day-precise window repeated per year ──
+  // Non-wrapping window (startMonth, startDay)..(endMonth, endDay), INCLUSIVE.
+  // The shared (month, day) is reused for every year so editing one edge moves
+  // all years identically. The end day is inclusive (+1) so a one-day window
+  // still shades a day and whole-month ranges match the original look.
   const rainyRects: RainyRect[] = []
   for (const band of project.rainySeasons) {
-    let m = startOfMonth(startDate)
-    while (m < endDate) {
-      if (monthInRange(m.getMonth(), band.startMonth, band.endMonth)) {
-        const mStartDay = dateToDay(project.startDate, m)
-        const mEndDay = dateToDay(project.startDate, addMonths(m, 1))
-        const x = xOf(mStartDay)
-        const width = (mEndDay - mStartDay) * pxPerDay
-        // merge with previous contiguous month
-        const prev = rainyRects[rainyRects.length - 1]
-        if (prev && Math.abs(prev.x + prev.width - x) < 0.5 && prev.label === band.label) {
-          prev.width += width
-        } else {
-          rainyRects.push({ x, width, label: band.label, y: chartTop, height: chartHeight })
-        }
-      }
-      m = addMonths(m, 1)
+    const sM = band.startMonth, eM = band.endMonth
+    const sD = Math.min(band.startDay ?? 1, daysInMonth(2001, sM - 1))
+    const eD = Math.min(band.endDay ?? daysInMonth(2001, eM - 1), daysInMonth(2001, eM - 1))
+    const firstYear = startDate.getFullYear() - 1
+    const lastYear = endDate.getFullYear() + 1
+    for (let yr = firstYear; yr <= lastYear; yr++) {
+      const sDay = dateToDay(project.startDate, new Date(yr, sM - 1, sD))
+      const eDay = dateToDay(project.startDate, new Date(yr, eM - 1, eD)) + 1 // inclusive end
+      if (eDay <= sDay) continue // inverted/degenerate window → skip
+      const a = Math.max(sDay, domainStartDay)
+      const b = Math.min(eDay, domainEndDay)
+      if (b <= a) continue
+      rainyRects.push({
+        x: xOf(a),
+        width: (b - a) * pxPerDay,
+        label: band.label,
+        y: chartTop,
+        height: chartHeight,
+        seasonId: band.id,
+        startX: xOf(a),
+        endX: xOf(b),
+        showStart: sDay >= domainStartDay,
+        showEnd: eDay <= domainEndDay,
+      })
     }
   }
-  // refresh band heights to final chart height
-  for (const r of rainyRects) { r.y = chartTop; r.height = chartHeight }
 
   return {
     contentWidth,

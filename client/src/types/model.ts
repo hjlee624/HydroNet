@@ -92,15 +92,18 @@ export interface Link {
 }
 
 /**
- * A recurring "우기"(rainy season) shaded band. Defined by month range and
- * repeated every year across the timeline. `startMonth`..`endMonth` inclusive
- * (1-12). If endMonth < startMonth the band wraps across the year boundary.
+ * A recurring "우기"(rainy season) shaded band, defined to the DAY and repeated
+ * every year across the timeline. The window runs from (startMonth, startDay) to
+ * (endMonth, endDay), inclusive. If the end falls on/before the start within a
+ * year, the band wraps across the year boundary. Months 1-12, days 1-31.
  */
 export interface RainySeason {
   id: ID
   label: string
   startMonth: number
+  startDay: number
   endMonth: number
+  endDay: number
   /** Efficiency factor applied to durations overlapping the band (0-1, 1 = none). */
   efficiency: number
 }

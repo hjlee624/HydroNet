@@ -577,6 +577,23 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 #hydronet-chart text[data-text-role] { cursor: pointer; }
 #hydronet-chart text[data-text-role]:hover { opacity: 0.55; }
 #hydronet-chart .tr-selected { filter: drop-shadow(0 0 2.5px var(--primary)); }
+
+/* ── 우기 band edge resize grips (near-invisible until hover) ── */
+#hydronet-chart .rainy-grip { fill: rgba(250, 81, 17, 0); cursor: ew-resize; pointer-events: all; }
+#hydronet-chart .rainy-grip:hover { fill: rgba(250, 81, 17, 0.22); }
+
+/* ── 불러오기 (load) list ── */
+.load-list { margin: 2px -4px 4px; }
+.load-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px; border-radius: 8px; cursor: pointer;
+}
+.load-row:hover { background: var(--cream-soft); }
+.load-name {
+  flex: 1; min-width: 0; font-weight: 600; color: var(--charcoal);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.load-meta { font-size: 11px; color: var(--stone); white-space: nowrap; }
 .seg {
   display: flex; gap: 4px; flex-wrap: wrap;
 }

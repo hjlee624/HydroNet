@@ -8,13 +8,14 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type {
-  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, Task, TextRole, TextStyle, ViewSettings,
+  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, RainySeason, Task, TextRole, TextStyle, ViewSettings,
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
 import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
+import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
 import { createSampleProject } from '../data/sampleProject'
 import { DEFAULT_PALETTE } from '../styles/theme'
-import { saveProject } from './api'
+import { autosaveProject, saveProject } from './api'
 import { logInfo, logWarn } from './logger'
 
 const HISTORY_LIMIT = 50
@@ -109,7 +110,7 @@ export interface EditorState {
   setLogoSize: (index: number, w: number, h: number) => void
   moveLogo: (index: number, dir: -1 | 1) => void
   removeLogo: (index: number) => void
-  setRainySeason: (startMonth: number, endMonth: number, label?: string) => void
+  setRainySeason: (patch: Partial<Pick<RainySeason, 'startMonth' | 'startDay' | 'endMonth' | 'endDay' | 'label' | 'efficiency'>>) => void
   clearRainySeasons: () => void
 
   // typography
@@ -169,13 +170,24 @@ function normalize(project: Project): Project {
   return {
     ...project,
     branding: { logos: normalizeLogos(project.branding?.logos) },
-    rainySeasons: project.rainySeasons ?? [],
+    rainySeasons: (project.rainySeasons ?? []).map((r) => ({
+      ...r,
+      startDay: r.startDay ?? 1,
+      endDay: r.endDay ?? daysInMonth(2001, (r.endMonth ?? 9) - 1),
+    })),
     palette,
-    view: {
-      ...project.view,
-      showTitle: project.view.showTitle !== false,
-      textStyles: project.view.textStyles ?? {},
-    },
+    view: ((v) => ({
+      pxPerDay: v.pxPerDay ?? 1.5,
+      rowHeight: v.rowHeight ?? 46,
+      labelWidth: v.labelWidth ?? 150,
+      headerHeight: v.headerHeight ?? 56,
+      scale: v.scale ?? 'month',
+      showCriticalPath: v.showCriticalPath ?? true,
+      showFloat: v.showFloat ?? false,
+      showGrid: v.showGrid ?? true,
+      showTitle: v.showTitle !== false,
+      textStyles: v.textStyles ?? {},
+    }))(project.view ?? ({} as Partial<ViewSettings>)),
   }
 }
 
@@ -447,8 +459,25 @@ export const useEditor = create<EditorState>()((set, get) => {
     removeLogo: (index) => commit((p) => {
       if (p.branding?.logos) p.branding.logos.splice(index, 1)
     }),
-    setRainySeason: (startMonth, endMonth, label = '우기') => commit((p) => {
-      p.rainySeasons = [{ id: 'rs-1', label, startMonth, endMonth, efficiency: 0.7 }]
+    setRainySeason: (patch) => commit((p) => {
+      const base: RainySeason = p.rainySeasons[0]
+        ?? { id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 }
+      const next = { ...base, ...patch }
+      // Keep the window non-wrapping (start on/before end by day-of-year): whichever
+      // edge the patch moved is clamped against the other, so it can never invert
+      // or collapse into a full-year band. Days are capped to the month length.
+      next.startDay = Math.min(next.startDay, daysInMonth(2001, next.startMonth - 1))
+      next.endDay = Math.min(next.endDay, daysInMonth(2001, next.endMonth - 1))
+      const sDoy = monthDayToDoy(next.startMonth, next.startDay)
+      const eDoy = monthDayToDoy(next.endMonth, next.endDay)
+      if (sDoy > eDoy) {
+        if ('startMonth' in patch || 'startDay' in patch) {
+          const c = doyToMonthDay(eDoy); next.startMonth = c.month; next.startDay = c.day
+        } else {
+          const c = doyToMonthDay(sDoy); next.endMonth = c.month; next.endDay = c.day
+        }
+      }
+      p.rainySeasons = [next]
     }, { history: false }),
     clearRainySeasons: () => commit((p) => { p.rainySeasons = [] }, { history: false }),
 
@@ -530,6 +559,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       } catch (e) {
         logWarn('저장 실패', e)
       }
+      // Best-effort named temp snapshot (recovery after close/reopen).
+      void autosaveProject(p)
     },
   }
 })

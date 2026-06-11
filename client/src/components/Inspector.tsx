@@ -5,7 +5,7 @@
 import { useEffect, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useEditor } from '../state/store'
-import { dateToDay, dayToDate, parseISO, toISO } from '../engine/dates'
+import { dateToDay, dayToDate, daysInMonth, parseISO, toISO } from '../engine/dates'
 import { PAPER_SIZES, DPI_OPTIONS } from '../engine/paper'
 import { PALETTE_MAX } from '../types/model'
 import type { LinkType, PaperSize, TextRole } from '../types/model'
@@ -395,23 +395,37 @@ function ProjectInspector() {
           <div className="field-row">
             <div className="field">
               <label>시작 월</label>
-              <select className="select" value={rainy.startMonth} onChange={(e) => a().setRainySeason(Number(e.target.value), rainy.endMonth)}>
+              <select className="select" value={rainy.startMonth}
+                onChange={(e) => { const m = Number(e.target.value); a().setRainySeason({ startMonth: m, startDay: Math.min(rainy.startDay, daysInMonth(2001, m - 1)) }) }}>
                 {months()}
               </select>
             </div>
+            <div className="field" style={{ maxWidth: 76 }}>
+              <label>시작 일</label>
+              <PtInput value={rainy.startDay} min={1} max={daysInMonth(2001, rainy.startMonth - 1)}
+                onCommit={(v) => a().setRainySeason({ startDay: v })} />
+            </div>
+          </div>
+          <div className="field-row">
             <div className="field">
               <label>종료 월</label>
-              <select className="select" value={rainy.endMonth} onChange={(e) => a().setRainySeason(rainy.startMonth, Number(e.target.value))}>
+              <select className="select" value={rainy.endMonth}
+                onChange={(e) => { const m = Number(e.target.value); a().setRainySeason({ endMonth: m, endDay: Math.min(rainy.endDay, daysInMonth(2001, m - 1)) }) }}>
                 {months()}
               </select>
+            </div>
+            <div className="field" style={{ maxWidth: 76 }}>
+              <label>종료 일</label>
+              <PtInput value={rainy.endDay} min={1} max={daysInMonth(2001, rainy.endMonth - 1)}
+                onCommit={(v) => a().setRainySeason({ endDay: v })} />
             </div>
           </div>
           <button className="btn btn--sm" onClick={() => a().clearRainySeasons()}>우기 제거</button>
         </>
       ) : (
-        <button className="btn btn--sm" onClick={() => a().setRainySeason(6, 9)}>＋ 우기 밴드 추가</button>
+        <button className="btn btn--sm" onClick={() => a().setRainySeason({ startMonth: 6, startDay: 1, endMonth: 9, endDay: 30 })}>＋ 우기 밴드 추가</button>
       )}
-      <p className="note">우기 구간은 회색 음영으로 표시됩니다. 댐 공사 일정 검토 시 장마철 영향을 시각화합니다.</p>
+      <p className="note">우기 구간은 회색 음영으로 표시됩니다(일 단위). 도면에서 <b>밴드 양 끝을 드래그</b>해 조절할 수 있고, 한 해를 바꾸면 모든 해의 우기가 동일하게 변동됩니다.</p>
     </>
   )
 }

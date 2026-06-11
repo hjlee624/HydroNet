@@ -149,6 +149,91 @@ app.delete('/api/projects/:id', asyncRoute(async (req, res) => {
   }
 }))
 
+// ── Autosave (temp recovery) ────────────────────────────────────────────────
+// Named .json snapshots so a user can recover work after closing/reopening.
+// Prefers C:\Program Files\HydroNET; if that isn't writable (no admin), falls
+// back to a per-user folder. The resolved path is reported to the client.
+function resolveAutosaveDir() {
+  const candidates = [
+    process.env.HN_AUTOSAVE_DIR,
+    'C:\\Program Files\\HydroNET',
+    path.join(os.homedir(), 'HydroNET'),
+    path.resolve(DATA_DIR, '..', 'autosave'),
+  ].filter(Boolean)
+  for (const dir of candidates) {
+    try {
+      fssync.mkdirSync(dir, { recursive: true })
+      fssync.accessSync(dir, fssync.constants.W_OK)
+      return dir
+    } catch { /* not writable — try the next candidate */ }
+  }
+  return DATA_DIR
+}
+const AUTOSAVE_DIR = resolveAutosaveDir()
+appendLog('info', `자동 임시저장 폴더: ${AUTOSAVE_DIR}`)
+
+/** Project name → safe .json filename base. */
+function safeName(name) {
+  const base = String(name ?? 'untitled').replace(/[\\/:*?"<>|]/g, '_').replace(/\s+/g, ' ').trim().slice(0, 120)
+  return base || 'untitled'
+}
+
+app.get('/api/autosave', asyncRoute(async (_req, res) => {
+  let files = []
+  try { files = (await fs.readdir(AUTOSAVE_DIR)).filter((f) => f.endsWith('.json')) } catch { files = [] }
+  const items = []
+  for (const f of files) {
+    try {
+      const full = path.join(AUTOSAVE_DIR, f)
+      const stat = await fs.stat(full)
+      const p = JSON.parse(await fs.readFile(full, 'utf8'))
+      items.push({ file: f.replace(/\.json$/, ''), name: p.name ?? f, updatedAt: p.meta?.updatedAt ?? stat.mtime.toISOString(), size: stat.size })
+    } catch (e) { appendLog('warn', `임시저장 파일 건너뜀: ${f}`, { message: e.message }) }
+  }
+  items.sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+  res.json({ dir: AUTOSAVE_DIR, items })
+}))
+
+app.get('/api/autosave/file/:name', asyncRoute(async (req, res) => {
+  const name = safeName(req.params.name)
+  try {
+    const raw = await fs.readFile(path.join(AUTOSAVE_DIR, `${name}.json`), 'utf8')
+    res.type('application/json').send(raw)
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
+    throw e
+  }
+}))
+
+app.post('/api/autosave', asyncRoute(async (req, res) => {
+  const project = req.body
+  if (!project || typeof project !== 'object') return res.status(400).json({ error: '잘못된 본문' })
+  const name = safeName(project.name)
+  const file = path.join(AUTOSAVE_DIR, `${name}.json`)
+  await serializeWrite(`autosave:${name}`, async () => {
+    const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
+    try {
+      await fs.writeFile(tmp, JSON.stringify(project, null, 2), 'utf8')
+      await fs.rename(tmp, file)
+    } catch (e) {
+      await fs.unlink(tmp).catch(() => {})
+      throw e
+    }
+  })
+  res.json({ ok: true, file: name, dir: AUTOSAVE_DIR })
+}))
+
+app.delete('/api/autosave/file/:name', asyncRoute(async (req, res) => {
+  const name = safeName(req.params.name)
+  try {
+    await fs.unlink(path.join(AUTOSAVE_DIR, `${name}.json`))
+    res.json({ ok: true })
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
+    throw e
+  }
+}))
+
 // Serve fonts straight from public/fonts so dropping the KoPub OTF files in
 // works WITHOUT a rebuild — every LAN client's browser then downloads them via
 // @font-face. (In the built client these also exist under dist/fonts.)

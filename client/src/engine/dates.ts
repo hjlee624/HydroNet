@@ -54,6 +54,17 @@ export function daysInMonth(year: number, monthIndex0: number): number {
   return new Date(year, monthIndex0 + 1, 0).getDate()
 }
 
+// Recurring (month, day) ↔ day-of-year, using a fixed non-leap reference year so
+// rainy-season edges order/clamp consistently regardless of the actual year.
+export function monthDayToDoy(month1: number, day: number): number {
+  return diffDays(new Date(2001, 0, 1), new Date(2001, month1 - 1, day)) + 1
+}
+export function doyToMonthDay(doy: number): { month: number; day: number } {
+  const d = new Date(2001, 0, 1)
+  d.setDate(Math.max(1, Math.min(365, Math.round(doy))))
+  return { month: d.getMonth() + 1, day: d.getDate() }
+}
+
 export const MONTH_LABELS_KO = [
   '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
 ]

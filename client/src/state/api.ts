@@ -88,3 +88,50 @@ export async function deleteProject(id: string): Promise<void> {
   localStorage.removeItem(LS_PREFIX + id)
   lsSaveIndex(lsList().filter((p) => p.id !== id))
 }
+
+// ── Named temp autosave (recovery after close/reopen) ───────────────────────
+// Best-effort and isolated from the main save's serverOk flag, so a server that
+// lacks the /api/autosave endpoint never disables the working by-id save.
+
+export interface AutosaveItem { file: string; name: string; updatedAt: string; size: number }
+
+export async function autosaveProject(project: Project): Promise<void> {
+  try {
+    await fetch('/api/autosave', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(project),
+    })
+  } catch { /* offline / endpoint missing — the by-id save + localStorage already cover persistence */ }
+}
+
+export async function listAutosaves(): Promise<{ dir: string; items: AutosaveItem[] }> {
+  try {
+    const res = await fetch('/api/autosave')
+    if (res.ok) {
+      const data = await res.json()
+      if (data && Array.isArray(data.items)) return data as { dir: string; items: AutosaveItem[] }
+    }
+  } catch { /* fall through to the by-id store */ }
+  // Fallback: recover from the by-id project store (older server without autosave).
+  const projects = await listProjects()
+  return {
+    dir: '(서버 임시저장 미지원 — 프로젝트 저장소에서 복구)',
+    items: projects.map((p) => ({ file: p.id, name: p.name, updatedAt: p.updatedAt, size: 0 })),
+  }
+}
+
+export async function loadAutosave(file: string): Promise<Project | null> {
+  try {
+    const res = await fetch(`/api/autosave/file/${encodeURIComponent(file)}`)
+    if (res.ok) return (await res.json()) as Project
+  } catch { /* fall through */ }
+  // Fallback: treat `file` as a by-id project key.
+  return loadProject(file)
+}
+
+export async function deleteAutosave(file: string): Promise<void> {
+  try {
+    await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, { method: 'DELETE' })
+  } catch { /* best-effort */ }
+}

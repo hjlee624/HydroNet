@@ -34,6 +34,7 @@ interface Props {
   onTaskClick: (e: RMouseEvent, id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
   onTextClick: (role: TextRole) => void
+  onRainyResizePointerDown: (e: RPointerEvent, seasonId: string, edge: 'start' | 'end') => void
   onBackgroundClick: () => void
 }
 
@@ -45,7 +46,7 @@ function ChartSvgBase({
   model, routed, project, selectedTaskId, selectedLinkId, selectedTextRole,
   showCriticalPath, showGrid, linkingGhost,
   onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
-  onTaskClick, onLinkClick, onTextClick, onBackgroundClick,
+  onTaskClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
@@ -280,6 +281,24 @@ function ChartSvgBase({
           )
         })}
       </g>
+
+      {/* 우기 band resize grips — drawn on top so they stay grabbable over bars.
+          Near-invisible until hover; never exported (data-export-hide). Dragging
+          any year's edge changes the shared (month, day), so all years move. */}
+      {project.rainySeasons.length > 0 && model.rainyRects.map((r, i) => (
+        <g key={`rainy-grip-${i}`}>
+          {r.showStart && (
+            <rect data-export-hide="1" className="rainy-grip" fill="transparent"
+              x={r.startX - 3} y={chartTop} width={6} height={r.height}
+              onPointerDown={(e) => onRainyResizePointerDown(e, r.seasonId, 'start')} />
+          )}
+          {r.showEnd && (
+            <rect data-export-hide="1" className="rainy-grip" fill="transparent"
+              x={r.endX - 3} y={chartTop} width={6} height={r.height}
+              onPointerDown={(e) => onRainyResizePointerDown(e, r.seasonId, 'end')} />
+          )}
+        </g>
+      ))}
 
       {/* footer: CI / logos (bottom-right). Dashed bounds + corner grip are
           flagged data-export-hide so they never appear in exported output. */}
