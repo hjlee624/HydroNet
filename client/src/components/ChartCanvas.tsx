@@ -42,6 +42,8 @@ export function ChartCanvas() {
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
   const [panning, setPanning] = useState(false)
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  // Live "drop here" insertion line while dragging a bar vertically to re-order.
+  const [reorderHint, setReorderHint] = useState<{ catId: string; beforeId: string | null; lineY: number } | null>(null)
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
@@ -62,6 +64,33 @@ export function ChartCanvas() {
     const rect = paperRef.current!.getBoundingClientRect()
     // rect reflects the scaled box; divide by zoom to get unscaled model coords.
     return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom }
+  }
+
+  // Map a content-Y (while dragging task `taskId`) to a drop target: which lane,
+  // and which task to insert before (null = lane end). Returns null when the
+  // drop wouldn't change anything (so a purely-horizontal drag never re-orders).
+  function computeReorderTarget(taskId: string, contentY: number) {
+    const cats = model.categories
+    if (!cats.length) return null
+    let cat = cats.find((c) => contentY >= c.y && contentY < c.y + c.height)
+    if (!cat) cat = contentY < cats[0].y ? cats[0] : cats[cats.length - 1]
+    const laneTasks = model.tasks
+      .filter((lt) => lt.categoryId === cat.id && lt.task.id !== taskId)
+      .sort((p, q) => p.subRow - q.subRow)
+    let beforeId: string | null = null
+    let lineY = cat.y + cat.height
+    for (const lt of laneTasks) {
+      if (contentY < lt.cy) { beforeId = lt.task.id; lineY = lt.cy - model.rowHeight / 2; break }
+    }
+    // No-op when dropping right where the task already sits in its own lane.
+    const dragged = model.tasks.find((lt) => lt.task.id === taskId)
+    if (dragged && dragged.categoryId === cat.id) {
+      const order = model.tasks.filter((lt) => lt.categoryId === cat.id).sort((p, q) => p.subRow - q.subRow)
+      const di = order.findIndex((lt) => lt.task.id === taskId)
+      const curNext = order[di + 1]?.task.id ?? null
+      if (beforeId === curNext) return null
+    }
+    return { catId: cat.id, beforeId, lineY }
   }
 
   // ── Zoom-to-cursor: after a wheel-driven zoom commits, shift scroll so the
@@ -206,6 +235,7 @@ export function ChartCanvas() {
       window.removeEventListener('pointerup', onWindowUp)
       dragRef.current = null
       setGhost(null)
+      setReorderHint(null)
       if (drag.kind === 'link') useEditor.getState().cancelLinking()
       return
     }
@@ -214,6 +244,9 @@ export function ChartCanvas() {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
+      // Vertical component → preview where the bar would re-order to (skip when
+      // a filter is active: lanes/rows are a subset and the math is ambiguous).
+      setReorderHint(filterActive(useEditor.getState().filter) ? null : computeReorderTarget(drag.taskId, y))
     } else if (drag.kind === 'resize') {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const day = model.dayOf(x)
@@ -247,7 +280,15 @@ export function ChartCanvas() {
     window.removeEventListener('pointerup', onWindowUp)
     dragRef.current = null
     setGhost(null)
+    setReorderHint(null)
     if (!drag) return
+    if (drag.kind === 'move' && drag.started && !filterActive(useEditor.getState().filter)) {
+      // The vertical part of the move re-orders the activity (and may move it to
+      // another 공종). Part of the same gesture, so history:false (already snapped).
+      const { y } = toContent(e.clientX, e.clientY)
+      const target = computeReorderTarget(drag.taskId, y)
+      if (target) useEditor.getState().reorderTask(drag.taskId, target.catId, target.beforeId, { history: false })
+    }
     if (drag.kind === 'link') {
       const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null
       const target = el?.closest('[data-task-id]') as HTMLElement | null
@@ -355,6 +396,13 @@ export function ChartCanvas() {
                 onBlur={commitRename}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
+              />
+            )}
+            {reorderHint && (
+              <div
+                className="reorder-line"
+                data-export-hide="1"
+                style={{ top: reorderHint.lineY, left: model.labelWidth, width: Math.max(0, model.contentWidth - model.labelWidth) }}
               />
             )}
           </div>

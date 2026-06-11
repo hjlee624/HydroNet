@@ -4,7 +4,7 @@
 
 import { useState } from 'react'
 import type { DragEvent as RDragEvent } from 'react'
-import { useEditor } from '../state/store'
+import { useEditor, filterActive } from '../state/store'
 import type { Category } from '../types/model'
 
 /** Small ON/OFF switch controlling whether a lane/activity shows in the chart. */
@@ -72,15 +72,43 @@ function CategoryNode({ cat, selectedTaskId }: { cat: Category; selectedTaskId: 
   })
   const a = useEditor.getState
   const [dragOver, setDragOver] = useState(false)
+  const [dropAt, setDropAt] = useState<{ taskId: string; pos: 'before' | 'after' } | null>(null)
+  // While a filter is active the lane list is a SUBSET, so an insertion position
+  // computed from it is ambiguous against the full array (where do the hidden
+  // neighbours go?). Disable drag-reorder while filtered, exactly as the chart
+  // does — clear the filter to rearrange.
+  const filtered = filterActive(filter)
 
-  function onDrop(e: RDragEvent<HTMLDivElement>) {
+  function onCatDrop(e: RDragEvent<HTMLDivElement>) {
     e.preventDefault()
     setDragOver(false)
+    setDropAt(null)
+    if (filtered) return
     const id = e.dataTransfer.getData('text/hn-task')
-    if (!id) return
-    // Same-lane drop is a no-op (don't pollute undo / dirty / autosave).
-    const t = a().project.tasks.find((x) => x.id === id)
-    if (t && t.categoryId !== cat.id) a().updateTask(id, { categoryId: cat.id })
+    if (id) a().reorderTask(id, cat.id, null) // dropped on the lane body → end of lane
+  }
+
+  function onTaskDragOver(e: RDragEvent<HTMLDivElement>, taskId: string) {
+    if (filtered) return
+    e.preventDefault()
+    e.stopPropagation() // show a precise insertion line, not the whole-lane highlight
+    e.dataTransfer.dropEffect = 'move'
+    const r = e.currentTarget.getBoundingClientRect()
+    const pos: 'before' | 'after' = e.clientY < r.top + r.height / 2 ? 'before' : 'after'
+    setDropAt((prev) => (prev?.taskId === taskId && prev.pos === pos ? prev : { taskId, pos }))
+  }
+
+  function onTaskDrop(e: RDragEvent<HTMLDivElement>, idx: number) {
+    e.preventDefault()
+    e.stopPropagation()
+    const id = e.dataTransfer.getData('text/hn-task')
+    const target = dropAt
+    setDropAt(null); setDragOver(false)
+    if (filtered || !id) return
+    // Insert before this row (top half) or before the next row (bottom half).
+    const pos = target?.taskId === tasks[idx].id ? target.pos : 'before'
+    const beforeId = pos === 'before' ? tasks[idx].id : (tasks[idx + 1]?.id ?? null)
+    a().reorderTask(id, cat.id, beforeId)
   }
 
   return (
@@ -88,8 +116,8 @@ function CategoryNode({ cat, selectedTaskId }: { cat: Category; selectedTaskId: 
       className={`cat ${dragOver ? 'cat--drop' : ''} ${cat.hidden ? 'is-hidden' : ''}`}
       onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move' }}
       onDragEnter={() => setDragOver(true)}
-      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragOver(false) }}
-      onDrop={onDrop}
+      onDragLeave={(e) => { if (!e.currentTarget.contains(e.relatedTarget as Node)) { setDragOver(false); setDropAt(null) } }}
+      onDrop={onCatDrop}
     >
       <div className="cat__row" onClick={() => a().selectCategory(cat.id)}>
         <button className="icon-btn" title={cat.collapsed ? '펼치기' : '접기'} onClick={(e) => { e.stopPropagation(); a().toggleCollapse(cat.id) }}>
@@ -104,14 +132,16 @@ function CategoryNode({ cat, selectedTaskId }: { cat: Category; selectedTaskId: 
       </div>
       {!cat.collapsed && (
         <div className="cat__tasks">
-          {tasks.map((t) => (
+          {tasks.map((t, idx) => (
             <div
               key={t.id}
-              className={`cat__task ${t.id === selectedTaskId ? 'selected' : ''} ${t.critical ? 'crit' : ''} ${t.hidden ? 'is-hidden' : ''}`}
-              draggable
+              className={`cat__task ${t.id === selectedTaskId ? 'selected' : ''} ${t.critical ? 'crit' : ''} ${t.hidden ? 'is-hidden' : ''} ${dropAt?.taskId === t.id ? (dropAt.pos === 'before' ? 'drop-before' : 'drop-after') : ''}`}
+              draggable={!filtered}
               onDragStart={(e) => { e.dataTransfer.setData('text/hn-task', t.id); e.dataTransfer.effectAllowed = 'move' }}
+              onDragOver={(e) => onTaskDragOver(e, t.id)}
+              onDrop={(e) => onTaskDrop(e, idx)}
               onClick={() => a().selectTask(t.id)}
-              title="드래그해서 다른 공종으로 이동"
+              title={filtered ? '필터를 해제하면 드래그로 순서를 변경할 수 있습니다' : '드래그: 같은 공종 안 순서 변경 · 다른 공종으로 이동'}
             >
               <span>{t.isMilestone ? '◆' : '▬'}</span>
               <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>

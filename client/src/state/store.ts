@@ -109,6 +109,10 @@ export interface EditorState {
   setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
   toggleMilestone: (id: ID) => void
+  /** Move a task to a 공종 and insert it right before `beforeId` (null = end of
+   *  that lane). Drives sidebar + chart drag-to-reorder; the array order is the
+   *  single source of truth both views render in. */
+  reorderTask: (id: ID, targetCategoryId: ID, beforeId: ID | null, opts?: { history?: boolean }) => void
 
   // categories
   addCategory: (partial?: Partial<Category>) => ID
@@ -391,6 +395,28 @@ export const useEditor = create<EditorState>()((set, get) => {
           else if (t.duration === 0) t.duration = 30
         }
       }, { cascade: true })
+    },
+    reorderTask: (id, targetCategoryId, beforeId, opts) => {
+      if (beforeId === id) return // dropping a task onto itself is a no-op
+      commit((p) => {
+        const moving = p.tasks.find((t) => t.id === id)
+        if (!moving) return
+        moving.categoryId = targetCategoryId
+        const without = p.tasks.filter((t) => t.id !== id)
+        let insertAt: number
+        if (beforeId) {
+          const bi = without.findIndex((t) => t.id === beforeId)
+          insertAt = bi >= 0 ? bi : without.length
+        } else {
+          // No anchor → append after the target lane's current last task.
+          let last = -1
+          without.forEach((t, i) => { if (t.categoryId === targetCategoryId) last = i })
+          insertAt = last >= 0 ? last + 1 : without.length
+        }
+        without.splice(insertAt, 0, moving)
+        p.tasks = without
+      }, { history: opts?.history ?? true, cascade: false })
+      set({ selectedTaskId: id, selectedLinkId: null })
     },
 
     addCategory: (partial) => {
