@@ -133,6 +133,9 @@ export interface ViewSettings {
   showGrid: boolean
   /** Show the bold drawing title (project name) centred at the top. */
   showTitle: boolean
+  /** Global multiplier on every text size (1 = design size). Raised by
+   *  "fit to paper" so text stays legible on large sheets; user-adjustable. */
+  fontScale?: number
   /** Per-role typography overrides for the chart texts (empty = all defaults). */
   textStyles?: Partial<Record<TextRole, TextStyle>>
 }

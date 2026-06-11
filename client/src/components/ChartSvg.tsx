@@ -61,7 +61,7 @@ function ChartSvgBase({
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
   function roleAttrs(role: TextRole) {
-    const s = resolveTextStyle(role, project.view.textStyles)
+    const s = resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1)
     const style: CSSProperties = { fontFamily: s.fontFamily, cursor: 'pointer' }
     return {
       fontSize: s.fontSize,

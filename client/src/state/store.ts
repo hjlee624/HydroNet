@@ -230,6 +230,7 @@ function normalize(project: Project): Project {
       showFloat: v.showFloat ?? false,
       showGrid: v.showGrid ?? true,
       showTitle: v.showTitle !== false,
+      fontScale: v.fontScale ?? 1,
       textStyles: v.textStyles ?? {},
     }))(project.view ?? ({} as Partial<ViewSettings>)),
   }
@@ -511,12 +512,12 @@ export const useEditor = create<EditorState>()((set, get) => {
       const p = get().project
       const { w, h } = paperMm(p.paper.size, p.paper.orientation)
       const patch = fitToPaperView(p, w, h)
-      if (patch.pxPerDay === undefined && patch.rowHeight === undefined) {
-        logInfo('이미 용지 비율에 맞춰져 있어 여백이 없습니다.')
+      if (patch.pxPerDay === undefined && patch.rowHeight === undefined && patch.fontScale === undefined) {
+        logInfo('이미 용지 비율·글자 크기에 맞춰져 있습니다.')
         return
       }
-      commit((d) => { d.view = { ...d.view, ...patch } }, { history: true })
-      logInfo('현재 용지 규격에 맞춰 여백 없이 채웠습니다.')
+      commit((d) => { d.view = { ...d.view, ...patch } }, { history: false })
+      logInfo('현재 용지 규격에 맞춰 여백 없이 채우고 글자 크기를 조정했습니다.')
     },
     setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }),
     toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),

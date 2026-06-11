@@ -48,6 +48,7 @@ const paperAspect = 841 / 594
 console.log(`\n[Fit] A1↻ paper=${paperAspect.toFixed(3)}  fitted=${fittedAspect.toFixed(3)}  patch=${JSON.stringify(fitPatch)}`)
 check(Math.abs(fittedAspect - paperAspect) / paperAspect < 0.02, `시트에 맞추면 종횡비 일치 (도면 ${fittedAspect.toFixed(3)} ≈ 용지 ${paperAspect.toFixed(3)})`)
 check(Number.isFinite(fitted.contentWidth) && Number.isFinite(fitted.contentHeight), '맞춤 후 좌표 유한')
+check(fitPatch.fontScale === undefined || (Number.isFinite(fitPatch.fontScale) && fitPatch.fontScale >= 1), '맞춤 글자 배율은 유한하며 축소하지 않음(≥1)')
 
 // 4. Routing
 const routed = routeLinks(model, project.links)

@@ -147,16 +147,19 @@ export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [
   { label: '돋움', value: "'Dotum', '돋움', sans-serif" },
 ]
 
-/** Resolve a role to its concrete style, merging the user override over the default. */
+/** Resolve a role to its concrete style, merging the user override over the
+ *  default. `fontScale` is a global multiplier (1 = design size) so the whole
+ *  drawing's text can grow/shrink together to stay legible on a given sheet. */
 export function resolveTextStyle(
   role: TextRole,
   overrides?: Partial<Record<TextRole, TextStyle>>,
+  fontScale = 1,
 ): { fontSize: number; fontFamily: string; fill: string; fontWeight: number } {
   const d = TEXT_ROLE_DEFAULTS[role]
   const o = overrides?.[role]
   const fontFamily = (o?.fontFamily && o.fontFamily.trim()) || d.fontFamily
   return {
-    fontSize: o?.fontSize ?? d.fontSize,
+    fontSize: (o?.fontSize ?? d.fontSize) * (fontScale > 0 ? fontScale : 1),
     fontFamily,
     fill: (o?.color && o.color.trim()) || d.color,
     fontWeight: /Bold/i.test(fontFamily) ? 700 : 500,

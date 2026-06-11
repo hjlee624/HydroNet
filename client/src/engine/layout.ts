@@ -377,21 +377,44 @@ export function fitToPaperView(
   project: Project,
   paperWmm: number,
   paperHmm: number,
-): { pxPerDay?: number; rowHeight?: number } {
+): { pxPerDay?: number; rowHeight?: number; fontScale?: number } {
   const m = computeLayout(project)
   const target = paperWmm / paperHmm
   const current = m.contentWidth / m.contentHeight
-  if (!Number.isFinite(target) || !Number.isFinite(current) || Math.abs(current - target) < 1e-3) return {}
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
-  if (current < target) {
-    // Too narrow for the sheet → widen the time axis: contentWidth = target × H.
-    const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
-    const targetW = target * m.contentHeight
-    return { pxPerDay: clamp((targetW - m.labelWidth) / domainDays, 0.1, 80) }
+  const out: { pxPerDay?: number; rowHeight?: number; fontScale?: number } = {}
+
+  // ── 1. Match aspect ratio (kill the export letterbox) by stretching the
+  //       deficient axis UP — never compress, so text/bars stay readable. ──
+  let contentWidthAfter = m.contentWidth
+  if (Number.isFinite(target) && Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
+    if (current < target) {
+      // Too narrow → widen the time axis: contentWidth = target × H.
+      const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
+      const px = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.1, 80)
+      // Only report a change (else a clamp-saturated value == current would slip
+      // past fitToPaper's no-op guard → false "fixed" toast + wasted recompute).
+      if (Math.abs(px - m.pxPerDay) > 1e-3) out.pxPerDay = px
+      contentWidthAfter = m.labelWidth + domainDays * px // achieved width (for fontScale)
+    } else {
+      // Too short → taller rows: contentHeight = contentWidth / target (width unchanged).
+      const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
+      const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
+      const rh = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 400)
+      if (Math.abs(rh - m.rowHeight) > 1e-3) out.rowHeight = rh
+    }
   }
-  // Too short for the sheet → taller rows: contentHeight = contentWidth / target.
-  const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
-  const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
-  const targetH = m.contentWidth / target
-  return { rowHeight: clamp((targetH - fixedV) / totalRows, 16, 400) }
+
+  // ── 2. Scale text so it stays legible on the sheet. After the fit the content
+  //       fills the page, so 1 content-px ≈ paperWmm/contentWidth mm. We size a
+  //       reference annotation to a target physical height, and only ever ENLARGE
+  //       (≥1) so a normal chart is never shrunk — fixes "text invisible on big
+  //       sheets" without touching well-sized charts. User-tunable afterwards. ──
+  const REF_PX = 10.5    // taskName default — the reference annotation
+  const TARGET_MM = 3.5  // legible printed height for that reference
+  const pxPerMm = contentWidthAfter / paperWmm
+  const fontScale = clamp((TARGET_MM * pxPerMm) / REF_PX, 1, 6)
+  if (Math.abs(fontScale - (project.view.fontScale ?? 1)) > 1e-3) out.fontScale = Number(fontScale.toFixed(3))
+
+  return out
 }

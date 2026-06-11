@@ -95,7 +95,7 @@ export function projectToDxf(project: Project): string {
   const routed = routeLinks(model, project.links)
   const H = model.contentHeight
   const fy = (y: number) => H - y // flip to Y-up
-  const ts = (role: Parameters<typeof resolveTextStyle>[0]) => resolveTextStyle(role, project.view.textStyles)
+  const ts = (role: Parameters<typeof resolveTextStyle>[0]) => resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1)
 
   const b: (string | number)[] = []
   const g = (code: number, val: string | number) => { b.push(code, val) }
