@@ -68,6 +68,8 @@ function aci(hex: string): number {
   return best
 }
 
+// Colours are chosen to be visible on BOTH AutoCAD's default black model space
+// and a white background (7 = white-on-dark / black-on-light; 9 = mid grey).
 const LAYERS: Array<[string, number]> = [
   ['0', 7],
   ['HN_RAINY', 9],
@@ -75,15 +77,15 @@ const LAYERS: Array<[string, number]> = [
   ['HN_AXIS', 7],
   ['HN_HEADER', 7],
   ['HN_CATEGORY', 7],
-  ['HN_SUBCAT', 8],
+  ['HN_SUBCAT', 7],
   ['HN_BAR', 5],
   ['HN_BAR_CRIT', 1],
   ['HN_TASKNAME', 7],
-  ['HN_DURATION', 8],
+  ['HN_DURATION', 7],
   ['HN_MILESTONE', 7],
   ['HN_MS_CRIT', 1],
-  ['HN_MS_DATE', 8],
-  ['HN_ARROW', 8],
+  ['HN_MS_DATE', 7],
+  ['HN_ARROW', 9],
   ['HN_ARROW_CRIT', 1],
   ['HN_TITLE', 7],
 ]
@@ -141,21 +143,24 @@ export function projectToDxf(project: Project): string {
     }
     g(0, 'SEQEND'); g(8, layer)
   }
-  /** TEXT — 'center' anchors via 72/73 + 11/21; 'left' delegates to textLeft. */
+  /** TEXT — emits LEFT-anchored (group 10/20, 72=0) for BOTH modes. For 'center'
+   *  the left edge is computed from an estimated string width, because many CAD
+   *  readers don't honour the 72/11-21 indirect-anchor rule (centred text then
+   *  piles up at the origin). Left-anchored 10/20 placement is universal. */
   function text(layer: string, x: number, y: number, str: string, heightPx: number,
     anchor: 'left' | 'center', color?: number) {
-    if (anchor === 'left') { textLeft(layer, x, y, str, heightPx, color); return }
     const s = (str ?? '').replace(/[\r\n]+/g, ' ').trim()
     if (!s) return
-    const h = Math.max(1, heightPx * 0.72) // SVG font-size → DXF cap height
-    g(0, 'TEXT'); g(8, layer); if (color != null) g(62, color)
-    g(10, '0.0'); g(20, '0.0'); g(30, '0.0')
-    g(40, num(h)); g(1, dxfText(s)); g(50, '0.0')
-    g(72, 1) // centred — position comes from the 11/21 second alignment point
-    g(11, num(x)); g(21, num(fy(y))); g(31, '0.0')
-    g(73, 0)
+    if (anchor !== 'center') { textLeft(layer, x, y, s, heightPx, color); return }
+    const h = heightPx * 0.72
+    let w = 0
+    for (const ch of s) {
+      const cp = ch.codePointAt(0) ?? 0
+      w += ch === ' ' ? h * 0.4 : cp > 0x2e80 ? h : h * 0.55 // CJK ≈ 1em, Latin ≈ 0.55em
+    }
+    textLeft(layer, x - w / 2, y, s, heightPx, color)
   }
-  // Left/baseline text — insertion point in 10/20.
+  // Left/baseline text — insertion point in 10/20 (universally honoured).
   function textLeft(layer: string, x: number, y: number, str: string, heightPx: number, color?: number) {
     const s = (str ?? '').replace(/[\r\n]+/g, ' ').trim()
     if (!s) return
@@ -173,9 +178,9 @@ export function projectToDxf(project: Project): string {
   // ── grid: month verticals, year verticals, lane separators ──
   const chartBottom = model.chartTop + model.chartHeight
   for (const m of model.months) line('HN_GRID', m.x, model.chartTop, m.x, chartBottom, 9)
-  for (const y of model.years) line('HN_GRID', y.x, model.headerTop, y.x, chartBottom, 8)
+  for (const y of model.years) line('HN_GRID', y.x, model.headerTop, y.x, chartBottom, 9)
   for (const c of model.categories) {
-    line('HN_GRID', model.labelWidth, c.y + c.height, model.contentWidth, c.y + c.height, 8)
+    line('HN_GRID', model.labelWidth, c.y + c.height, model.contentWidth, c.y + c.height, 9)
   }
   // label column + header separators
   line('HN_AXIS', model.labelWidth, model.titleHeight, model.labelWidth, model.contentHeight, 7)
@@ -198,7 +203,7 @@ export function projectToDxf(project: Project): string {
     const ht = ts('headerTitle'), hs = ts('headerSub')
     const top = model.headerTop, headerH = model.headerHeight
     textLeft('HN_HEADER', 12, top + headerH * 0.4, '공종 / 마일스톤', ht.fontSize, 7)
-    textLeft('HN_HEADER', 12, top + headerH * 0.82, `착수 ${toISO(dayToDate(project.startDate, 0)).slice(0, 7)}`, hs.fontSize, 8)
+    textLeft('HN_HEADER', 12, top + headerH * 0.82, `착수 ${toISO(dayToDate(project.startDate, 0)).slice(0, 7)}`, hs.fontSize, 7)
   }
 
   // ── category + sub-category labels ──
@@ -210,7 +215,7 @@ export function projectToDxf(project: Project): string {
       textLeft('HN_CATEGORY', 18, nameY, c.name, cat.fontSize, 7)
       if (hasSubs) {
         for (const sg of c.subGroups) {
-          textLeft('HN_SUBCAT', 26, sg.y + sg.height / 2 + 4, sg.name, sub.fontSize, 8)
+          textLeft('HN_SUBCAT', 26, sg.y + sg.height / 2 + 4, sg.name, sub.fontSize, 7)
         }
       }
     }
@@ -222,7 +227,7 @@ export function projectToDxf(project: Project): string {
     for (const r of routed) {
       const crit = show && r.critical
       const layer = crit ? 'HN_ARROW_CRIT' : 'HN_ARROW'
-      const col = crit ? 1 : 8
+      const col = crit ? 1 : 9
       polyline(layer, r.points, false, col)
       // arrowhead — small filled triangle at the head, along arrowAngle
       const len = 9, half = 3.2
@@ -259,14 +264,14 @@ export function projectToDxf(project: Project): string {
         polyline(crit ? 'HN_MS_CRIT' : 'HN_MILESTONE', dia, true, crit ? 1 : 7)
         text(crit ? 'HN_MS_CRIT' : 'HN_MILESTONE', lt.cx, lt.cy - r - 4,
           t.name.replace(/^◆\s*/, ''), mn.fontSize, 'center', crit ? 1 : 7)
-        text('HN_MS_DATE', lt.cx, lt.cy + r + 12, toISO(dayToDate(project.startDate, t.start)).slice(2), md.fontSize, 'center', 8)
+        text('HN_MS_DATE', lt.cx, lt.cy + r + 12, toISO(dayToDate(project.startDate, t.start)).slice(2), md.fontSize, 'center', 7)
       } else {
         const fill = crit ? '#E12D1B' : laneColor(lt)
         const layer = crit ? 'HN_BAR_CRIT' : 'HN_BAR'
         solidRect(layer, lt.x, lt.y, lt.w, lt.h, aci(fill))
         polyline(layer, [[lt.x, lt.y], [lt.x + lt.w, lt.y], [lt.x + lt.w, lt.y + lt.h], [lt.x, lt.y + lt.h]], true, 7)
         textLeft('HN_TASKNAME', lt.x, lt.y - 3.5, t.name, tn.fontSize, crit ? 1 : 7)
-        textLeft('HN_DURATION', lt.x, lt.y + lt.h + 10.5, `${t.duration}일`, du.fontSize, 8)
+        textLeft('HN_DURATION', lt.x, lt.y + lt.h + 10.5, `${t.duration}일`, du.fontSize, 7)
       }
     }
   }
