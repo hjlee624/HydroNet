@@ -5,16 +5,27 @@ import { useState } from 'react'
 import { useEditor } from '../state/store'
 import { Modal } from './Modal'
 import { exportChart, type ExportFormat } from '../export/exporter'
+import { projectToDxf } from '../export/dxf'
 import { PAPER_SIZES, paperPx, DPI_OPTIONS } from '../engine/paper'
 import type { PaperSize } from '../types/model'
-import { logError } from '../state/logger'
+import { logError, logInfo } from '../state/logger'
 
 const FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
   { id: 'pdf', label: 'PDF', hint: '인쇄용 · 용지 규격 그대로' },
   { id: 'png', label: 'PNG', hint: '보고서 첨부 · 무손실' },
   { id: 'jpg', label: 'JPG', hint: '용량 작은 이미지' },
-  { id: 'svg', label: 'SVG', hint: '벡터 원본 · 무한 확대' },
+  { id: 'svg', label: 'SVG', hint: '벡터 원본 · 일러스트레이터(AI)에서 바로 편집' },
+  { id: 'dxf', label: 'DXF', hint: 'CAD · AutoCAD에서 열고 DWG로 저장 (텍스트·선·해치)' },
 ]
+
+/** Trigger a client-side text download. */
+function download(content: string, filename: string, mime: string) {
+  const url = URL.createObjectURL(new Blob([content], { type: mime }))
+  const a = document.createElement('a')
+  a.href = url; a.download = filename
+  document.body.appendChild(a); a.click(); a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 4000)
+}
 
 export function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useEditor((s) => s.project)
@@ -27,6 +38,24 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const px = paperPx(project.paper)
 
   async function run() {
+    const filename = (project.name || 'hydronet').replace(/[\\/:*?"<>|]/g, '_')
+
+    // DXF is built purely from the data model (no SVG/raster needed).
+    if (format === 'dxf') {
+      setBusy(true); setMsg(null)
+      try {
+        download(projectToDxf(project), `${filename}.dxf`, 'application/dxf')
+        logInfo(`DXF 내보내기 완료: ${filename}.dxf`)
+        setMsg('DXF(캐드)로 내보냈습니다. AutoCAD에서 열어 편집하거나 DWG로 저장하세요.')
+      } catch (e) {
+        logError('DXF 내보내기 실패', e)
+        setMsg('DXF 내보내기에 실패했습니다. error.log를 확인하세요.')
+      } finally {
+        setBusy(false)
+      }
+      return
+    }
+
     // Clear any selection first so the on-screen selection ring (orange stroke on
     // the selected bar/milestone/link) isn't baked into the exported image. Wait
     // two frames for React to commit the deselected DOM before we clone the SVG.
@@ -36,7 +65,6 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     if (!svg) { setMsg('차트를 찾을 수 없습니다.'); return }
     const width = Number(svg.getAttribute('width')) || svg.clientWidth
     const height = Number(svg.getAttribute('height')) || svg.clientHeight
-    const filename = (project.name || 'hydronet').replace(/[\\/:*?"<>|]/g, '_')
     setBusy(true); setMsg(null)
     try {
       const r = await exportChart({ svg, content: { width, height }, paper: project.paper, filename, format, transparent })
@@ -70,7 +98,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <label>형식</label>
         <div className="seg">
           {FORMATS.map((f) => (
-            <button key={f.id} className={format === f.id ? 'active' : ''} onClick={() => setFormat(f.id)} title={f.hint}>
+            <button key={f.id} className={format === f.id ? 'active' : ''} onClick={() => { setFormat(f.id); setMsg(null) }} title={f.hint}>
               {f.label}
             </button>
           ))}
@@ -78,7 +106,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <p className="note">{FORMATS.find((f) => f.id === format)?.hint}</p>
       </div>
 
-      {format !== 'svg' && (
+      {format !== 'svg' && format !== 'dxf' && (
         <>
           <div className="field-row">
             <div className="field">

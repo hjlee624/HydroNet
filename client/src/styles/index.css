@@ -220,6 +220,9 @@ input, select, textarea {
 .btn--primary:hover { background: var(--primary-deep); border-color: var(--primary-deep); }
 .btn--ghost { border-color: transparent; background: transparent; }
 .btn--ghost:hover { background: var(--cream-soft); }
+.btn--dark { background: var(--ink); border-color: var(--ink); color: var(--cream); font-weight: 600; }
+.btn--dark:hover { background: #000; border-color: #000; }
+.btn--dark:active { background: #000; }
 .btn--sm { height: 28px; padding: 0 10px; font-size: 12px; }
 .btn--icon { width: 34px; padding: 0; justify-content: center; }
 

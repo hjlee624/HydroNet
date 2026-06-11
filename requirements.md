@@ -93,6 +93,8 @@ server/src/index.js     Express(파일저장 + error.log + /fonts + autosave + S
 - **[기본]** 화면과 동일한 SVG를 용지 DPI로 래스터화. 화면 전용 오버레이는 `data-export-hide`로 출력 제외.
 - **[추가]** **출력 해상도 96~600 DPI**(A4~A2는 600 원본, 대형 용지는 메모리 보호 자동 클램프). PNG 배경 투명 옵션 정상 동작.
 - **[추가]** 출력 시 **선택 윤곽선이 도면에 박히지 않도록** export 직전 선택 해제.
+- **[추가]** **DXF(캐드) 출력** — 데이터 모델에서 직접 생성(SVG 불필요). R12(AC1009) 타깃으로 호환성 최대화: 텍스트=TEXT, 화살표/마일스톤/외곽선=POLYLINE, 막대/채움/화살촉=SOLID, 격자/축=LINE, 색=ACI 근사, 공종별 레이어. AutoCAD에서 열어 편집·DWG 저장. (한글 텍스트 렌더링은 CAD의 유니코드 폰트 설정에 의존 — 한글 완벽 편집은 SVG→일러스트레이터 경로 권장)
+- **[참고]** DWG는 바이너리 독점 포맷이라 브라우저 직접 생성 불가(DXF→AutoCAD→DWG 저장). AI는 SVG/PDF 호환이라 SVG 출력으로 대체.
 
 ### 3.8 저장 · 임시저장 · 불러오기
 - **[기본]** 변경 시 디바운스 자동저장(서버 `server/data/<id>.json`, 실패 시 localStorage 폴백). undo/redo.

@@ -15,7 +15,7 @@ import { paperPx } from '../engine/paper'
 import { colors } from '../styles/theme'
 import { logError, logInfo } from '../state/logger'
 
-export type ExportFormat = 'svg' | 'png' | 'jpg' | 'pdf'
+export type ExportFormat = 'svg' | 'png' | 'jpg' | 'pdf' | 'dxf'
 
 interface ContentSize {
   width: number

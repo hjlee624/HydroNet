@@ -16,6 +16,8 @@ export interface RoutedLink {
   from: string
   to: string
   d: string
+  /** Orthogonal elbow points (for non-SVG consumers like the DXF exporter). */
+  points: Array<[number, number]>
   arrowX: number
   arrowY: number
   arrowAngle: number // radians, direction of travel at the head
@@ -117,6 +119,7 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
       from: link.from,
       to: link.to,
       d,
+      points: pts,
       arrowX: head[0],
       arrowY: head[1],
       arrowAngle,

@@ -106,7 +106,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </div>
 
         <span className={`save-state ${dirty ? 'dirty' : ''}`}>{dirty ? '● 저장 중…' : '저장됨'}</span>
-        <button className="btn btn--icon btn--sm" title="도움말 · 사용 방법" aria-label="도움말" onClick={() => setHelpOpen(true)}>?</button>
+        <button className="btn btn--sm btn--dark" title="사용 방법 · 단축키" aria-label="도움말" onClick={() => setHelpOpen(true)}>? 도움말</button>
         <button className="btn btn--sm" title="출력 전 전체 화면 미리보기 (Esc 종료)" onClick={onToggleFullscreen}>
           {fullscreen ? '⤢ 종료' : '⤢ 전체 화면'}
         </button>
