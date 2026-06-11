@@ -37,3 +37,12 @@ preview.svg
 **/preview.svg
 sample.dxf
 **/sample.dxf
+
+# Exported drawings / reference images dropped in the repo root (DESIGN/ assets
+# are kept; only root-level artifacts are ignored via the leading slash).
+/*.png
+/*.svg
+/*.jpg
+/*.jpeg
+/*.dxf
+/*.pdf
