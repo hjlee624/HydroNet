@@ -151,13 +151,16 @@ app.delete('/api/projects/:id', asyncRoute(async (req, res) => {
 
 // ── Autosave (temp recovery) ────────────────────────────────────────────────
 // Named .json snapshots so a user can recover work after closing/reopening.
-// Defaults to a per-user folder (no admin needed) so the location is stable
-// regardless of whether the server runs elevated. Set HN_AUTOSAVE_DIR to use a
-// fixed/shared path (e.g. C:\Program Files\HydroNET — requires write access).
+// Default = C:\ProgramData\HydroNET — a FIXED, username-independent path that is
+// writable without admin and is the standard Windows location for shared app
+// data (so it is identical on every PC, unlike C:\Users\<name>). Falls back to a
+// per-user folder, then server/data. Set HN_AUTOSAVE_DIR to force any path.
 // The resolved path is reported to the client (shown in the 불러오기 dialog).
 function resolveAutosaveDir() {
+  const programData = process.env.ProgramData || process.env.ALLUSERSPROFILE
   const candidates = [
     process.env.HN_AUTOSAVE_DIR,
+    programData ? path.join(programData, 'HydroNET') : null,
     path.join(os.homedir(), 'HydroNET'),
     path.resolve(DATA_DIR, '..', 'autosave'),
   ].filter(Boolean)
