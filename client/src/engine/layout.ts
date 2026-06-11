@@ -168,7 +168,23 @@ function stackTasks(tasks: Task[], pxPerDay: number): Map<string, number> {
   return assignment
 }
 
-export function computeLayout(project: Project): LayoutModel {
+/** Transient subset filter applied on top of per-item visibility. */
+export interface LayoutFilter {
+  critical: boolean
+  milestone: boolean
+  query: string
+}
+
+function matchesFilter(t: Task, f?: LayoutFilter): boolean {
+  if (!f) return true
+  if (f.critical && !t.critical) return false
+  if (f.milestone && !t.isMilestone) return false
+  const q = f.query.trim().toLowerCase()
+  if (q && !t.name.toLowerCase().includes(q)) return false
+  return true
+}
+
+export function computeLayout(project: Project, filter?: LayoutFilter): LayoutModel {
   const { view } = project
   const pxPerDay = view.pxPerDay
   const rowHeight = view.rowHeight
@@ -182,11 +198,15 @@ export function computeLayout(project: Project): LayoutModel {
   const maxLogoH = logoItems.reduce((m, l) => Math.max(m, l.h), 0)
   const footerHeight = logoItems.length ? Math.max(FOOTER_BAND, maxLogoH + 28) : 0
 
-  const categories = project.categories
+  const filterOn = !!filter && (filter.critical || filter.milestone || filter.query.trim() !== '')
+  const baseCats = project.categories
     .filter((c) => (project.commissioningEnabled || !c.isCommissioning) && !c.hidden)
     .sort((a, b) => a.order - b.order)
-  const visibleCatIds = new Set(categories.map((c) => c.id))
-  const tasks = project.tasks.filter((t) => visibleCatIds.has(t.categoryId) && !t.hidden)
+  const baseCatIds = new Set(baseCats.map((c) => c.id))
+  const tasks = project.tasks.filter((t) => baseCatIds.has(t.categoryId) && !t.hidden && matchesFilter(t, filter))
+  // When a filter is active, drop lanes that have no matching activities.
+  const catsWithTasks = new Set(tasks.map((t) => t.categoryId))
+  const categories = filterOn ? baseCats.filter((c) => catsWithTasks.has(c.id)) : baseCats
 
   // ── Time domain: pad to whole months for a tidy axis ──
   const minTaskDay = tasks.reduce((m, t) => Math.min(m, t.start), 0)

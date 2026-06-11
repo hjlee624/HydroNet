@@ -597,6 +597,63 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .load-meta { font-size: 11px; color: var(--stone); white-space: nowrap; }
+
+/* ── View bar (filters · colour mode · simple/pro) ── */
+.viewbar {
+  display: flex; align-items: center; gap: 8px;
+  min-height: 38px; padding: 4px 14px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--hairline-soft);
+  flex-wrap: wrap;
+}
+.viewbar__label { font-size: 11px; font-weight: 600; color: var(--steel); letter-spacing: 0.3px; }
+.viewbar__spacer { flex: 1; min-width: 12px; }
+.viewbar__sep { width: 1px; height: 20px; background: var(--hairline); }
+.viewbar__search {
+  height: 26px; width: 150px; padding: 0 8px;
+  border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--canvas);
+  font-size: 12px;
+}
+.viewbar__search:focus { outline: none; border: 2px solid var(--primary); padding: 0 7px; }
+.chip {
+  height: 26px; padding: 0 11px;
+  border: 1px solid var(--hairline-strong); border-radius: 9999px;
+  background: var(--canvas); color: var(--slate);
+  font-size: 12px; font-weight: 500;
+}
+.chip:hover { background: var(--cream-soft); }
+.chip.on { background: var(--primary); border-color: var(--primary); color: #fff; }
+.seg--sm { display: inline-flex; gap: 3px; flex-wrap: nowrap; }
+.seg--sm button { flex: 0 0 auto; height: 26px; min-width: 0; padding: 0 10px; font-size: 12px; }
+
+/* ── Inline rename (double-click a bar/milestone) ── */
+.inline-rename {
+  position: absolute;
+  height: 18px;
+  padding: 0 4px;
+  font-size: 11px;
+  font-family: var(--font-medium);
+  color: var(--ink);
+  border: 1.5px solid var(--primary);
+  border-radius: 3px;
+  background: #fff;
+  z-index: 5;
+  outline: none;
+  min-width: 90px;
+}
+
+/* ── Template gallery (새 도면) ── */
+.tpl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.tpl-card {
+  display: flex; flex-direction: column; gap: 5px; text-align: left;
+  padding: 14px 16px;
+  border: 1px solid var(--hairline-strong); border-radius: var(--radius-md);
+  background: var(--canvas);
+  transition: border-color 0.12s, background 0.12s;
+}
+.tpl-card:hover { border-color: var(--primary); background: var(--cream-soft); }
+.tpl-card__name { font-size: 14px; font-weight: 700; color: var(--charcoal); }
+.tpl-card__desc { font-size: 12px; color: var(--slate); line-height: 1.45; }
 .seg {
   display: flex; gap: 4px; flex-wrap: wrap;
 }

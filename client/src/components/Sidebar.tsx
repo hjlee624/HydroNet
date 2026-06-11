@@ -61,7 +61,15 @@ function CategoryNode({ cat, selectedTaskId }: { cat: Category; selectedTaskId: 
   // `.filter()` array straight from the selector makes zustand v5's snapshot
   // unstable (useSyncExternalStore → infinite re-render → blank screen).
   const allTasks = useEditor((s) => s.project.tasks)
-  const tasks = allTasks.filter((t) => t.categoryId === cat.id)
+  const filter = useEditor((s) => s.filter)
+  const tasks = allTasks.filter((t) => {
+    if (t.categoryId !== cat.id) return false
+    if (filter.critical && !t.critical) return false
+    if (filter.milestone && !t.isMilestone) return false
+    const q = filter.query.trim().toLowerCase()
+    if (q && !t.name.toLowerCase().includes(q)) return false
+    return true
+  })
   const a = useEditor.getState
   const [dragOver, setDragOver] = useState(false)
 

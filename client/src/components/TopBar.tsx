@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react'
 import { useEditor } from '../state/store'
 import { HelpDialog } from './HelpDialog'
 import { LoadDialog } from './LoadDialog'
+import { TemplateDialog } from './TemplateDialog'
 
 interface TopBarProps {
   onExport: () => void
@@ -18,13 +19,16 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const zoom = useEditor((s) => s.zoom)
   const commissioning = useEditor((s) => s.project.commissioningEnabled)
   const autoCascade = useEditor((s) => s.autoCascade)
+  const uiMode = useEditor((s) => s.uiMode)
   const canUndo = useEditor((s) => s.past.length > 0)
   const canRedo = useEditor((s) => s.future.length > 0)
 
   const a = useEditor.getState
+  const pro = uiMode === 'pro'
 
   const [helpOpen, setHelpOpen] = useState(false)
   const [loadOpen, setLoadOpen] = useState(false)
+  const [newOpen, setNewOpen] = useState(false)
 
   // Local text state for the zoom field so multi-digit entry isn't clamped on
   // every keystroke; commit (apply) only on blur / Enter.
@@ -52,8 +56,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       />
 
       <div className="topbar__actions">
-        <button className="btn btn--sm btn--ghost" onClick={() => a().newProject()}>새로</button>
-        <button className="btn btn--sm btn--ghost" onClick={() => a().loadSample()}>샘플</button>
+        <button className="btn btn--sm btn--ghost" title="템플릿을 골라 새 도면 시작" onClick={() => setNewOpen(true)}>＋ 새 도면</button>
         <button className="btn btn--sm btn--ghost" title="임시저장된 작업 불러오기" onClick={() => setLoadOpen(true)}>불러오기</button>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
         <button className="btn btn--icon btn--sm" title="실행 취소 (Ctrl+Z)" disabled={!canUndo} onClick={() => a().undo()}>↶</button>
@@ -67,8 +70,8 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
           <input type="checkbox" checked={autoCascade} onChange={(e) => a().setAutoCascade(e.target.checked)} />
           연쇄 자동
         </label>
-        <button className="btn btn--sm" title="연결을 위반하는 공정만 뒤로 정렬" onClick={() => a().cascadeNow()}>일정 정렬</button>
-        <button className="btn btn--sm" title="모든 공정을 최조기 일정으로 재계산" onClick={() => a().rescheduleNow()}>재계산</button>
+        {pro && <button className="btn btn--sm" title="연결을 위반하는 공정만 뒤로 정렬" onClick={() => a().cascadeNow()}>일정 정렬</button>}
+        {pro && <button className="btn btn--sm" title="모든 공정을 최조기 일정으로 재계산" onClick={() => a().rescheduleNow()}>재계산</button>}
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
 
         <label className="toggle" title="시운전 공정 포함/제외">
@@ -115,6 +118,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
       {loadOpen && <LoadDialog onClose={() => setLoadOpen(false)} />}
+      {newOpen && <TemplateDialog onClose={() => setNewOpen(false)} />}
     </header>
   )
 }

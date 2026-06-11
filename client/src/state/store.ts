@@ -29,6 +29,31 @@ interface LinkingState {
  *  at cursor, pan = drag-to-scroll. Esc returns to edit. */
 export type NavMode = 'edit' | 'zoom' | 'pan'
 
+/** Transient view filter — show only the matching subset (de-clutters a busy chart). */
+export interface ViewFilter {
+  /** Only 주공정(critical) activities. */
+  critical: boolean
+  /** Only milestones. */
+  milestone: boolean
+  /** Substring match on the activity/milestone name (case-insensitive). */
+  query: string
+}
+/** Bar colouring scheme: by 공종 lane colour, or critical-path emphasis (rest muted). */
+export type ColorMode = 'category' | 'critical'
+/** Progressive disclosure: 'simple' hides advanced controls, 'pro' shows everything. */
+export type UiMode = 'simple' | 'pro'
+
+const FILTER_OFF: ViewFilter = { critical: false, milestone: false, query: '' }
+export const filterActive = (f: ViewFilter): boolean => f.critical || f.milestone || f.query.trim() !== ''
+
+/** localStorage helpers for sticky UI prefs (guarded for non-browser test runs). */
+function lsGet(key: string, fallback: string): string {
+  try { return (typeof localStorage !== 'undefined' && localStorage.getItem(key)) || fallback } catch { return fallback }
+}
+function lsSet(key: string, value: string): void {
+  try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value) } catch { /* ignore */ }
+}
+
 /** One task whose start moved during a 재계산 / 일정 정렬 pass. */
 export interface RecalcChange {
   id: ID
@@ -58,6 +83,12 @@ export interface EditorState {
   zoom: number
   /** Active canvas tool (edit / zoom / pan). */
   navMode: NavMode
+  /** Transient subset filter for the chart + sidebar. */
+  filter: ViewFilter
+  /** Bar colour scheme. */
+  colorMode: ColorMode
+  /** Simple / pro UI (progressive disclosure). */
+  uiMode: UiMode
   autoCascade: boolean
   dirty: boolean
   warnings: string[]
@@ -135,6 +166,10 @@ export interface EditorState {
   selectTextRole: (role: TextRole | null) => void
   setZoom: (z: number) => void
   setNavMode: (m: NavMode) => void
+  setFilter: (patch: Partial<ViewFilter>) => void
+  clearFilter: () => void
+  setColorMode: (m: ColorMode) => void
+  setUiMode: (m: UiMode) => void
 
   // history & persistence
   beginGesture: () => void
@@ -271,6 +306,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     linking: null,
     zoom: 1,
     navMode: 'edit',
+    filter: { ...FILTER_OFF },
+    colorMode: (lsGet('hydronet:colorMode', 'category') as ColorMode),
+    uiMode: (lsGet('hydronet:uiMode', 'pro') as UiMode),
     autoCascade: true,
     dirty: false,
     warnings: [],
@@ -534,6 +572,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedLinkId: null }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
     setNavMode: (m) => set({ navMode: m }),
+    setFilter: (patch) => set((s) => ({ filter: { ...s.filter, ...patch } })),
+    clearFilter: () => set({ filter: { ...FILTER_OFF } }),
+    setColorMode: (m) => { lsSet('hydronet:colorMode', m); set({ colorMode: m }) },
+    setUiMode: (m) => { lsSet('hydronet:uiMode', m); set({ uiMode: m }) },
 
     beginGesture: () => set((s) => ({ past: [...s.past, clone(s.project)].slice(-HISTORY_LIMIT), future: [] })),
     undo: () => {

@@ -8,6 +8,7 @@ import { Resizer } from './components/Resizer'
 import { ChartCanvas } from './components/ChartCanvas'
 import { Inspector } from './components/Inspector'
 import { StatusBar } from './components/StatusBar'
+import { ViewBar } from './components/ViewBar'
 import { ExportDialog } from './components/ExportDialog'
 import { RecalcModal } from './components/RecalcModal'
 import { useEditor } from './state/store'
@@ -83,6 +84,7 @@ export default function App() {
         {!presentation && <Sidebar width={leftWidth} />}
         {!presentation && <Resizer side="left" width={leftWidth} setWidth={setLeftWidth} />}
         <div className="app__center">
+          {!presentation && <ViewBar />}
           <ChartCanvas />
           <StatusBar />
         </div>

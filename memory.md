@@ -43,9 +43,11 @@ client/src/
     store.ts             zustand 스토어(전 액션, undo/redo, 자동저장, normalize, withSchedule)
     api.ts               저장/로드(서버 → 실패 시 localStorage 폴백)
     logger.ts            클라 오류 → POST /api/log → error.log
-  components/            ChartSvg, ChartCanvas, TopBar, Sidebar, Inspector, ExportDialog, StatusBar, Resizer
+  components/            ChartSvg, ChartCanvas, TopBar, Sidebar, Inspector, ExportDialog, StatusBar, Resizer,
+                         ViewBar(필터·색상·간단/전문가), TemplateDialog(새 도면 갤러리), HelpDialog, LoadDialog, RecalcModal, Modal
   export/exporter.ts     SVG/PNG/JPG/PDF, data-export-hide 제거, 폰트 스타일 주입
   data/sampleProject.ts  기본 샘플(=milestone sample.png), createSampleProject()는 applyCascade로 일관화
+  data/templates.ts      새 도면 템플릿(댐/양수발전/간단/빈) — build()로 Project 생성, applyCascade로 일관화
   data/ciLogo.ts         DESIGN/CI_Saman.gif → data URL(번들 임베드)
   styles/                theme.ts(토큰), index.css(@font-face, 전역)
   scripts/               smoke.ts(엔진), mount-test.ts(jsdom 전체앱), render-preview.ts(resvg 이미지)
@@ -74,6 +76,11 @@ start-lan.bat            LAN 단일포트 서버 기동(기본 PORT=4020, 외부
 - undo/redo, 자동저장(서버/로컬), 단축키(Ctrl+S/Z/Y, Delete, Esc).
 - **도움말 모달**(TopBar **`? 도움말` 어두운 버튼 .btn--dark** → HelpDialog, Modal 재사용): 사용법·마우스 조작·캔버스 도구(Z/H/V/Esc)·단축키 안내. 실기능과 일치하게 유지할 것.
 - **DXF(캐드) 출력**(export/dxf.ts: projectToDxf, computeLayout+routeLinks에서 직접 생성). R12(AC1009): HATCH/LWPOLYLINE/핸들 없음 → 막대/채움/화살촉=**SOLID**(Z-순서 3·4점 스왑, 삼각형은 4=3점), 외곽선/마일스톤/화살표=**POLYLINE/VERTEX/SEQEND**(66=1,70 closed), 격자/축=LINE, 텍스트=TEXT(좌측 10/20+72=0, 중앙 72=1+11/21), 색=ACI 근사(62), 공종별 레이어. **Y-up이라 fy=H-y 뒤집기**. routing.ts RoutedLink에 points[] 추가. ExportDialog가 dxf는 SVG 거치지 않고 projectToDxf→다운로드(조기 return). scripts/dxf-check.ts로 구조 검증. 한글 렌더는 CAD 폰트 의존(완벽 편집은 SVG→일러). DWG=DXF→AutoCAD저장, AI=SVG 대체.
+- **빠른개선 4종(2026-06-11, 로드맵 quick-win)**:
+  1. **보기 막대(ViewBar) — 필터·색상·오늘선**: store에 `filter{critical,milestone,query}`·`colorMode('category'|'critical')`·`uiMode('simple'|'pro')` 추가(colorMode/uiMode는 localStorage 스티키). `computeLayout(project, filter?)`가 `matchesFilter`로 비매칭 task 제외 + **빈 레인 드롭**(filterOn일 때만). `filterActive(f)` 헬퍼 export. ViewBar 칩(주공정만/마일스톤만)+이름검색+필터해제, 색상 세그(공종색/주공정 강조), 보기 세그(간단/전문가). ChartCanvas가 todayX(시작일 기준 오늘 day→x, 도메인 안일 때만) 계산→ChartSvg가 **오늘 세로선(data-export-hide)**. Sidebar도 동일 matchesFilter로 목록 추림.
+  2. **인라인 이름 편집 + 더블클릭 빠른추가**: ChartCanvas onTaskDoubleClick→`editing` state→`.paper` 안 `<input.inline-rename>`(콘텐츠 좌표, CSS scale 따라감). Enter/blur=updateTask(name)(renameDone ref로 중복커밋 차단), Esc=취소. onPaperDoubleClick=빈 레인 더블클릭→addTask(cat,{start,duration:30})→바로 인라인. **필터 활성 시 빠른추가 차단**(non-match task는 model에서 빠져 editLt=null→rename 박스 안뜸·유령 task 방지).
+  3. **새 도면 템플릿 갤러리**: TopBar `＋ 새 도면`→TemplateDialog(.tpl-grid/.tpl-card)→pick=setProject(make())+save(). templates.ts: 댐(=sample), 양수발전, 간단, 빈.
+  4. **간단/전문가 모드(점진적 노출)**: uiMode. 간단은 고급 숨김 — TopBar 일정정렬/재계산, Export **SVG/DXF·DPI>300**, Inspector 주공정(forceCritical) select.
 - LAN 접속(서버 0.0.0.0, 빌드본+API 단일포트), `error.log`(ABS_RULE).
 
 ## 5. 실행 / 검증 명령 (dev 폴더에서)
@@ -106,9 +113,10 @@ cd client && npm run build                       # tsc --noEmit + vite
 - **차트 텍스트 클릭=역할 선택**: 이제 공정/마일스톤의 *이름 텍스트* 클릭은 텍스트 스타일 편집(역할 선택)으로 동작. 공정 *선택*은 바/다이아몬드 클릭 또는 좌측 사이드바로. (의도된 동작 변경)
 - **세부공종 레이아웃**: 그룹은 `(subName ?? '').trim()`로 묶고 '' 그룹 우선, 나머지는 min start 순. named 그룹 존재 시 레인 상단 20px 헤더 인셋으로 공종명 분리. 빈 그룹 `Math.max(...[])` 회피(그룹은 항상 ≥1 task).
 - **TS 빌드**: 단일 tsconfig + `tsc --noEmit`(프로젝트 레퍼런스 X). zustand는 `create<T>()(...)` 커리드 형태. React 이벤트 타입은 `import type { PointerEvent as RPointerEvent }`로(UMD 전역 회피).
+- **필터(view filter)는 전역 부작용 주의**(2026-06-11 적대적 리뷰 6건 수정): ① **출력은 항상 전체 도면** — 래스터(PNG/JPG/PDF/SVG)는 화면 SVG를 clone하므로 필터가 켜져 있으면 **부분 도면**이 나감. DXF는 projectToDxf(project)라 원래 전체. 정책 통일: ExportDialog가 export 전 `clearFilter()`(+selectTask(null))하고 finally에서 원복 → 모든 포맷=전체. ② **빈 레인 더블클릭 빠른추가**는 필터 활성 시 차단(위 §4-2). ③ **colorMode 'critical'는 `showCriticalPath`(주공정 표시 체크)와 독립**이어야 함 — ChartSvg에서 `crit = showCriticalPath && lt.critical`만 쓰면 주공정 표시를 끄면 전 바가 회색됨. **`emphasizeCrit = colorMode==='critical' ? lt.critical : crit`** 를 색/이름강조/막대테두리/마일스톤 fill에 사용(헤일로·다이아 확대 등 CP-오버레이 장식만 `crit` 유지). ④ **간단모드 DPI 클램프**: pro에서 600 설정 후 simple 전환 시 `<select>` 값이 옵션에 없어 stale → `effectiveDpi = pro ? dpi : min(dpi,300)`로 select·크기노트·export(paperEff) 모두 일치(영속값은 안 건드림).
 
 ## 8. 향후 후보(미구현)
 - Electron 패키징(`.exe`, 오프라인). 출력물 폰트 임베딩(base64, 한글 OTF 수 MB 부담). 라벨 충돌 자동 회피. 기상 데이터 우기 자동보정 / 보수보강 전용 타임라인. dev→main 머지·운영 배포 절차.
 
 ## 9. 진행 이력(요약)
-초기 풀스택 구현 → 멀티에이전트 리뷰 수정(서버 동시쓰기·export 무음실패) → 빈화면 수정 → 도면 제목+CI → 패널리사이즈·전체줌·전체화면·LAN → 배율 컨트롤·바 기간 리사이즈·README 이미지(init.png) → KoPub 글꼴 → 배율입력 버그·CI 드래그크기/순서 → LAN 폰트 번들 서빙 → dev 폴더 분리 + dev 브랜치 + 포트 4020 → **6대 개선(텍스트 역할 스타일 클릭편집·세부공종 좌측라벨·제목 pt입력·재계산 결과 팝업·DPI 600·색상 즐겨찾기 팔레트) + 멀티에이전트 적대적 리뷰**.
+초기 풀스택 구현 → 멀티에이전트 리뷰 수정(서버 동시쓰기·export 무음실패) → 빈화면 수정 → 도면 제목+CI → 패널리사이즈·전체줌·전체화면·LAN → 배율 컨트롤·바 기간 리사이즈·README 이미지(init.png) → KoPub 글꼴 → 배율입력 버그·CI 드래그크기/순서 → LAN 폰트 번들 서빙 → dev 폴더 분리 + dev 브랜치 + 포트 4020 → **6대 개선(텍스트 역할 스타일 클릭편집·세부공종 좌측라벨·제목 pt입력·재계산 결과 팝업·DPI 600·색상 즐겨찾기 팔레트) + 멀티에이전트 적대적 리뷰** → 도움말 어두운버튼 + **DXF(캐드) 출력**(텍스트 좌측앵커·STYLE/한글 \U+XXXX·SOLID/POLYLINE) → 인기 서비스 비교 딥리서치(improvement-roadmap.md) → **빠른개선 4종(보기 필터·색상·오늘선 / 인라인 이름편집·더블클릭 빠른추가 / 새 도면 템플릿 갤러리 / 간단·전문가 모드) + 적대적 리뷰 6건 수정**(출력=전체도면 통일·colorMode 독립·DPI 클램프·필터 빠른추가 차단·Help 갱신).

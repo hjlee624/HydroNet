@@ -26,12 +26,17 @@ interface Props {
   selectedTextRole: TextRole | null
   showCriticalPath: boolean
   showGrid: boolean
+  /** 'critical' mutes non-critical bars so the 주공정 spine stands out. */
+  colorMode?: 'category' | 'critical'
+  /** X (content coords) of the "오늘" line; null/undefined = not drawn. */
+  todayX?: number | null
   linkingGhost: LinkingGhost | null
   onTaskPointerDown: (e: RPointerEvent, id: string) => void
   onAnchorPointerDown: (e: RPointerEvent, id: string) => void
   onBarResizePointerDown: (e: RPointerEvent, id: string, edge: 'start' | 'end') => void
   onLogoResizePointerDown: (e: RPointerEvent, index: number) => void
   onTaskClick: (e: RMouseEvent, id: string) => void
+  onTaskDoubleClick: (e: RMouseEvent, id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
   onTextClick: (role: TextRole) => void
   onRainyResizePointerDown: (e: RPointerEvent, seasonId: string, edge: 'start' | 'end') => void
@@ -44,9 +49,9 @@ function diamond(cx: number, cy: number, r: number): string {
 
 function ChartSvgBase({
   model, routed, project, selectedTaskId, selectedLinkId, selectedTextRole,
-  showCriticalPath, showGrid, linkingGhost,
+  showCriticalPath, showGrid, colorMode = 'category', todayX, linkingGhost,
   onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
-  onTaskClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
+  onTaskClick, onTaskDoubleClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
@@ -117,6 +122,15 @@ function ChartSvgBase({
             <line key={`ls-${c.id}`} x1={labelWidth} y1={c.y + c.height} x2={contentWidth} y2={c.y + c.height}
               stroke={colors.gridLineStrong} strokeWidth={1} />
           ))}
+        </g>
+      )}
+
+      {/* 오늘(today) reference line — screen-only editing aid (not exported) */}
+      {todayX != null && todayX >= labelWidth && todayX <= contentWidth && (
+        <g data-export-hide="1">
+          <line x1={todayX} y1={chartTop} x2={todayX} y2={chartBottom} stroke={colors.primary} strokeWidth={1.25} strokeDasharray="4 3" />
+          <rect x={todayX - 15} y={chartTop - 1} width={30} height={14} rx={3} fill={colors.primary} />
+          <text x={todayX} y={chartTop + 9.5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#ffffff">오늘</text>
         </g>
       )}
 
@@ -207,23 +221,34 @@ function ChartSvgBase({
         {model.tasks.map((lt) => {
           const t = lt.task
           const crit = showCriticalPath && lt.critical
+          // In 주공정 강조 colour mode the emphasis follows the task's own critical
+          // flag, independent of the 주공정 표시 overlay toggle — otherwise turning
+          // that overlay off would mute every bar to grey and the colour mode would
+          // do nothing. 'crit' still gates the CP-overlay flourishes (halo, enlarged
+          // diamonds) that legitimately follow the overlay toggle.
+          const emphasizeCrit = colorMode === 'critical' ? lt.critical : crit
           const selected = t.id === selectedTaskId
-          const fill = crit ? colors.critical : (t.color ?? laneColor(model, lt.categoryId))
+          const fill = emphasizeCrit ? colors.critical
+            : colorMode === 'critical' ? '#CFC8B8' // muted so the critical spine pops
+              : (t.color ?? laneColor(model, lt.categoryId))
           if (lt.isMilestone) {
             // Critical milestones are enlarged with a red halo so the critical
             // path reads clearly even at the diamond markers.
             const r = crit ? milestoneR * 1.45 : milestoneR
             return (
-              <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }} style={{ cursor: 'pointer' }}>
+              <g key={t.id}
+                onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}
+                onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
+                style={{ cursor: 'pointer' }}>
                 <text x={lt.cx} y={lt.cy - r - 4} textAnchor="middle"
-                  {...roleAttrs('milestoneName')} {...(crit ? { fill: colors.critical, fontWeight: 700 } : {})}>
+                  {...roleAttrs('milestoneName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
                 {crit && <polygon points={diamond(lt.cx, lt.cy, r + 5)} fill={colors.critical} opacity={0.2} />}
                 <polygon
                   data-task-id={t.id}
                   points={diamond(lt.cx, lt.cy, r)}
-                  fill={crit ? colors.critical : colors.milestone}
+                  fill={emphasizeCrit ? colors.critical : colors.milestone}
                   stroke={selected ? colors.primary : crit ? '#ffffff' : colors.canvas}
                   strokeWidth={selected ? 2.5 : crit ? 2 : 1.5}
                   onPointerDown={(e) => onTaskPointerDown(e, t.id)}
@@ -235,8 +260,10 @@ function ChartSvgBase({
             )
           }
           return (
-            <g key={t.id} onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}>
-              <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')} {...(crit ? { fill: colors.critical, fontWeight: 700 } : {})}>
+            <g key={t.id}
+              onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}
+              onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}>
+              <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                 {t.name}
               </text>
               <rect
@@ -244,7 +271,7 @@ function ChartSvgBase({
                 data-task-id={t.id}
                 x={lt.x} y={lt.y} width={lt.w} height={lt.h} rx={3}
                 fill={fill}
-                stroke={selected ? colors.primary : crit ? colors.critical : 'rgba(0,0,0,0.18)'}
+                stroke={selected ? colors.primary : emphasizeCrit ? colors.critical : 'rgba(0,0,0,0.18)'}
                 strokeWidth={selected ? 2.4 : 1}
                 onPointerDown={(e) => onTaskPointerDown(e, t.id)}
               />

@@ -2,7 +2,7 @@
 // vector chart to SVG / PNG / JPG / PDF.
 
 import { useState } from 'react'
-import { useEditor } from '../state/store'
+import { useEditor, filterActive } from '../state/store'
 import { Modal } from './Modal'
 import { exportChart, type ExportFormat } from '../export/exporter'
 import { projectToDxf } from '../export/dxf'
@@ -29,13 +29,22 @@ function download(content: string, filename: string, mime: string) {
 
 export function ExportDialog({ onClose }: { onClose: () => void }) {
   const project = useEditor((s) => s.project)
+  const pro = useEditor((s) => s.uiMode) === 'pro'
   const a = useEditor.getState
+  // Simple mode hides the advanced vector/CAD formats and very-high DPIs.
+  const formats = pro ? FORMATS : FORMATS.filter((f) => f.id !== 'svg' && f.id !== 'dxf')
+  const dpiOptions = pro ? DPI_OPTIONS : DPI_OPTIONS.filter((d) => d <= 300)
   const [format, setFormat] = useState<ExportFormat>('pdf')
   const [transparent, setTransparent] = useState(false)
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState<string | null>(null)
 
-  const px = paperPx(project.paper)
+  // In simple mode the DPI control is capped at 300; clamp the effective DPI so
+  // the dropdown value, the size note and the actual export all agree even if a
+  // higher DPI was chosen earlier in pro mode (the persisted value is untouched).
+  const effectiveDpi = pro ? project.paper.dpi : Math.min(project.paper.dpi, 300)
+  const paperEff = effectiveDpi === project.paper.dpi ? project.paper : { ...project.paper, dpi: effectiveDpi }
+  const px = paperPx(paperEff)
 
   async function run() {
     const filename = (project.name || 'hydronet').replace(/[\\/:*?"<>|]/g, '_')
@@ -56,18 +65,23 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       return
     }
 
-    // Clear any selection first so the on-screen selection ring (orange stroke on
-    // the selected bar/milestone/link) isn't baked into the exported image. Wait
-    // two frames for React to commit the deselected DOM before we clone the SVG.
+    // The exported deliverable is always the FULL chart: a view filter is a
+    // transient on-screen review aid, not a document edit, and DXF is already
+    // built unfiltered. Clear any selection ring AND any active filter before
+    // cloning the on-screen SVG, then restore the filter so the working view is
+    // untouched. Wait two frames for React to commit the DOM before we clone.
+    const prevFilter = a().filter
+    const restoreFilter = filterActive(prevFilter)
     a().selectTask(null)
+    if (restoreFilter) a().clearFilter()
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
-    const svg = document.getElementById('hydronet-chart') as SVGSVGElement | null
-    if (!svg) { setMsg('차트를 찾을 수 없습니다.'); return }
-    const width = Number(svg.getAttribute('width')) || svg.clientWidth
-    const height = Number(svg.getAttribute('height')) || svg.clientHeight
     setBusy(true); setMsg(null)
     try {
-      const r = await exportChart({ svg, content: { width, height }, paper: project.paper, filename, format, transparent })
+      const svg = document.getElementById('hydronet-chart') as SVGSVGElement | null
+      if (!svg) { setMsg('차트를 찾을 수 없습니다.'); return }
+      const width = Number(svg.getAttribute('width')) || svg.clientWidth
+      const height = Number(svg.getAttribute('height')) || svg.clientHeight
+      const r = await exportChart({ svg, content: { width, height }, paper: paperEff, filename, format, transparent })
       setMsg(r.clamped
         ? `완료 — 용량 보호를 위해 ${px.effectiveDpi}dpi로 자동 조정되었습니다.`
         : '내보내기를 완료했습니다.')
@@ -76,6 +90,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       setMsg('내보내기에 실패했습니다. error.log를 확인하세요.')
     } finally {
       setBusy(false)
+      if (restoreFilter) a().setFilter(prevFilter)
     }
   }
 
@@ -97,7 +112,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       <div className="field">
         <label>형식</label>
         <div className="seg">
-          {FORMATS.map((f) => (
+          {formats.map((f) => (
             <button key={f.id} className={format === f.id ? 'active' : ''} onClick={() => { setFormat(f.id); setMsg(null) }} title={f.hint}>
               {f.label}
             </button>
@@ -124,8 +139,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
             </div>
             <div className="field" style={{ maxWidth: 96 }}>
               <label>DPI</label>
-              <select className="select" value={project.paper.dpi} onChange={(e) => a().setPaper({ dpi: Number(e.target.value) })}>
-                {DPI_OPTIONS.map((d) => <option key={d} value={d}>{d}</option>)}
+              <select className="select" value={effectiveDpi} onChange={(e) => a().setPaper({ dpi: Number(e.target.value) })}>
+                {dpiOptions.map((d) => <option key={d} value={d}>{d}</option>)}
               </select>
             </div>
           </div>

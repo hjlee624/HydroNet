@@ -7,11 +7,11 @@
 // gestures (move/resize/link/select) only run in 'edit'. Esc returns to edit.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { PointerEvent as RPointerEvent } from 'react'
-import { useEditor } from '../state/store'
+import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
+import { useEditor, filterActive } from '../state/store'
 import { computeLayout } from '../engine/layout'
 import { routeLinks } from '../engine/routing'
-import { dayToDate, daysInMonth } from '../engine/dates'
+import { dateToDay, dayToDate, daysInMonth } from '../engine/dates'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
 
 type Drag =
@@ -30,21 +30,33 @@ export function ChartCanvas() {
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
   const selectedTextRole = useEditor((s) => s.selectedTextRole)
   const linking = useEditor((s) => s.linking)
+  const filter = useEditor((s) => s.filter)
+  const colorMode = useEditor((s) => s.colorMode)
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<Drag>(null)
   const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
   const zoomAnchor = useRef<{ cX: number; cY: number; clientX: number; clientY: number; z: number } | null>(null)
+  const renameDone = useRef(false)
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
   const [panning, setPanning] = useState(false)
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
   // scales together — not just the horizontal axis.
-  const model = useMemo(() => computeLayout(project), [project])
+  const model = useMemo(() => computeLayout(project, filter), [project, filter])
 
   const routed = useMemo(() => routeLinks(model, project.links), [model, project.links])
+
+  // "오늘" line position (content coords), or null when today is off-domain.
+  const todayX = useMemo(() => {
+    const x = model.xOf(dateToDay(project.startDate, new Date()))
+    return x >= model.labelWidth && x <= model.contentWidth ? x : null
+  }, [project.startDate, model])
+
+  const editLt = editing ? model.tasks.find((t) => t.task.id === editing.id) : null
 
   function toContent(clientX: number, clientY: number) {
     const rect = paperRef.current!.getBoundingClientRect()
@@ -246,6 +258,39 @@ export function ChartCanvas() {
     }
   }
 
+  // ── Inline rename (double-click a bar/milestone) + create-on-double-click ──
+  function commitRename() {
+    if (!editing || renameDone.current) return
+    renameDone.current = true
+    const name = editing.name.trim()
+    if (name) useEditor.getState().updateTask(editing.id, { name })
+    setEditing(null)
+  }
+  function onTaskDoubleClick(_: RMouseEvent, id: string) {
+    if (useEditor.getState().navMode !== 'edit') return
+    const t = project.tasks.find((x) => x.id === id)
+    if (!t) return
+    useEditor.getState().selectTask(id)
+    renameDone.current = false
+    setEditing({ id, name: t.name })
+  }
+  function onPaperDoubleClick(e: RMouseEvent) {
+    if (useEditor.getState().navMode !== 'edit') return // task dbl-clicks stop propagation
+    // While a filter is active the lanes are a subset and a freshly-created
+    // (non-matching) task would be filtered straight back out — no bar, no
+    // rename box. Skip quick-add until the filter is cleared.
+    if (filterActive(useEditor.getState().filter)) return
+    const { x, y } = toContent(e.clientX, e.clientY)
+    if (x < model.labelWidth) return
+    const cat = model.categories.find((c) => y >= c.y && y < c.y + c.height)
+    if (!cat) return
+    const day = Math.max(0, Math.round(model.dayOf(x)))
+    const id = useEditor.getState().addTask(cat.id, { start: day, duration: 30 })
+    const t = useEditor.getState().project.tasks.find((x2) => x2.id === id)
+    renameDone.current = false
+    setEditing({ id, name: t?.name ?? '새 공정' })
+  }
+
   const navClass = navMode === 'zoom' ? ' nav-zoom' : navMode === 'pan' ? ` nav-pan${panning ? ' panning' : ''}` : ''
 
   return (
@@ -268,6 +313,7 @@ export function ChartCanvas() {
             className="paper"
             style={{ width: model.contentWidth, height: model.contentHeight, transform: `scale(${zoom})` }}
             onClick={(e) => e.stopPropagation()}
+            onDoubleClick={onPaperDoubleClick}
           >
             <ChartSvg
               model={model}
@@ -278,17 +324,39 @@ export function ChartCanvas() {
               selectedTextRole={selectedTextRole}
               showCriticalPath={project.view.showCriticalPath}
               showGrid={project.view.showGrid}
+              colorMode={colorMode}
+              todayX={todayX}
               linkingGhost={linking ? ghost : null}
               onTaskPointerDown={onTaskPointerDown}
               onAnchorPointerDown={onAnchorPointerDown}
               onBarResizePointerDown={onBarResizePointerDown}
               onLogoResizePointerDown={onLogoResizePointerDown}
               onTaskClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(id) }}
+              onTaskDoubleClick={onTaskDoubleClick}
               onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
               onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
               onRainyResizePointerDown={onRainyResizePointerDown}
               onBackgroundClick={() => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(null) }}
             />
+            {editing && editLt && (
+              <input
+                className="inline-rename"
+                autoFocus
+                value={editing.name}
+                style={{
+                  left: editLt.x,
+                  top: (editLt.isMilestone ? editLt.cy - 24 : editLt.y - 19),
+                }}
+                onChange={(e) => setEditing({ id: editing.id, name: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitRename() }
+                  else if (e.key === 'Escape') { e.preventDefault(); renameDone.current = true; setEditing(null) }
+                }}
+                onBlur={commitRename}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              />
+            )}
           </div>
         </div>
       </div>
