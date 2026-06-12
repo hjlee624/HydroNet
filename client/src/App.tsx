@@ -18,16 +18,25 @@ const num = (v: string | null, fallback: number) => {
   return Number.isFinite(n) && n > 0 ? n : fallback
 }
 
+// localStorage can throw (private mode / locked-down browsers / opaque origins),
+// so guard it — important for the standalone single-file build opened off disk.
+const lsNum = (key: string, fallback: number) => {
+  try { return num(localStorage.getItem(key), fallback) } catch { return fallback }
+}
+const lsSet = (key: string, value: string) => {
+  try { localStorage.setItem(key, value) } catch { /* ignore — non-persistent session */ }
+}
+
 export default function App() {
   const [exportOpen, setExportOpen] = useState(false)
-  const [leftWidth, setLeftWidth] = useState(() => num(localStorage.getItem('hydronet:leftW'), 288))
-  const [rightWidth, setRightWidth] = useState(() => num(localStorage.getItem('hydronet:rightW'), 300))
+  const [leftWidth, setLeftWidth] = useState(() => lsNum('hydronet:leftW', 288))
+  const [rightWidth, setRightWidth] = useState(() => lsNum('hydronet:rightW', 300))
   // Fullscreen preview hides the side panels so the chart can be checked
   // full-bleed before printing.
   const [presentation, setPresentation] = useState(false)
 
-  useEffect(() => { localStorage.setItem('hydronet:leftW', String(leftWidth)) }, [leftWidth])
-  useEffect(() => { localStorage.setItem('hydronet:rightW', String(rightWidth)) }, [rightWidth])
+  useEffect(() => { lsSet('hydronet:leftW', String(leftWidth)) }, [leftWidth])
+  useEffect(() => { lsSet('hydronet:rightW', String(rightWidth)) }, [rightWidth])
 
   useEffect(() => {
     const onFs = () => setPresentation(!!document.fullscreenElement)

@@ -1,12 +1,19 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { viteSingleFile } from 'vite-plugin-singlefile'
 
-// Lightweight config. `base: './'` keeps asset paths relative so the built
-// bundle can be loaded straight from the filesystem when later wrapped in
-// Electron for offline `.exe` distribution.
+// `base: './'` keeps asset paths relative so the bundle can load straight from
+// the filesystem (Electron / single-file offline build).
+//
+// SINGLE=1 → inline ALL JS/CSS into one self-contained dist-single/index.html;
+// scripts/build-single.ts then base64-embeds the KoPub fonts and writes the
+// final HydroNet.html (double-click to use, fully offline).
+const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
+const single = env.SINGLE === '1'
+
 export default defineConfig({
   base: './',
-  plugins: [react()],
+  plugins: [react(), ...(single ? [viteSingleFile()] : [])],
   server: {
     port: 5173,
     proxy: {
@@ -14,8 +21,13 @@ export default defineConfig({
     },
   },
   build: {
-    outDir: 'dist',
+    outDir: single ? 'dist-single' : 'dist',
     sourcemap: false,
     chunkSizeWarningLimit: 1200,
+    // Single-file: emit ONE classic (IIFE) script so the inlined HTML runs from
+    // a bare file:// (double-click) — ES-module scripts are CORS-restricted there.
+    ...(single && {
+      rollupOptions: { output: { format: 'iife' as const, inlineDynamicImports: true } },
+    }),
   },
 })

@@ -130,6 +130,19 @@ npm run build      # client/dist 생성
 node server/src/index.js   # dist가 있으면 서버가 정적 호스팅
 ```
 
+### 📄 단일 HTML 파일 (서버·설치 없이 배포)
+다른 사람에게 **HTML 파일 하나만** 주면 더블클릭으로 바로 쓸 수 있는 완전 독립형 빌드입니다.
+```bash
+cd client
+# 글꼴 내장이 필요하면 KoPubWorld Dotum_Pro Medium/Bold.otf 를 client/public/fonts/ 에 둠
+npm run build:single      # → 저장소 루트에 HydroNet.html 생성 (~19.5MB, KoPub 내장 시)
+npx tsx scripts/check-single.ts   # (선택) jsdom으로 마운트 검증
+```
+- 모든 JS/CSS를 한 파일에 인라인하고, KoPub OTF를 base64로 `@font-face`에 내장합니다(어느 PC에서도 KoPub로 표시). 진입 스크립트는 **classic 스크립트(IIFE)** 로 만들어 `file://` 더블클릭에서도 실행됩니다.
+- **되는 것**: 편집·모든 출력(PNG·JPG·PDF·SVG·DXF) — 전부 브라우저에서 처리(서버 불필요).
+- **저장/불러오기**: 서버가 없으므로 그 **브라우저의 `localStorage`** 에 저장됩니다(PC/브라우저가 바뀌면 안 보임 → 작업물 공유는 내보내기 사용).
+- 글꼴을 내장하지 않으면(설치 글꼴 사용) 파일은 ~1MB로 가벼워지고 한글은 받는 PC의 설치 글꼴(맑은 고딕 등)로 표시됩니다.
+
 ### 🌐 LAN(사내망)에서 다른 PC로 접속
 오지 현장 사무실의 여러 PC가 한 대의 서버에 접속해 공유할 수 있습니다. 서버는
 `0.0.0.0`(모든 네트워크 인터페이스)에 바인딩되어 클라이언트(빌드본) + API를
