@@ -13,6 +13,9 @@ g.window = w
 g.document = w.document
 g.localStorage = w.localStorage
 g.sessionStorage = w.sessionStorage
+// Open the heavy 공정관리(schedule) module — the chart/sidebar that this test
+// guards against blank-screen regressions (the shell now defaults to dashboard).
+w.localStorage.setItem('hydronet:module', 'schedule')
 g.HTMLElement = w.HTMLElement
 g.Element = w.Element
 g.Node = w.Node
@@ -48,7 +51,16 @@ async function main() {
   check(html.includes('Hydro') && html.includes('도면 출력'), '브랜드/상단바 렌더 확인')
   check(html.includes('<svg'), '차트 SVG 렌더 확인')
   check(html.includes('공종'), '사이드바(공종) 렌더 확인')
+  check(html.includes('공정관리') || html.includes('대시보드'), '모듈 레일(패키지 셸) 렌더 확인')
   check(!loopErr, '무한 렌더 루프 경고 없음')
+
+  // The dashboard is the default landing — confirm it renders too.
+  const { useShell } = await import('../src/state/shell')
+  useShell.getState().setModule('dashboard')
+  await new Promise((r) => setTimeout(r, 200))
+  const dhtml = document.getElementById('root')!.innerHTML
+  check(dhtml.includes('사업 대시보드') && dhtml.includes('총 공기'), '대시보드 렌더 확인')
+
   if (errors.length) {
     console.log(`\n(console.error ${errors.length}건):`)
     errors.slice(0, 6).forEach((e) => console.log('   • ' + e.slice(0, 160)))
