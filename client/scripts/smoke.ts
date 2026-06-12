@@ -83,12 +83,24 @@ console.log(`\n[Paper] A1@150=${a1.wPx}×${a1.hPx}  A0@300=${a0.wPx}×${a0.hPx} 
 check(a1.wPx > 3000 && !a1.clamped, 'A1@150dpi 정상')
 check(a0.wPx > 0 && a0.hPx > 0, 'A0@300dpi 픽셀 산정 (클램프 포함)')
 
-// 7. 사업 유형(단계) 프리셋이 모두 유효한 공정표를 만든다
+// 7. 사업 유형(단계) 프리셋 — 활성 시트 + (설계는) 마일스톤 시트가 모두 유효
 console.log('')
 for (const t of PROJECT_TYPES) {
-  const m = computeLayout(t.make())
+  const p = t.make()
+  const m = computeLayout(p)
   const finite = m.tasks.every((lt) => Number.isFinite(lt.x) && Number.isFinite(lt.cy) && lt.w >= 0)
-  check(finite && m.categories.length > 0, `유형 프리셋 유효: ${t.label} (공종 ${m.categories.length}·바 ${m.tasks.length})`)
+  const nSheets = 1 + (p.sheets?.length ?? 0)
+  check(finite && m.categories.length > 0, `유형 프리셋 유효: ${t.label} (공종 ${m.categories.length}·바 ${m.tasks.length}·시트 ${nSheets})`)
+  // 시공=마일스톤만(시트 1), 설계=예정공정표+마일스톤(시트 2)
+  const ms = (p.sheets ?? []).find((s) => s.role === 'milestone')
+  if (t.kind === 'construction') check(nSheets === 1 && p.activeSheet?.role === 'milestone', `${t.label}: 마일스톤 시트만`)
+  else {
+    check(!!ms && p.activeSheet?.role === 'plan', `${t.label}: 예정공정표(활성) + 마일스톤 시트`)
+    if (ms) {
+      const mm = computeLayout({ ...p, categories: ms.categories, tasks: ms.tasks, links: ms.links, rainySeasons: ms.rainySeasons })
+      check(mm.tasks.length > 0 && mm.tasks.every((lt) => Number.isFinite(lt.cy)), `${t.label}: 마일스톤 시트 유효(${mm.tasks.length})`)
+    }
+  }
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

@@ -162,11 +162,32 @@ export interface ProjectMeta {
  *  가지며, 시작 시 유형별 프리셋(공종/공정·강조 모듈)이 세팅된다. */
 export type ProjectKind = 'feasibility' | 'basic-design' | 'detailed-design' | 'construction'
 
+/** 공정표 시트 종류: 예정공정표(상세 계획·과업) / 마일스톤(건설 요약). 한 사업이
+ *  둘 다 가질 수 있다(설계 단계=둘 다, 시공=마일스톤만). */
+export type SheetRole = 'plan' | 'milestone'
+
+/** 한 사업 안의 공정표 문서. 표시 설정(startDate/view/paper)은 사업 단위로 공유하고
+ *  공정 데이터(공종/공정/연결/우기)만 시트별로 갖는다. 활성 시트는 Project 최상위
+ *  categories/tasks/links/rainySeasons에 펼쳐져 있고, 여기엔 비활성 시트만 담는다. */
+export interface Sheet {
+  id: ID
+  role: SheetRole
+  name: string
+  categories: Category[]
+  tasks: Task[]
+  links: Link[]
+  rainySeasons: RainySeason[]
+}
+
 export interface Project {
   id: ID
   name: string
   /** 사업 단계/유형 (없으면 시공으로 간주 — 구버전 호환). */
   kind?: ProjectKind
+  /** 비활성 공정표 시트들(활성 시트는 최상위 categories/tasks/links/rainySeasons). */
+  sheets?: Sheet[]
+  /** 현재 편집 중인 시트 메타. 없으면 단일 공정표(구버전 호환). */
+  activeSheet?: { id: ID; role: SheetRole; name: string }
   /** ISO date (YYYY-MM-DD) representing day 0 of the schedule. */
   startDate: string
   paper: PaperSettings

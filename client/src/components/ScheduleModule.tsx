@@ -33,6 +33,15 @@ export function ScheduleModule() {
   // Fullscreen preview hides the side panels so the chart can be checked
   // full-bleed before printing.
   const [presentation, setPresentation] = useState(false)
+  // 예정공정표 ↔ 마일스톤 시트 탭 (한 사업이 여러 공정표 시트를 가질 때).
+  const sheets = useEditor((s) => s.project.sheets)
+  const activeSheet = useEditor((s) => s.project.activeSheet)
+  const a = useEditor.getState
+  const tabs = activeSheet
+    ? [{ id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },
+        ...(sheets ?? []).map((s) => ({ id: s.id, role: s.role, name: s.name }))]
+        .sort((x, y) => (x.role === 'plan' ? 0 : 1) - (y.role === 'plan' ? 0 : 1))
+    : []
 
   useEffect(() => { lsSet('hydronet:leftW', String(leftWidth)) }, [leftWidth])
   useEffect(() => { lsSet('hydronet:rightW', String(rightWidth)) }, [rightWidth])
@@ -92,6 +101,15 @@ export function ScheduleModule() {
         {!presentation && <Sidebar width={leftWidth} />}
         {!presentation && <Resizer side="left" width={leftWidth} setWidth={setLeftWidth} />}
         <div className="app__center">
+          {!presentation && tabs.length > 1 && (
+            <div className="sheet-tabs">
+              {tabs.map((t) => (
+                <button key={t.id} className={`sheet-tab ${t.id === activeSheet!.id ? 'active' : ''}`} onClick={() => a().switchSheet(t.id)}>
+                  <span className="sheet-tab__ic">{t.role === 'plan' ? '📋' : '◆'}</span>{t.name}
+                </button>
+              ))}
+            </div>
+          )}
           {!presentation && <ViewBar />}
           <ChartCanvas />
           <StatusBar />

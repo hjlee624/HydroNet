@@ -3,7 +3,7 @@
 // storage / simple-milestone / blank) beyond the single demo sample.
 
 import { nanoid } from 'nanoid'
-import type { Category, Link, Project, ProjectKind, Task } from '../types/model'
+import type { Category, Link, Project, ProjectKind, Sheet, SheetRole, Task } from '../types/model'
 import { dateToDay, parseISO } from '../engine/dates'
 import { applyCascade } from '../engine/scheduling'
 import { lanePalette, DEFAULT_PALETTE } from '../styles/theme'
@@ -210,6 +210,38 @@ const DETAIL_TASKS: TaskDef[] = [
 ]
 const DETAIL_LINKS: Array<[string, string]> = [['d-1', 'd-2'], ['d-2', 'd-3'], ['d-3', 'd-4'], ['d-3', 'd-5'], ['d-4', 'd-6'], ['d-5', 'd-6'], ['d-6', 'd-7'], ['d-6', 'd-8'], ['d-8', 'd-9'], ['d-9', 'd-10'], ['d-3', 'd-11'], ['d-10', 'd-12'], ['d-12', 'd-13']]
 
+// ── 공정표 시트(예정공정표 / 마일스톤) ───────────────────────────────────────
+function mkSheet(id: string, role: SheetRole, name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[string, string]>): Sheet {
+  const day = (iso: string) => dateToDay(START, parseISO(iso))
+  const categories: Category[] = cats.map((c, i) => ({
+    id: c.id, name: c.name, color: lanePalette[i % lanePalette.length], collapsed: false, order: i, isCommissioning: c.commissioning,
+  }))
+  const tasks: Task[] = taskDefs.map((t) => ({
+    id: t.id, categoryId: t.cat, name: t.name, start: day(t.start), duration: t.dur, isMilestone: !!t.milestone, ...(t.sub ? { subName: t.sub } : {}),
+  }))
+  const lk: Link[] = links.map(([from, to], i) => ({ id: `${id}-l-${i + 1}`, from, to, type: 'FS', lag: 0 }))
+  return { id, role, name, categories, tasks: applyCascade(tasks, lk).tasks, links: lk, rainySeasons: [] }
+}
+
+// 건설(시공) 마일스톤 — 설계 단계 사업의 '마일스톤' 시트. 날짜 마커라 연결(cascade) 없음.
+const CONST_MS_CATS: CatDef[] = [{ id: 'cm-ms', name: '건설 마일스톤' }]
+const CONST_MS_TASKS: TaskDef[] = [
+  { id: 'cm-1', cat: 'cm-ms', name: '◆ 실시설계 완료', start: '2026-11-20', dur: 0, milestone: true },
+  { id: 'cm-2', cat: 'cm-ms', name: '◆ 착공', start: '2027-03-02', dur: 0, milestone: true },
+  { id: 'cm-3', cat: 'cm-ms', name: '◆ 본체 착수', start: '2027-09-01', dur: 0, milestone: true },
+  { id: 'cm-4', cat: 'cm-ms', name: '◆ 초기 담수', start: '2029-06-01', dur: 0, milestone: true },
+  { id: 'cm-5', cat: 'cm-ms', name: '◆ 준공', start: '2029-12-20', dur: 0, milestone: true },
+  { id: 'cm-6', cat: 'cm-ms', name: '◆ 상업운전', start: '2030-03-02', dur: 0, milestone: true },
+]
+const CONST_MS_LINKS: Array<[string, string]> = []
+
+const PLAN_META = { id: 'sh-plan', role: 'plan' as const, name: '예정공정표' }
+function withDesignSheets(p: Project): Project {
+  p.activeSheet = { ...PLAN_META }
+  p.sheets = [mkSheet('sh-ms', 'milestone', '마일스톤', CONST_MS_CATS, CONST_MS_TASKS, CONST_MS_LINKS)]
+  return p
+}
+
 // ── 사업 유형(단계) 메타 + 프리셋 ─────────────────────────────────────────────
 export const KIND_META: Record<ProjectKind, { label: string; icon: string; scheduleLabel: string }> = {
   feasibility: { label: '타당성조사', icon: '🔎', scheduleLabel: '설계 공정표' },
@@ -232,17 +264,23 @@ export const PROJECT_TYPES: ProjectTypeDef[] = [
   { kind: 'feasibility', ...KIND_META.feasibility,
     desc: '사업 추진 여부 판단 — 개략 검토·경제성·환경 중심',
     highlights: ['자료조사·현황분석', '수요·입지', '경제성(B/C)', '환경·재해', '종합보고서'],
-    make: () => build('타당성조사 공정표', FEAS_CATS, FEAS_TASKS, FEAS_LINKS, { kind: 'feasibility', rainy: false }) },
+    make: () => withDesignSheets(build('타당성조사 예정공정표', FEAS_CATS, FEAS_TASKS, FEAS_LINKS, { kind: 'feasibility', rainy: false })) },
   { kind: 'basic-design', ...KIND_META['basic-design'],
     desc: '기본구상·대안비교 + 기본설계 + 개략공사비',
     highlights: ['측량·지반·수문', '대안비교', '기본설계', '인허가 협의', '심의·납품'],
-    make: () => build('기본설계 공정표', BASIC_CATS, BASIC_TASKS, BASIC_LINKS, { kind: 'basic-design', rainy: false }) },
+    make: () => withDesignSheets(build('기본설계 예정공정표', BASIC_CATS, BASIC_TASKS, BASIC_LINKS, { kind: 'basic-design', rainy: false })) },
   { kind: 'detailed-design', ...KIND_META['detailed-design'],
     desc: '실시설계·상세도면·시방·적산·인허가',
     highlights: ['실시설계', '상세 도면', '시방서·내역', '수량·적산', '인허가·심의'],
-    make: () => build('실시설계 공정표', DETAIL_CATS, DETAIL_TASKS, DETAIL_LINKS, { kind: 'detailed-design', rainy: false }) },
+    make: () => withDesignSheets(build('실시설계 예정공정표', DETAIL_CATS, DETAIL_TASKS, DETAIL_LINKS, { kind: 'detailed-design', rainy: false })) },
   { kind: 'construction', ...KIND_META.construction,
     desc: '착공~준공 시공 공정 + 시운전 (마일스톤·CPM·우기 음영)',
     highlights: ['가설·가물막이', '본체·부대공', '시운전', '우기 음영', '주공정'],
-    make: () => { const p = createSampleProject(); p.id = `proj-${nanoid(8)}`; p.kind = 'construction'; return p } },
+    make: () => {
+      const p = createSampleProject()
+      p.id = `proj-${nanoid(8)}`; p.kind = 'construction'
+      p.activeSheet = { id: 'sh-ms', role: 'milestone', name: '마일스톤' }
+      p.sheets = [] // 시공은 마일스톤 시트만
+      return p
+    } },
 ]

@@ -8,7 +8,7 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type {
-  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, RainySeason, Task, TextRole, TextStyle, ViewSettings,
+  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, RainySeason, Sheet, Task, TextRole, TextStyle, ViewSettings,
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
 import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
@@ -103,6 +103,8 @@ export interface EditorState {
   setProject: (p: Project) => void
   newProject: () => void
   loadSample: () => void
+  /** Switch the active 공정표 시트(예정공정표 ↔ 마일스톤) within the 사업. */
+  switchSheet: (id: ID) => void
 
   // tasks
   addTask: (categoryId: ID, partial?: Partial<Task>) => ID
@@ -341,6 +343,28 @@ export const useEditor = create<EditorState>()((set, get) => {
     loadSample: () => {
       set({ project: withSchedule(createSampleProject()).project, past: [], future: [], dirty: false, selectedTaskId: null })
       logInfo('샘플 프로젝트를 불러왔습니다.')
+    },
+    switchSheet: (id) => {
+      const p = get().project
+      if (!p.sheets || !p.activeSheet || id === p.activeSheet.id) return
+      const target = p.sheets.find((s) => s.id === id)
+      if (!target) return
+      // Stash the current active sheet back into the list, load the target into
+      // the editable top-level fields (the active sheet always lives at top level).
+      const current: Sheet = {
+        id: p.activeSheet.id, role: p.activeSheet.role, name: p.activeSheet.name,
+        categories: p.categories, tasks: p.tasks, links: p.links, rainySeasons: p.rainySeasons,
+      }
+      const sheets = p.sheets.filter((s) => s.id !== id).concat(current)
+      const next: Project = {
+        ...p,
+        categories: clone(target.categories), tasks: clone(target.tasks),
+        links: clone(target.links), rainySeasons: clone(target.rainySeasons),
+        sheets, activeSheet: { id: target.id, role: target.role, name: target.name },
+      }
+      set({ project: withSchedule(next).project, past: [], future: [], selectedTaskId: null, selectedLinkId: null, selectedTextRole: null, dirty: true })
+      scheduleSave(get)
+      logInfo(`공정표 전환: ${target.name}`)
     },
 
     addTask: (categoryId, partial) => {
