@@ -14,7 +14,7 @@ import { PALETTE_MAX } from '../types/model'
 import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
 import { fitToPaperView } from '../engine/layout'
 import { paperMm } from '../engine/paper'
-import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
+import { daysInMonth, doyToMonthDay, monthDayToDoy, toISO } from '../engine/dates'
 import { createSampleProject } from '../data/sampleProject'
 import { DEFAULT_PALETTE } from '../styles/theme'
 import { autosaveProject, saveProject } from './api'
@@ -124,6 +124,10 @@ export interface EditorState {
   addModuleRecord: (moduleId: string, values?: Record<string, string>) => ID
   updateModuleRecord: (moduleId: string, id: ID, values: Record<string, string>) => void
   deleteModuleRecord: (moduleId: string, id: ID) => void
+
+  // baseline (기준선) — 현재 일정을 박제해 이후 표류를 측정(대시보드 EVM 연계)
+  captureBaseline: () => void
+  clearBaseline: () => void
 
   // categories
   addCategory: (partial?: Partial<Category>) => ID
@@ -477,6 +481,32 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (p.modules?.[moduleId]) p.modules[moduleId] = p.modules[moduleId].filter((x) => x.id !== id)
     }, { history: false }),
 
+    captureBaseline: () => {
+      commit((p) => {
+        const catById = new Map(p.categories.map((c) => [c.id, c]))
+        const vis = p.tasks.filter((t) => {
+          const c = catById.get(t.categoryId)
+          return c && (p.commissioningEnabled || !c.isCommissioning) && !t.hidden && !c.hidden
+        })
+        const starts = vis.map((t) => t.es ?? t.start)
+        const ends = vis.map((t) => t.ef ?? t.start + t.duration)
+        p.baseline = {
+          capturedAt: new Date().toISOString(),
+          asOf: toISO(new Date()),
+          // 활성 공정표 id를 박제 — 시트 전환 후엔 표류 비교가 무의미하므로 셀렉터가 가린다.
+          sheetId: p.activeSheet?.id,
+          startDay: starts.length ? Math.min(...starts) : 0,
+          endDay: ends.length ? Math.max(...ends) : 0,
+          tasks: p.tasks.map((t) => ({ id: t.id, start: t.es ?? t.start, duration: t.duration })),
+        }
+      })
+      logInfo('현재 일정을 기준선(베이스라인)으로 저장했습니다.')
+    },
+    clearBaseline: () => {
+      commit((p) => { delete p.baseline })
+      logInfo('기준선을 해제했습니다.')
+    },
+
     addCategory: (partial) => {
       const id = `c-${nanoid(8)}`
       commit((p) => {
@@ -571,7 +601,9 @@ export const useEditor = create<EditorState>()((set, get) => {
       commit((d) => { d.view = { ...d.view, ...patch } }, { history: false })
       logInfo('현재 용지 규격에 맞춰 여백 없이 채우고 글자 크기를 조정했습니다.')
     },
-    setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }),
+    // history:false — 이름/시작일은 자유텍스트 입력(키 입력마다 undo 누적 방지, subName/색
+    // 편집과 동일 정책). startDate는 day-offset 기준이라 CPM에 영향 없음.
+    setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }, { history: false }),
     toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),
     toggleTitle: () => commit((p) => { p.view.showTitle = p.view.showTitle === false }, { history: false }),
     addLogo: (src, w = 168, h = 60) => commit((p) => {

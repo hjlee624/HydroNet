@@ -7,14 +7,18 @@ import { useMemo } from 'react'
 import { MODULE_MAP, type ModuleField, type ModuleId } from '../data/modules'
 import { useEditor } from '../state/store'
 import { useShell } from '../state/shell'
+import { toNum } from '../engine/kpis'
 
-/** 계산 컬럼 값 — 두 숫자 필드를 곱/차로 산출. 두 원본이 모두 비면 empty. */
+/** 계산 컬럼 값 — 두 숫자 필드를 곱/차로 산출. 미완성 입력이 잘못된 값을 합계에 흘리지
+ *  않도록 op별로 empty를 다르게 판정한다: 금액(mul)은 두 칸이 모두 채워져야, 잔액(sub)은
+ *  피감수(예산)가 채워져야 계산한다(집행 미입력=0 집행으로 보고 잔액=예산은 타당). */
 function computeField(field: ModuleField, values: Record<string, string>): { n: number; empty: boolean } {
   const [a, b] = field.compute!.keys
   const ra = values[a] ?? '', rb = values[b] ?? ''
-  const av = Number(ra) || 0, bv = Number(rb) || 0
-  const n = field.compute!.op === 'mul' ? av * bv : av - bv
-  return { n, empty: ra.trim() === '' && rb.trim() === '' }
+  const aBlank = ra.trim() === '', bBlank = rb.trim() === ''
+  const empty = field.compute!.op === 'mul' ? (aBlank || bBlank) : aBlank
+  const n = field.compute!.op === 'mul' ? toNum(ra) * toNum(rb) : toNum(ra) - toNum(rb)
+  return { n, empty }
 }
 
 export function RecordModule({ id }: { id: ModuleId }) {
@@ -30,13 +34,19 @@ export function RecordModule({ id }: { id: ModuleId }) {
   // 합계 행: 숫자/계산 컬럼 중 noTotal이 아닌 것만 (단가·수량 등은 합산 무의미 → 제외).
   const totalFields = fields.filter((f) => (f.type === 'num' || f.compute) && !f.noTotal)
   const totalKey = totalFields.map((f) => f.key).join(',')
+  // deps는 stable store ref(records)+totalKey만 — rows(=records??[])는 빈 모듈에서 매 렌더
+  // 새 [] 라 memo가 헛돈다(빈화면 회귀는 아님). 미완성(empty) compute 행은 합계에서 제외.
   const totals = useMemo(() => {
+    const list = records ?? []
     const t: Record<string, number> = {}
     for (const f of totalFields) {
-      t[f.key] = rows.reduce((s, r) => s + (f.compute ? computeField(f, r.values).n : Number(r.values[f.key]) || 0), 0)
+      t[f.key] = list.reduce((s, r) => {
+        if (f.compute) { const c = computeField(f, r.values); return s + (c.empty ? 0 : c.n) }
+        return s + toNum(r.values[f.key])
+      }, 0)
     }
     return t
-  }, [rows, totalKey]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [records, totalKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="rec">

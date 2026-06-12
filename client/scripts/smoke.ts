@@ -7,6 +7,8 @@ import { computeLayout, fitToPaperView } from '../src/engine/layout'
 import { PROJECT_TYPES } from '../src/data/templates'
 import { routeLinks } from '../src/engine/routing'
 import { paperPx } from '../src/engine/paper'
+import { projectKpis, toNum } from '../src/engine/kpis'
+import { dayToDate } from '../src/engine/dates'
 
 let failures = 0
 function check(cond: boolean, label: string) {
@@ -101,6 +103,61 @@ for (const t of PROJECT_TYPES) {
       check(mm.tasks.length > 0 && mm.tasks.every((lt) => Number.isFinite(lt.cy)), `${t.label}: 마일스톤 시트 유효(${mm.tasks.length})`)
     }
   }
+}
+
+// 8. projectKpis — 단일 셀렉터(일정·진척·원가·EVM·경보·베이스라인) 무결성
+console.log('')
+{
+  const midDay = Math.round(sched.projectEndDay * 0.6)
+  const asOf = dayToDate(project.startDate, midDay)
+  const tasksWithProgress = sched.tasks.map((t, i) =>
+    !t.isMilestone ? { ...t, progress: i % 3 === 0 ? 100 : i % 3 === 1 ? 50 : 0 } : t)
+  const kp = {
+    ...project, tasks: tasksWithProgress,
+    modules: {
+      cost: [
+        { id: 'c1', values: { group: '공사비', budget: '50000', spent: '30000' } },
+        { id: 'c2', values: { group: '설계비', budget: '100000', spent: '40000' } },
+      ],
+      boq: [
+        { id: 'b1', values: { qty: '10', price: '50000' } },
+        { id: 'b2', values: { qty: '5', price: '20000' } },
+      ],
+      risk: [{ id: 'r1', values: { status: '열림' } }, { id: 'r2', values: { status: '종료' } }],
+    },
+  }
+  const k = projectKpis(kp, asOf)
+  check(k.cost.budget === 150000 && k.cost.spent === 70000, `cost 합계(천원) budget=150000 spent=70000 (got ${k.cost.budget}/${k.cost.spent})`)
+  check(k.cost.burnPct === Math.round((70000 / 150000) * 100), `소진율=${k.cost.burnPct}%`)
+  check(k.boq.total === 600000, `boq 공사비 합계(원)=600000 (got ${k.boq.total})`)
+  check(k.evm.costAvailable && k.evm.ac === 70000 && k.evm.bac === 150000, 'EVM costAvailable·BAC·AC 일치')
+  const evOk = Math.abs(k.evm.ev - (k.evm.bac * k.progress.actualPct) / 100) < 1e-6
+  const spiOk = k.progress.plannedPct > 0 ? Math.abs(k.evm.spi - k.progress.actualPct / k.progress.plannedPct) < 1e-6 : k.evm.spi === 0
+  check(evOk && spiOk, 'EVM EV=BAC×실적%, SPI=실적/계획 일관')
+  check(Math.abs(k.evm.cpi - k.evm.ev / k.evm.ac) < 1e-6 && Number.isFinite(k.evm.eac), `CPI=EV/AC, EAC 유한 (cpi=${k.evm.cpi.toFixed(2)})`)
+  check([k.progress.actualPct, k.progress.plannedPct, k.evm.pv, k.evm.cv, k.cost.balance].every(Number.isFinite), 'KPI 핵심값 모두 유한(NaN 없음)')
+  check(k.alerts.some((a) => a.module === 'risk' && a.count === 1), '리스크 경보(열림 1건) 집계')
+  check(k.baseline === null, '기준선 없으면 baseline=null')
+  check(toNum('1,000') === 1000 && toNum('') === 0 && toNum('abc') === 0, "toNum: 천단위/빈칸/비숫자 처리")
+
+  // 결측: 빈 프로젝트는 NaN/Infinity 없이 0으로 수렴
+  const empty = { ...project, tasks: [], links: [], modules: {} }
+  const ke = projectKpis(empty, asOf)
+  check(!ke.cost.hasCost && !ke.evm.costAvailable && ke.evm.spi === 0 && ke.evm.cpi === 0, '빈 프로젝트: cost/EVM 비활성·0(분모0 가드)')
+  check([ke.schedule.elapsedPct, ke.progress.actualPct, ke.evm.eac].every(Number.isFinite), '빈 프로젝트: 모든 수치 유한')
+
+  // 베이스라인 드리프트: 일부 공정을 뒤로 밀면 slipped 집계
+  const base = { capturedAt: asOf.toISOString(), asOf: asOf.toISOString().slice(0, 10), startDay: 0, endDay: sched.projectEndDay, tasks: sched.tasks.map((t) => ({ id: t.id, start: t.es ?? t.start, duration: t.duration })) }
+  const shifted = sched.tasks.map((t, i) => (i < 3 && !t.isMilestone ? { ...t, es: (t.es ?? t.start) + 20, start: t.start + 20 } : t))
+  const kb = projectKpis({ ...project, tasks: shifted, baseline: base }, asOf)
+  check(kb.baseline !== null && kb.baseline.slippedCount >= 1, `기준선 대비 표류 집계(slipped=${kb.baseline?.slippedCount})`)
+
+  // 시트 인지: 다른 공정표에서 박제한 기준선은 표류 비교를 가린다(설계 사업 시트 전환).
+  const active = { id: 'sh-plan', role: 'plan' as const, name: '예정공정표' }
+  const kMismatch = projectKpis({ ...project, tasks: shifted, activeSheet: active, baseline: { ...base, sheetId: 'sh-ms' } }, asOf)
+  check(kMismatch.baseline === null, '다른 공정표에서 박제한 기준선은 표류 비교 안 함(null)')
+  const kMatch = projectKpis({ ...project, tasks: shifted, activeSheet: active, baseline: { ...base, sheetId: 'sh-plan' } }, asOf)
+  check(kMatch.baseline !== null && kMatch.baseline.slippedCount >= 1, '같은 공정표 기준선은 표류 계산')
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

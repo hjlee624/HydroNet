@@ -23,6 +23,13 @@ export function ProjectTypeChooser({ onClose }: { onClose: () => void }) {
 
   function pick(t: ProjectTypeDef) {
     if (!named) return
+    // 새 사업은 현재 사업을 통째로 대체한다 — 모듈 기록(원가·공사비·품질 등)이나 기준선이
+    // 있으면 데이터 손실을 경고(저장본은 별 id라 불러오기로 복구 가능, 세션 편집은 소실).
+    const cur = a().project
+    const hasRecords = cur.modules ? Object.values(cur.modules).some((arr) => arr && arr.length > 0) : false
+    if ((hasRecords || cur.baseline) && typeof window !== 'undefined' && typeof window.confirm === 'function') {
+      if (!window.confirm('현재 사업의 모든 모듈 기록·기준선이 새 사업으로 대체됩니다. 계속할까요?\n(저장된 사업은 ‘불러오기’로 다시 열 수 있습니다.)')) return
+    }
     const p = t.make()
     p.name = name.trim() // 사업명을 대시보드·공정관리(도면 제목)에 일괄 적용
     a().setProject(p)

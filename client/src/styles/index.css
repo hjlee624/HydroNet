@@ -175,6 +175,42 @@ input, select, textarea {
 .dash__mod-l { font-size: 13px; font-weight: 600; color: var(--ink); display: flex; align-items: center; gap: 6px; }
 .dash__mod-b { font-size: 11px; color: var(--stone); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dash__mod-s { font-size: 9px; font-weight: 700; color: var(--steel); background: var(--beige-deep); padding: 1px 5px; border-radius: 9999px; }
+.dash__mod-m { font-weight: 700; color: var(--primary-deep); }
+
+/* dashboard · EVM 헤드라인(공정·진척·원가 연계) */
+.dash__hero { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.dcard--hero { cursor: pointer; transition: border-color .12s, box-shadow .12s; }
+.dcard--hero:hover { border-color: var(--hairline-strong); box-shadow: 0 1px 0 var(--hairline-strong); }
+.dcard--hero .dcard__value strong { font-size: 30px; }
+.dcard__hint { font-size: 9px; font-weight: 700; color: var(--steel); background: var(--beige-deep); padding: 1px 5px; border-radius: 9999px; margin-left: 4px; }
+
+/* dashboard · 모듈 경보 패널 */
+.dash__alerts { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.dash__alert { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border: 1px solid var(--hairline); border-left-width: 3px; border-radius: 8px; cursor: pointer; }
+.dash__alert:hover { background: var(--cream-soft); }
+.dash__alert--danger { border-left-color: var(--danger,#c0392b); }
+.dash__alert--warn { border-left-color: #d98a2b; }
+.dash__alert--info { border-left-color: var(--steel); }
+.dash__alert-ic { font-size: 16px; flex: 0 0 auto; }
+.dash__alert-l { font-size: 13px; font-weight: 700; color: var(--ink); flex: 0 0 auto; }
+.dash__alert-t { flex: 1 1 auto; font-size: 12px; color: var(--charcoal); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash__alert-n { font-size: 13px; font-weight: 800; color: var(--ink); font-variant-numeric: tabular-nums; }
+
+/* dashboard · 예산 vs 실적 미니바(PV/EV/AC) */
+.dash__evm { display: flex; flex-direction: column; gap: 9px; margin-bottom: 10px; }
+.dash__evm-row { display: flex; align-items: center; gap: 10px; }
+.dash__evm-row--muted { opacity: .5; }
+.dash__evm-l { width: 72px; flex: 0 0 auto; font-size: 11px; color: var(--steel); }
+.dash__evm-track { flex: 1 1 auto; height: 10px; background: var(--beige-deep); border-radius: 9999px; overflow: hidden; }
+.dash__evm-fill { display: block; height: 100%; border-radius: 9999px; }
+.dash__evm-fill--plan { background: var(--steel); }
+.dash__evm-fill--earn { background: var(--primary); }
+.dash__evm-fill--cost { background: #d98a2b; }
+.dash__evm-v { width: 40px; flex: 0 0 auto; text-align: right; font-size: 12px; font-weight: 700; color: var(--charcoal); font-variant-numeric: tabular-nums; }
+.dash__evm-cap { font-size: 11px; color: var(--stone); margin: 0; }
+.dash__link { border: none; background: none; padding: 0; color: var(--primary-deep); font: inherit; cursor: pointer; text-decoration: underline; }
+.dash__cp { font-size: 9px; font-weight: 800; color: var(--danger,#c0392b); margin-left: 6px; }
+.dash__note { font-size: 11px; color: var(--stone); margin: 12px 0 0; }
 
 /* module placeholder */
 .mph { height: 100%; display: flex; align-items: center; justify-content: center; padding: 24px; background: var(--surface); overflow-y: auto; }

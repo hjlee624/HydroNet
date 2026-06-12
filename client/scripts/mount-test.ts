@@ -13,8 +13,11 @@ g.window = w
 g.document = w.document
 g.localStorage = w.localStorage
 g.sessionStorage = w.sessionStorage
-// Open the heavy 공정관리(schedule) module — the chart/sidebar that this test
-// guards against blank-screen regressions (the shell now defaults to dashboard).
+// Simulate a returning user (단계 already chosen) who navigated to the heavy
+// 공정관리(schedule) module — the chart/sidebar this test guards against blank-
+// screen regressions. typeChosen='1' is required: the first-entry gate forces the
+// dashboard on boot until a 사업 단계 is picked (shell.initialModule).
+w.localStorage.setItem('hydronet:typeChosen', '1')
 w.localStorage.setItem('hydronet:module', 'schedule')
 g.HTMLElement = w.HTMLElement
 g.Element = w.Element
