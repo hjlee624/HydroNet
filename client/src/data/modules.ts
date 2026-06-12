@@ -3,7 +3,7 @@
 // placeholders for now — see PACKAGE_PLAN.md.
 
 export type ModuleId =
-  | 'dashboard' | 'schedule' | 'progress' | 'cost' | 'resource'
+  | 'dashboard' | 'schedule' | 'progress' | 'cost' | 'boq' | 'resource'
   | 'quality' | 'safety' | 'document' | 'permit' | 'commissioning' | 'risk' | 'report'
 
 export type ModuleStatus = 'ready' | 'soon'
@@ -18,6 +18,10 @@ export interface ModuleField {
   options?: string[]
   /** 넓은 컬럼(내용/명칭 등 긴 텍스트). */
   wide?: boolean
+  /** 계산 컬럼(입력 없음). 두 숫자 필드를 곱(mul)/차(sub)로 자동 산출. 예: 금액=수량×단가, 잔액=예산-집행. */
+  compute?: { op: 'mul' | 'sub'; keys: [string, string] }
+  /** 합계 행에서 제외(단가·수량처럼 합산이 무의미한 컬럼). */
+  noTotal?: boolean
 }
 
 export interface ModuleDef {
@@ -42,15 +46,29 @@ export const MODULES: ModuleDef[] = [
   { id: 'progress', label: '진척·실적', icon: '📈', group: '공정', status: 'soon',
     blurb: '계획 대비 실적·지연',
     plan: ['공정별 % 진척 입력', '베이스라인 스냅샷', '계획선 vs 실적 표시', '지연 공정 하이라이트'] },
-  { id: 'cost', label: '원가·예산', icon: '💰', group: '사업비', status: 'soon',
-    blurb: '예산 대비 집행·기성',
-    plan: ['공종별 예산/집행', '기성(청구·지급)', '경량 EVM(계획-실적)', '예산 소진율 카드'],
+  { id: 'cost', label: '프로젝트 예산', icon: '💰', group: '사업비', status: 'soon',
+    blurb: '사업 예산 대비 집행·잔액',
+    plan: ['구분별(공사비·설계비·감리비·보상비·예비비) 예산', '집행액·잔액 자동', '예산 소진율(보고서 집계)'],
     fields: [
+      { key: 'group', label: '구분', type: 'select', options: ['공사비', '설계비', '감리비', '보상비', '행정/기타', '예비비'] },
       { key: 'item', label: '항목', wide: true },
-      { key: 'category', label: '공종' },
       { key: 'budget', label: '예산(천원)', type: 'num' },
       { key: 'spent', label: '집행(천원)', type: 'num' },
+      { key: 'balance', label: '잔액(천원)', compute: { op: 'sub', keys: ['budget', 'spent'] } },
       { key: 'note', label: '비고', wide: true },
+    ] },
+  { id: 'boq', label: '공사 사업비', icon: '🧮', group: '사업비', status: 'soon',
+    blurb: '공사비 수량·내역(단가·금액)',
+    plan: ['공종별 품목·규격·단위', '수량 × 단가 = 금액 자동', '내역 합계(공사비)', '적산/내역서 기반'],
+    fields: [
+      { key: 'category', label: '공종' },
+      { key: 'item', label: '품목', wide: true },
+      { key: 'spec', label: '규격' },
+      { key: 'unit', label: '단위' },
+      { key: 'qty', label: '수량', type: 'num', noTotal: true },
+      { key: 'price', label: '단가(원)', type: 'num', noTotal: true },
+      { key: 'amount', label: '금액(원)', compute: { op: 'mul', keys: ['qty', 'price'] } },
+      { key: 'note', label: '비고' },
     ] },
   { id: 'resource', label: '인력·장비', icon: '👷', group: '자원', status: 'soon',
     blurb: '일자별 투입·부하',

@@ -10,6 +10,8 @@ import { dateToDay, dayToDate, toISO } from '../engine/dates'
 const clampPct = (n: number) => Math.max(0, Math.min(100, n))
 const sumVals = (recs: { values: Record<string, string> }[] | undefined, key: string) =>
   (recs ?? []).reduce((s, r) => s + (Number(r.values[key]) || 0), 0)
+const sumProduct = (recs: { values: Record<string, string> }[] | undefined, ka: string, kb: string) =>
+  (recs ?? []).reduce((s, r) => s + (Number(r.values[ka]) || 0) * (Number(r.values[kb]) || 0), 0)
 const countWhere = (recs: { values: Record<string, string> }[] | undefined, key: string, vals: string[]) =>
   (recs ?? []).filter((r) => vals.includes(r.values[key])).length
 
@@ -48,10 +50,14 @@ export function ReportModule() {
 
     const mod = (id: ModuleId) => project.modules?.[id]
     const budget = sumVals(mod('cost'), 'budget'), spent = sumVals(mod('cost'), 'spent')
+    const boqTotal = sumProduct(mod('boq'), 'qty', 'price')
     const highlights = [
-      { id: 'cost' as ModuleId, icon: '💰', label: '원가·예산',
+      { id: 'cost' as ModuleId, icon: '💰', label: '프로젝트 예산',
         stat: `집행 ${spent.toLocaleString()} / 예산 ${budget.toLocaleString()} 천원`,
         sub: budget > 0 ? `소진율 ${Math.round((spent / budget) * 100)}%` : '예산 미입력', n: (mod('cost') ?? []).length },
+      { id: 'boq' as ModuleId, icon: '🧮', label: '공사 사업비',
+        stat: `공사비 합계 ${boqTotal.toLocaleString()} 원`,
+        sub: `내역 ${(mod('boq') ?? []).length}건`, n: (mod('boq') ?? []).length },
       { id: 'progress' as ModuleId, icon: '📈', label: '진척·실적',
         stat: `실적 ${Math.round(actualAll)}% · 계획 ${Math.round(plannedAll)}%`,
         sub: `지연 공정 ${behind}건`, n: acts.length },

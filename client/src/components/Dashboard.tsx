@@ -12,6 +12,7 @@ import { dateToDay, dayToDate, toISO } from '../engine/dates'
 
 export function Dashboard() {
   const project = useEditor((s) => s.project)
+  const setProjectMeta = useEditor((s) => s.setProjectMeta)
   const setModule = useShell((s) => s.setModule)
   const meta = KIND_META[project.kind ?? 'construction']
   // First-ever load → open the 사업 유형 선택 as the entry screen.
@@ -55,7 +56,15 @@ export function Dashboard() {
       <header className="dash__head">
         <div>
           <div className="dash__eyebrow">사업 대시보드 · <span className="dash__kind">{meta.icon} {meta.label}</span></div>
-          <h1 className="dash__title">{project.name || '제목 없음'}</h1>
+          <input
+            className="dash__title dash__title--edit"
+            value={project.name}
+            onChange={(e) => setProjectMeta({ name: e.target.value })}
+            placeholder="제목 없음"
+            aria-label="사업명"
+            spellCheck={false}
+            maxLength={80}
+          />
         </div>
         <div className="dash__actions">
           <button className="btn" onClick={() => setChooserOpen(true)}>＋ 새 사업</button>

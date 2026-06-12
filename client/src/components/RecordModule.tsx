@@ -1,11 +1,21 @@
-// Generic record-table module — drives the 기록형(log-style) 모듈 8종
-// (원가·자원·품질·안전·문서·인허가·시운전·리스크) from their ModuleField schema.
-// Each module is one table: rows are ModuleRecord, columns are its fields. Data
-// lives on Project.modules[id] (project-level, survives 시트 전환). See PACKAGE_PLAN.md.
+// Generic record-table module — drives the 기록형(log-style) 모듈
+// (프로젝트 예산·공사 사업비·자원·품질·안전·문서·인허가·시운전·리스크) from their
+// ModuleField schema. Each module is one table: rows are ModuleRecord, columns are
+// its fields. Computed columns (compute) auto-derive from other fields (금액=수량×단가,
+// 잔액=예산-집행). Data lives on Project.modules[id] (project-level, survives 시트 전환).
 import { useMemo } from 'react'
 import { MODULE_MAP, type ModuleField, type ModuleId } from '../data/modules'
 import { useEditor } from '../state/store'
 import { useShell } from '../state/shell'
+
+/** 계산 컬럼 값 — 두 숫자 필드를 곱/차로 산출. 두 원본이 모두 비면 empty. */
+function computeField(field: ModuleField, values: Record<string, string>): { n: number; empty: boolean } {
+  const [a, b] = field.compute!.keys
+  const ra = values[a] ?? '', rb = values[b] ?? ''
+  const av = Number(ra) || 0, bv = Number(rb) || 0
+  const n = field.compute!.op === 'mul' ? av * bv : av - bv
+  return { n, empty: ra.trim() === '' && rb.trim() === '' }
+}
 
 export function RecordModule({ id }: { id: ModuleId }) {
   const m = MODULE_MAP[id]
@@ -17,13 +27,16 @@ export function RecordModule({ id }: { id: ModuleId }) {
   const setModule = useShell((s) => s.setModule)
   const rows = records ?? []
 
-  // Sum every numeric column for a footer 합계 row (generic across modules).
-  const numKeys = fields.filter((f) => f.type === 'num').map((f) => f.key)
+  // 합계 행: 숫자/계산 컬럼 중 noTotal이 아닌 것만 (단가·수량 등은 합산 무의미 → 제외).
+  const totalFields = fields.filter((f) => (f.type === 'num' || f.compute) && !f.noTotal)
+  const totalKey = totalFields.map((f) => f.key).join(',')
   const totals = useMemo(() => {
     const t: Record<string, number> = {}
-    for (const k of numKeys) t[k] = rows.reduce((s, r) => s + (Number(r.values[k]) || 0), 0)
+    for (const f of totalFields) {
+      t[f.key] = rows.reduce((s, r) => s + (f.compute ? computeField(f, r.values).n : Number(r.values[f.key]) || 0), 0)
+    }
     return t
-  }, [rows, numKeys.join(',')])
+  }, [rows, totalKey]) // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="rec">
@@ -52,7 +65,7 @@ export function RecordModule({ id }: { id: ModuleId }) {
             <thead>
               <tr>
                 <th className="rec__num">#</th>
-                {fields.map((f) => <th key={f.key} className={f.wide ? 'rec__wide' : ''}>{f.label}</th>)}
+                {fields.map((f) => <th key={f.key} className={f.wide ? 'rec__wide' : f.compute ? 'rec__total' : ''}>{f.label}</th>)}
                 <th className="rec__act" />
               </tr>
             </thead>
@@ -60,27 +73,35 @@ export function RecordModule({ id }: { id: ModuleId }) {
               {rows.map((r, i) => (
                 <tr key={r.id}>
                   <td className="rec__num">{i + 1}</td>
-                  {fields.map((f) => (
-                    <td key={f.key} className={f.wide ? 'rec__wide' : ''}>
-                      <Cell field={f} value={r.values[f.key] ?? ''}
-                        onChange={(v) => update(id, r.id, { [f.key]: v })} />
-                    </td>
-                  ))}
+                  {fields.map((f) => {
+                    if (f.compute) {
+                      const c = computeField(f, r.values)
+                      return <td key={f.key} className="rec__calc-td"><span className="rec__calc">{c.empty ? '' : c.n.toLocaleString()}</span></td>
+                    }
+                    return (
+                      <td key={f.key} className={f.wide ? 'rec__wide' : ''}>
+                        <Cell field={f} value={r.values[f.key] ?? ''} onChange={(v) => update(id, r.id, { [f.key]: v })} />
+                      </td>
+                    )
+                  })}
                   <td className="rec__act">
                     <button className="rec__del" title="삭제" onClick={() => remove(id, r.id)}>✕</button>
                   </td>
                 </tr>
               ))}
             </tbody>
-            {numKeys.length > 0 && (
+            {totalFields.length > 0 && (
               <tfoot>
                 <tr>
                   <td className="rec__num" />
-                  {fields.map((f) => (
-                    <td key={f.key} className={f.type === 'num' ? 'rec__total' : ''}>
-                      {f.type === 'num' ? totals[f.key].toLocaleString() : (f === fields[0] ? '합계' : '')}
-                    </td>
-                  ))}
+                  {fields.map((f) => {
+                    const isTotal = totalFields.includes(f)
+                    return (
+                      <td key={f.key} className={isTotal ? 'rec__total' : ''}>
+                        {isTotal ? totals[f.key].toLocaleString() : (f === fields[0] ? '합계' : '')}
+                      </td>
+                    )
+                  })}
                   <td className="rec__act" />
                 </tr>
               </tfoot>

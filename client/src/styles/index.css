@@ -148,6 +148,9 @@ input, select, textarea {
 .dash__head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
 .dash__eyebrow { font-size: 11px; font-weight: 700; color: var(--steel); letter-spacing: 0.4px; }
 .dash__title { margin: 2px 0 0; font-size: 24px; font-weight: 800; color: var(--ink); }
+.dash__title--edit { display: block; width: 100%; max-width: 560px; box-sizing: border-box; border: 1px solid transparent; border-radius: 8px; background: transparent; padding: 2px 6px; margin-left: -6px; font-family: inherit; }
+.dash__title--edit:hover { border-color: var(--hairline-strong); }
+.dash__title--edit:focus { border-color: var(--primary); background: var(--canvas); outline: none; }
 .dash__cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px; margin-bottom: 20px; }
 .dcard { background: var(--canvas); border: 1px solid var(--hairline); border-radius: 12px; padding: 14px 16px; }
 .dcard__label { font-size: 11px; font-weight: 600; color: var(--steel); margin-bottom: 6px; }
@@ -210,6 +213,8 @@ input, select, textarea {
 .rec__del:hover { background: #f3dede; color: #c0392b; }
 .rec__table tfoot td { border-top: 1px solid var(--hairline-strong); border-bottom: none; font-weight: 700; color: var(--charcoal); padding: 8px 10px; }
 .rec__total { text-align: right; color: var(--primary-deep); }
+.rec__calc-td { text-align: right; background: var(--cream-soft); }
+.rec__calc { font-weight: 600; color: var(--primary-deep); font-variant-numeric: tabular-nums; padding-right: 7px; }
 .rec__note { font-size: 11px; color: var(--stone); margin: 14px 2px 0; }
 
 /* 진척·실적 */
@@ -247,9 +252,16 @@ input, select, textarea {
 /* dashboard header bits + 사업 유형(단계) 선택 */
 .dash__actions { display: flex; gap: 8px; flex: 0 0 auto; }
 .dash__kind { color: var(--primary-deep); font-weight: 700; }
+.ptype-name { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.ptype-name__label { font-size: 12px; font-weight: 700; color: var(--steel); }
+.ptype-name__input { width: 100%; box-sizing: border-box; border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 11px 13px; font: inherit; font-size: 15px; color: var(--ink); background: var(--canvas); }
+.ptype-name__input:focus { border-color: var(--primary); outline: none; box-shadow: 0 0 0 3px var(--cream-deeper); }
+.ptype-step { font-size: 12px; font-weight: 700; color: var(--primary-deep); margin: 0 0 10px; }
 .ptype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ptype-grid--locked { opacity: 0.5; pointer-events: none; }
 .ptype-card { text-align: left; border: 1px solid var(--hairline-strong); background: var(--canvas); border-radius: 12px; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
-.ptype-card:hover { border-color: var(--primary); background: var(--cream-soft); }
+.ptype-card:disabled { cursor: not-allowed; }
+.ptype-card:hover:not(:disabled) { border-color: var(--primary); background: var(--cream-soft); }
 .ptype-card__top { display: flex; align-items: center; gap: 8px; }
 .ptype-card__icon { font-size: 20px; }
 .ptype-card__name { font-size: 15px; font-weight: 700; color: var(--ink); }
