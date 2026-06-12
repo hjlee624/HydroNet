@@ -1,16 +1,23 @@
 // 사업 대시보드 — cross-module overview. Today it surfaces the real schedule
 // KPIs (the only live module) + quick links into every module. As modules land,
 // their headline metrics get added as cards here.
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useEditor } from '../state/store'
 import { useShell } from '../state/shell'
 import { MODULES } from '../data/modules'
+import { KIND_META } from '../data/templates'
+import { ProjectTypeChooser } from './ProjectTypeChooser'
 import { dateToDay, dayToDate, toISO } from '../engine/dates'
 
 export function Dashboard() {
   const project = useEditor((s) => s.project)
   const setModule = useShell((s) => s.setModule)
+  const meta = KIND_META[project.kind ?? 'construction']
+  // First-ever load → open the 사업 유형 선택 as the entry screen.
+  const [chooserOpen, setChooserOpen] = useState(() => {
+    try { return localStorage.getItem('hydronet:typeChosen') !== '1' } catch { return false }
+  })
 
   const k = useMemo(() => {
     const vis = project.tasks.filter((t) => {
@@ -43,10 +50,13 @@ export function Dashboard() {
     <div className="dash">
       <header className="dash__head">
         <div>
-          <div className="dash__eyebrow">사업 대시보드 · 건설사업관리</div>
+          <div className="dash__eyebrow">사업 대시보드 · <span className="dash__kind">{meta.icon} {meta.label}</span></div>
           <h1 className="dash__title">{project.name || '제목 없음'}</h1>
         </div>
-        <button className="btn btn--primary" onClick={() => setModule('schedule')}>📅 공정표 열기</button>
+        <div className="dash__actions">
+          <button className="btn" onClick={() => setChooserOpen(true)}>＋ 새 사업</button>
+          <button className="btn btn--primary" onClick={() => setModule('schedule')}>📅 {meta.scheduleLabel} 열기</button>
+        </div>
       </header>
 
       <section className="dash__cards">
@@ -92,6 +102,7 @@ export function Dashboard() {
           </div>
         </section>
       </div>
+      {chooserOpen && <ProjectTypeChooser onClose={() => setChooserOpen(false)} />}
     </div>
   )
 }

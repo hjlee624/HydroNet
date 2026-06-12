@@ -185,6 +185,21 @@ input, select, textarea {
 .mph__actions { display: flex; gap: 8px; justify-content: center; margin-bottom: 14px; }
 .mph__note { font-size: 11px; color: var(--stone); margin: 0; }
 
+/* dashboard header bits + 사업 유형(단계) 선택 */
+.dash__actions { display: flex; gap: 8px; flex: 0 0 auto; }
+.dash__kind { color: var(--primary-deep); font-weight: 700; }
+.ptype-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.ptype-card { text-align: left; border: 1px solid var(--hairline-strong); background: var(--canvas); border-radius: 12px; padding: 14px 16px; cursor: pointer; display: flex; flex-direction: column; gap: 8px; }
+.ptype-card:hover { border-color: var(--primary); background: var(--cream-soft); }
+.ptype-card__top { display: flex; align-items: center; gap: 8px; }
+.ptype-card__icon { font-size: 20px; }
+.ptype-card__name { font-size: 15px; font-weight: 700; color: var(--ink); }
+.ptype-card__sched { margin-left: auto; font-size: 10px; font-weight: 700; color: var(--steel); background: var(--cream-deeper); padding: 2px 7px; border-radius: 9999px; }
+.ptype-card__desc { margin: 0; font-size: 12px; color: var(--slate); line-height: 1.5; }
+.ptype-card__tags { display: flex; flex-wrap: wrap; gap: 5px; }
+.ptype-tag { font-size: 10.5px; color: var(--steel); background: var(--surface); border: 1px solid var(--hairline); padding: 2px 7px; border-radius: 9999px; }
+@media (max-width: 640px) { .ptype-grid { grid-template-columns: 1fr; } }
+
 .app {
   display: flex;
   flex-direction: column;

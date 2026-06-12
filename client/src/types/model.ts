@@ -158,9 +158,15 @@ export interface ProjectMeta {
   schemaVersion: number
 }
 
+/** 사업 단계/유형 — 설계 단계들은 "설계 공정표", 시공은 "시공 공정표" 성격을
+ *  가지며, 시작 시 유형별 프리셋(공종/공정·강조 모듈)이 세팅된다. */
+export type ProjectKind = 'feasibility' | 'basic-design' | 'detailed-design' | 'construction'
+
 export interface Project {
   id: ID
   name: string
+  /** 사업 단계/유형 (없으면 시공으로 간주 — 구버전 호환). */
+  kind?: ProjectKind
   /** ISO date (YYYY-MM-DD) representing day 0 of the schedule. */
   startDate: string
   paper: PaperSettings

@@ -4,6 +4,7 @@
 import { createSampleProject } from '../src/data/sampleProject'
 import { computeSchedule, applyCascade } from '../src/engine/scheduling'
 import { computeLayout, fitToPaperView } from '../src/engine/layout'
+import { PROJECT_TYPES } from '../src/data/templates'
 import { routeLinks } from '../src/engine/routing'
 import { paperPx } from '../src/engine/paper'
 
@@ -81,6 +82,14 @@ const a0 = paperPx({ size: 'A0', orientation: 'landscape', marginMm: 10, dpi: 30
 console.log(`\n[Paper] A1@150=${a1.wPx}×${a1.hPx}  A0@300=${a0.wPx}×${a0.hPx} (clamped=${a0.clamped})`)
 check(a1.wPx > 3000 && !a1.clamped, 'A1@150dpi 정상')
 check(a0.wPx > 0 && a0.hPx > 0, 'A0@300dpi 픽셀 산정 (클램프 포함)')
+
+// 7. 사업 유형(단계) 프리셋이 모두 유효한 공정표를 만든다
+console.log('')
+for (const t of PROJECT_TYPES) {
+  const m = computeLayout(t.make())
+  const finite = m.tasks.every((lt) => Number.isFinite(lt.x) && Number.isFinite(lt.cy) && lt.w >= 0)
+  check(finite && m.categories.length > 0, `유형 프리셋 유효: ${t.label} (공종 ${m.categories.length}·바 ${m.tasks.length})`)
+}
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

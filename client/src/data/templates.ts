@@ -3,7 +3,7 @@
 // storage / simple-milestone / blank) beyond the single demo sample.
 
 import { nanoid } from 'nanoid'
-import type { Category, Link, Project, Task } from '../types/model'
+import type { Category, Link, Project, ProjectKind, Task } from '../types/model'
 import { dateToDay, parseISO } from '../engine/dates'
 import { applyCascade } from '../engine/scheduling'
 import { lanePalette, DEFAULT_PALETTE } from '../styles/theme'
@@ -15,7 +15,7 @@ const START = '2026-01-01'
 interface CatDef { id: string; name: string; commissioning?: boolean }
 interface TaskDef { id: string; cat: string; name: string; start: string; dur: number; milestone?: boolean; sub?: string }
 
-function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[string, string]>): Project {
+function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[string, string]>, opts: { kind?: ProjectKind; rainy?: boolean } = {}): Project {
   const day = (iso: string) => dateToDay(START, parseISO(iso))
   const categories: Category[] = cats.map((c, i) => ({
     id: c.id, name: c.name, color: lanePalette[i % lanePalette.length],
@@ -31,6 +31,7 @@ function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[
   return {
     id: `proj-${nanoid(8)}`,
     name,
+    kind: opts.kind ?? 'construction',
     startDate: START,
     paper: { size: 'A1', orientation: 'landscape', marginMm: 10, dpi: 150, fitToPage: true },
     view: {
@@ -40,7 +41,8 @@ function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[
     categories,
     tasks: consistent,
     links: lk,
-    rainySeasons: [{ id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 }],
+    // Design-phase schedules don't model 우기 shading; construction does.
+    rainySeasons: opts.rainy === false ? [] : [{ id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 }],
     palette: [...DEFAULT_PALETTE],
     branding: { logos: [{ src: DEFAULT_CI, w: 168, h: 60 }] },
     commissioningEnabled: false,
@@ -144,4 +146,103 @@ export const TEMPLATES: TemplateDef[] = [
       return p
     },
   },
+]
+
+// ── 설계 단계 프리셋 (설계 공정표) ─────────────────────────────────────────────
+// 타당성조사
+const FEAS_CATS: CatDef[] = [
+  { id: 'cf-plan', name: '계획' }, { id: 'cf-survey', name: '조사·분석' },
+  { id: 'cf-review', name: '검토' }, { id: 'cf-report', name: '보고' },
+]
+const FEAS_TASKS: TaskDef[] = [
+  { id: 'f-0', cat: 'cf-plan', name: '◆ 착수', start: '2026-01-06', dur: 0, milestone: true },
+  { id: 'f-1', cat: 'cf-plan', name: '과업착수·계획', start: '2026-01-06', dur: 15 },
+  { id: 'f-2', cat: 'cf-survey', name: '자료조사·현황분석', start: '2026-01-26', dur: 40 },
+  { id: 'f-3', cat: 'cf-survey', name: '수요·입지 검토', start: '2026-03-10', dur: 30 },
+  { id: 'f-4', cat: 'cf-review', name: '기술적 타당성(개략)', start: '2026-04-10', dur: 35 },
+  { id: 'f-5', cat: 'cf-review', name: '경제성 분석(B/C)', start: '2026-04-10', dur: 30 },
+  { id: 'f-6', cat: 'cf-review', name: '환경·재해 검토', start: '2026-05-01', dur: 25 },
+  { id: 'f-7', cat: 'cf-report', name: '종합·보고서 작성', start: '2026-05-25', dur: 25 },
+  { id: 'f-8', cat: 'cf-report', name: '◆ 최종보고', start: '2026-06-22', dur: 0, milestone: true },
+]
+const FEAS_LINKS: Array<[string, string]> = [['f-1', 'f-2'], ['f-2', 'f-3'], ['f-3', 'f-4'], ['f-3', 'f-5'], ['f-4', 'f-6'], ['f-5', 'f-7'], ['f-6', 'f-7'], ['f-7', 'f-8']]
+
+// 기본설계
+const BASIC_CATS: CatDef[] = [
+  { id: 'cb-plan', name: '계획' }, { id: 'cb-survey', name: '조사·측량' },
+  { id: 'cb-design', name: '기본설계' }, { id: 'cb-permit', name: '인허가' }, { id: 'cb-deliv', name: '심의·납품' },
+]
+const BASIC_TASKS: TaskDef[] = [
+  { id: 'b-0', cat: 'cb-plan', name: '◆ 착수', start: '2026-01-06', dur: 0, milestone: true },
+  { id: 'b-1', cat: 'cb-plan', name: '착수계·과업계획', start: '2026-01-06', dur: 15 },
+  { id: 'b-2', cat: 'cb-survey', name: '측량·지반·수문조사', start: '2026-01-26', dur: 50 },
+  { id: 'b-3', cat: 'cb-design', name: '기본구상·대안비교', start: '2026-03-20', dur: 35 },
+  { id: 'b-4', cat: 'cb-design', name: '◆ 대안 확정', start: '2026-04-25', dur: 0, milestone: true },
+  { id: 'b-5', cat: 'cb-design', name: '기본설계(수리·구조)', start: '2026-04-27', dur: 55 },
+  { id: 'b-6', cat: 'cb-design', name: '개략 공사비·공정', start: '2026-06-22', dur: 25 },
+  { id: 'b-7', cat: 'cb-permit', name: '인허가 협의', start: '2026-05-27', dur: 45 },
+  { id: 'b-8', cat: 'cb-deliv', name: '중간심의', start: '2026-07-20', dur: 20 },
+  { id: 'b-9', cat: 'cb-deliv', name: '성과품 작성', start: '2026-08-10', dur: 30 },
+  { id: 'b-10', cat: 'cb-deliv', name: '◆ 납품', start: '2026-09-09', dur: 0, milestone: true },
+]
+const BASIC_LINKS: Array<[string, string]> = [['b-1', 'b-2'], ['b-2', 'b-3'], ['b-3', 'b-4'], ['b-4', 'b-5'], ['b-5', 'b-6'], ['b-3', 'b-7'], ['b-6', 'b-8'], ['b-8', 'b-9'], ['b-9', 'b-10']]
+
+// 실시설계
+const DETAIL_CATS: CatDef[] = [
+  { id: 'cd-plan', name: '계획' }, { id: 'cd-survey', name: '조사·측량' }, { id: 'cd-design', name: '설계' },
+  { id: 'cd-draw', name: '도면·내역' }, { id: 'cd-permit', name: '인허가' }, { id: 'cd-deliv', name: '심의·납품' },
+]
+const DETAIL_TASKS: TaskDef[] = [
+  { id: 'd-0', cat: 'cd-plan', name: '◆ 착수', start: '2026-01-06', dur: 0, milestone: true },
+  { id: 'd-1', cat: 'cd-plan', name: '착수계·과업계획', start: '2026-01-06', dur: 15 },
+  { id: 'd-2', cat: 'cd-survey', name: '추가조사·측량', start: '2026-01-26', dur: 45 },
+  { id: 'd-3', cat: 'cd-design', name: '실시설계(본체)', start: '2026-03-15', dur: 70 },
+  { id: 'd-4', cat: 'cd-design', name: '실시설계(부대)', start: '2026-05-01', dur: 55 },
+  { id: 'd-5', cat: 'cd-design', name: '구조·수리 상세계산', start: '2026-05-25', dur: 45 },
+  { id: 'd-6', cat: 'cd-draw', name: '도면 작성', start: '2026-06-20', dur: 75 },
+  { id: 'd-7', cat: 'cd-draw', name: '◆ 도면 완료', start: '2026-09-05', dur: 0, milestone: true },
+  { id: 'd-8', cat: 'cd-draw', name: '시방서·내역서', start: '2026-08-10', dur: 40 },
+  { id: 'd-9', cat: 'cd-draw', name: '수량산출·적산', start: '2026-09-06', dur: 40 },
+  { id: 'd-10', cat: 'cd-draw', name: '◆ 적산 완료', start: '2026-10-18', dur: 0, milestone: true },
+  { id: 'd-11', cat: 'cd-permit', name: '인허가·관계기관 협의', start: '2026-07-01', dur: 60 },
+  { id: 'd-12', cat: 'cd-deliv', name: '최종심의·보완', start: '2026-10-20', dur: 30 },
+  { id: 'd-13', cat: 'cd-deliv', name: '◆ 성과품 납품', start: '2026-11-20', dur: 0, milestone: true },
+]
+const DETAIL_LINKS: Array<[string, string]> = [['d-1', 'd-2'], ['d-2', 'd-3'], ['d-3', 'd-4'], ['d-3', 'd-5'], ['d-4', 'd-6'], ['d-5', 'd-6'], ['d-6', 'd-7'], ['d-6', 'd-8'], ['d-8', 'd-9'], ['d-9', 'd-10'], ['d-3', 'd-11'], ['d-10', 'd-12'], ['d-12', 'd-13']]
+
+// ── 사업 유형(단계) 메타 + 프리셋 ─────────────────────────────────────────────
+export const KIND_META: Record<ProjectKind, { label: string; icon: string; scheduleLabel: string }> = {
+  feasibility: { label: '타당성조사', icon: '🔎', scheduleLabel: '설계 공정표' },
+  'basic-design': { label: '기본설계', icon: '📐', scheduleLabel: '설계 공정표' },
+  'detailed-design': { label: '실시설계', icon: '📑', scheduleLabel: '설계 공정표' },
+  construction: { label: '시공', icon: '🏗️', scheduleLabel: '시공 공정표' },
+}
+
+export interface ProjectTypeDef {
+  kind: ProjectKind
+  label: string
+  icon: string
+  scheduleLabel: string
+  desc: string
+  highlights: string[]
+  make: () => Project
+}
+
+export const PROJECT_TYPES: ProjectTypeDef[] = [
+  { kind: 'feasibility', ...KIND_META.feasibility,
+    desc: '사업 추진 여부 판단 — 개략 검토·경제성·환경 중심',
+    highlights: ['자료조사·현황분석', '수요·입지', '경제성(B/C)', '환경·재해', '종합보고서'],
+    make: () => build('타당성조사 공정표', FEAS_CATS, FEAS_TASKS, FEAS_LINKS, { kind: 'feasibility', rainy: false }) },
+  { kind: 'basic-design', ...KIND_META['basic-design'],
+    desc: '기본구상·대안비교 + 기본설계 + 개략공사비',
+    highlights: ['측량·지반·수문', '대안비교', '기본설계', '인허가 협의', '심의·납품'],
+    make: () => build('기본설계 공정표', BASIC_CATS, BASIC_TASKS, BASIC_LINKS, { kind: 'basic-design', rainy: false }) },
+  { kind: 'detailed-design', ...KIND_META['detailed-design'],
+    desc: '실시설계·상세도면·시방·적산·인허가',
+    highlights: ['실시설계', '상세 도면', '시방서·내역', '수량·적산', '인허가·심의'],
+    make: () => build('실시설계 공정표', DETAIL_CATS, DETAIL_TASKS, DETAIL_LINKS, { kind: 'detailed-design', rainy: false }) },
+  { kind: 'construction', ...KIND_META.construction,
+    desc: '착공~준공 시공 공정 + 시운전 (마일스톤·CPM·우기 음영)',
+    highlights: ['가설·가물막이', '본체·부대공', '시운전', '우기 음영', '주공정'],
+    make: () => { const p = createSampleProject(); p.id = `proj-${nanoid(8)}`; p.kind = 'construction'; return p } },
 ]

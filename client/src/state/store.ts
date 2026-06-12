@@ -213,6 +213,7 @@ function normalize(project: Project): Project {
     : [...DEFAULT_PALETTE]
   return {
     ...project,
+    kind: project.kind ?? 'construction',
     branding: { logos: normalizeLogos(project.branding?.logos) },
     rainySeasons: (project.rainySeasons ?? []).map((r) => ({
       ...r,
