@@ -117,6 +117,13 @@ export interface EditorState {
    *  that lane). Drives sidebar + chart drag-to-reorder; the array order is the
    *  single source of truth both views render in. */
   reorderTask: (id: ID, targetCategoryId: ID, beforeId: ID | null, opts?: { history?: boolean }) => void
+  /** 실적 진척률(0–100) 설정 — 진척·실적 모듈. */
+  setTaskProgress: (id: ID, progress: number) => void
+
+  // package modules (품질·안전·문서·원가 등 기록형 모듈)
+  addModuleRecord: (moduleId: string, values?: Record<string, string>) => ID
+  updateModuleRecord: (moduleId: string, id: ID, values: Record<string, string>) => void
+  deleteModuleRecord: (moduleId: string, id: ID) => void
 
   // categories
   addCategory: (partial?: Partial<Category>) => ID
@@ -449,6 +456,26 @@ export const useEditor = create<EditorState>()((set, get) => {
       }, { history: opts?.history ?? true, cascade: false })
       set({ selectedTaskId: id, selectedLinkId: null })
     },
+    setTaskProgress: (id, progress) => commit((p) => {
+      const t = p.tasks.find((x) => x.id === id)
+      if (t) t.progress = Math.max(0, Math.min(100, Math.round(progress)))
+    }, { history: false }),
+
+    addModuleRecord: (moduleId, values = {}) => {
+      const id = `m-${nanoid(8)}`
+      commit((p) => {
+        if (!p.modules) p.modules = {}
+        p.modules[moduleId] = [...(p.modules[moduleId] ?? []), { id, values }]
+      }, { history: false })
+      return id
+    },
+    updateModuleRecord: (moduleId, id, values) => commit((p) => {
+      const r = p.modules?.[moduleId]?.find((x) => x.id === id)
+      if (r) r.values = { ...r.values, ...values }
+    }, { history: false }),
+    deleteModuleRecord: (moduleId, id) => commit((p) => {
+      if (p.modules?.[moduleId]) p.modules[moduleId] = p.modules[moduleId].filter((x) => x.id !== id)
+    }, { history: false }),
 
     addCategory: (partial) => {
       const id = `c-${nanoid(8)}`

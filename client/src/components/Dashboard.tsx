@@ -35,7 +35,11 @@ export function Dashboard() {
     const elapsedPct = endDay > startDay
       ? Math.round(Math.min(1, Math.max(0, (todayDay - startDay) / (endDay - startDay))) * 100) : 0
     const upcoming = milestones.filter((m) => m.start >= todayDay).sort((p, q) => p.start - q.start).slice(0, 5)
-    return { startDay, endDay, months, activities: vis.length - milestones.length, milestones, critical, todayDay, elapsedPct, upcoming }
+    // 기간 가중 전체 실적(진척·실적 모듈과 동일 산식)
+    const acts = vis.filter((t) => !t.isMilestone)
+    const totDur = acts.reduce((s, t) => s + Math.max(1, t.duration), 0) || 1
+    const actualAll = acts.reduce((s, t) => s + Math.max(0, Math.min(100, t.progress ?? 0)) * Math.max(1, t.duration), 0) / totDur
+    return { startDay, endDay, months, activities: vis.length - milestones.length, milestones, critical, todayDay, elapsedPct, upcoming, actualAll }
   }, [project])
 
   const card = (label: string, value: ReactNode, sub?: string) => (
@@ -63,6 +67,7 @@ export function Dashboard() {
         {card('총 공기', <><strong>{k.months}</strong> 개월</>, `${k.endDay - k.startDay}일`)}
         {card('착수 → 준공(예정)', <>{toISO(dayToDate(project.startDate, k.startDay))} <span style={{ color: 'var(--stone)' }}>→</span> {toISO(dayToDate(project.startDate, k.endDay))}</>)}
         {card('시간 경과', <><strong>{k.elapsedPct}</strong>%</>, '오늘 기준(일정상)')}
+        {card('전체 실적', <span style={{ cursor: 'pointer' }} onClick={() => setModule('progress')}><strong>{Math.round(k.actualAll)}</strong>%</span>, `계획 경과 ${k.elapsedPct}% 대비`)}
         {card('공정 / 마일스톤', <><strong>{k.activities}</strong> / {k.milestones.length}</>, `연결 ${project.links.length}`)}
         {card('주공정(CP)', <strong style={{ color: 'var(--primary-deep)' }}>{k.critical.length}</strong>, '임계경로 공정')}
         {card('우기 구간', <strong>{project.rainySeasons.length}</strong>, '연도별 반복')}

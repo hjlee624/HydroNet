@@ -71,6 +71,8 @@ export interface Task {
   hidden?: boolean
   /** Manual 주공정(CP) override: true = always critical, false = never, undefined = auto (CPM). */
   forceCritical?: boolean
+  /** 실적 진척률 0–100 (진척·실적 모듈). undefined = 미입력(0). */
+  progress?: number
 
   // ── Computed by the CPM engine (never persisted as authoritative) ──
   es?: number // early start
@@ -179,11 +181,20 @@ export interface Sheet {
   rainySeasons: RainySeason[]
 }
 
+/** A row in a package module (품질/안전/문서/원가/… 모듈의 한 항목). `values`는
+ *  해당 모듈의 필드 스키마(data/modules.ts ModuleField[])에 따라 키가 정해진다. */
+export interface ModuleRecord {
+  id: ID
+  values: Record<string, string>
+}
+
 export interface Project {
   id: ID
   name: string
   /** 사업 단계/유형 (없으면 시공으로 간주 — 구버전 호환). */
   kind?: ProjectKind
+  /** 패키지 모듈별 기록(키 = ModuleId). 기록형 모듈(품질·안전·문서·원가 등)에서 사용. */
+  modules?: Record<string, ModuleRecord[]>
   /** 비활성 공정표 시트들(활성 시트는 최상위 categories/tasks/links/rainySeasons). */
   sheets?: Sheet[]
   /** 현재 편집 중인 시트 메타. 없으면 단일 공정표(구버전 호환). */

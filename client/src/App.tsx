@@ -3,7 +3,11 @@
 import { ModuleRail } from './components/ModuleRail'
 import { Dashboard } from './components/Dashboard'
 import { ScheduleModule } from './components/ScheduleModule'
+import { ProgressModule } from './components/ProgressModule'
+import { ReportModule } from './components/ReportModule'
+import { RecordModule } from './components/RecordModule'
 import { ModulePlaceholder } from './components/ModulePlaceholder'
+import { MODULE_MAP, type ModuleId } from './data/modules'
 import { useShell } from './state/shell'
 
 export default function App() {
@@ -11,11 +15,19 @@ export default function App() {
   return (
     <div className="shell">
       <ModuleRail />
-      <main className="shell__content">
-        {module === 'schedule' ? <ScheduleModule />
-          : module === 'dashboard' ? <Dashboard />
-            : <ModulePlaceholder id={module} />}
-      </main>
+      <main className="shell__content">{renderModule(module)}</main>
     </div>
   )
+}
+
+function renderModule(module: ModuleId) {
+  switch (module) {
+    case 'schedule': return <ScheduleModule />
+    case 'dashboard': return <Dashboard />
+    case 'progress': return <ProgressModule />
+    case 'report': return <ReportModule />
+    default:
+      // 기록형 모듈(스키마 보유)은 제네릭 표 모듈로, 그 외엔 자리표시로.
+      return MODULE_MAP[module]?.fields ? <RecordModule id={module} /> : <ModulePlaceholder id={module} />
+  }
 }
