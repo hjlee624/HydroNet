@@ -28,12 +28,11 @@ export function ProjectTypeChooser({ onClose }: { onClose: () => void }) {
     const cur = a().project
     const hasRecords = cur.modules ? Object.values(cur.modules).some((arr) => arr && arr.length > 0) : false
     if ((hasRecords || cur.baseline) && typeof window !== 'undefined' && typeof window.confirm === 'function') {
-      if (!window.confirm('현재 사업의 모든 모듈 기록·기준선이 새 사업으로 대체됩니다. 계속할까요?\n(저장된 사업은 ‘불러오기’로 다시 열 수 있습니다.)')) return
+      if (!window.confirm('현재 사업의 모든 모듈 기록·기준선이 새 사업으로 대체됩니다. 계속할까요?\n(미리 저장해 둔 파일은 ‘불러오기’로 다시 열 수 있습니다.)')) return
     }
     const p = t.make()
     p.name = name.trim() // 사업명을 대시보드·공정관리(도면 제목)에 일괄 적용
     a().setProject(p)
-    void a().save()
     logInfo(`새 사업 생성: ${name.trim()} · ${t.label} (${t.scheduleLabel})`)
     setModule('dashboard')
     close()

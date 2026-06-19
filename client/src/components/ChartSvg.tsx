@@ -37,6 +37,8 @@ interface Props {
   onLogoResizePointerDown: (e: RPointerEvent, index: number) => void
   onTaskClick: (e: RMouseEvent, id: string) => void
   onTaskDoubleClick: (e: RMouseEvent, id: string) => void
+  /** 막대 아래 공기(기간) 텍스트 더블클릭 → 인라인 편집. */
+  onDurationDoubleClick: (id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
   onTextClick: (role: TextRole) => void
   onRainyResizePointerDown: (e: RPointerEvent, seasonId: string, edge: 'start' | 'end') => void
@@ -51,7 +53,7 @@ function ChartSvgBase({
   model, routed, project, selectedTaskId, selectedLinkId, selectedTextRole,
   showCriticalPath, showGrid, colorMode = 'category', todayX, linkingGhost,
   onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
-  onTaskClick, onTaskDoubleClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
+  onTaskClick, onTaskDoubleClick, onDurationDoubleClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
@@ -275,8 +277,12 @@ function ChartSvgBase({
                 strokeWidth={selected ? 2.4 : 1}
                 onPointerDown={(e) => onTaskPointerDown(e, t.id)}
               />
-              <text x={lt.x} y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3} {...roleAttrs('taskDuration')}>
-                {t.duration}일
+              <text
+                x={lt.x} y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
+                {...roleAttrs('taskDuration')}
+                onDoubleClick={(e) => { e.stopPropagation(); onDurationDoubleClick(t.id) }}
+              >
+                {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
               {/* resize grips (drag to change duration) + link anchor (drag to connect) */}
               {selected && (

@@ -39,9 +39,12 @@ export function ChartCanvas() {
   const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
   const zoomAnchor = useRef<{ cX: number; cY: number; clientX: number; clientY: number; z: number } | null>(null)
   const renameDone = useRef(false)
+  const durDone = useRef(false)
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
   const [panning, setPanning] = useState(false)
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  // 막대 아래 공기(기간) 텍스트 인라인 편집(이름 편집과 별개 입력).
+  const [editingDur, setEditingDur] = useState<{ id: string; text: string } | null>(null)
   // Live "drop here" insertion line while dragging a bar vertically to re-order.
   const [reorderHint, setReorderHint] = useState<{ catId: string; beforeId: string | null; lineY: number } | null>(null)
 
@@ -59,6 +62,7 @@ export function ChartCanvas() {
   }, [project.startDate, model])
 
   const editLt = editing ? model.tasks.find((t) => t.task.id === editing.id) : null
+  const editDurLt = editingDur ? model.tasks.find((t) => t.task.id === editingDur.id) : null
 
   function toContent(clientX: number, clientY: number) {
     const rect = paperRef.current!.getBoundingClientRect()
@@ -332,6 +336,27 @@ export function ChartCanvas() {
     setEditing({ id, name: t?.name ?? '새 공정' })
   }
 
+  // ── 공기(기간) 텍스트 인라인 편집: 막대 아래 "30일"을 더블클릭 → 입력. 순수 숫자면
+  //    duration 자체를 바꾸고(막대 길이 변경), 그 외 문자열은 표시 라벨로 저장한다. ──
+  function onDurationDoubleClick(id: string) {
+    if (useEditor.getState().navMode !== 'edit') return
+    const t = project.tasks.find((x) => x.id === id)
+    if (!t || t.isMilestone) return
+    useEditor.getState().selectTask(id)
+    durDone.current = false
+    const seed = t.durationLabel && t.durationLabel.trim() ? t.durationLabel : String(t.duration)
+    setEditingDur({ id, text: seed })
+  }
+  function commitDuration() {
+    if (!editingDur || durDone.current) return
+    durDone.current = true
+    const v = editingDur.text.trim()
+    const store = useEditor.getState()
+    if (/^\d+$/.test(v)) store.updateTask(editingDur.id, { duration: Math.max(1, Number(v)), durationLabel: '' })
+    else store.updateTask(editingDur.id, { durationLabel: v }) // 빈 값이면 자동(${duration}일)로 복귀
+    setEditingDur(null)
+  }
+
   const navClass = navMode === 'zoom' ? ' nav-zoom' : navMode === 'pan' ? ` nav-pan${panning ? ' panning' : ''}` : ''
 
   return (
@@ -374,6 +399,7 @@ export function ChartCanvas() {
               onLogoResizePointerDown={onLogoResizePointerDown}
               onTaskClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(id) }}
               onTaskDoubleClick={onTaskDoubleClick}
+              onDurationDoubleClick={onDurationDoubleClick}
               onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
               onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
               onRainyResizePointerDown={onRainyResizePointerDown}
@@ -394,6 +420,22 @@ export function ChartCanvas() {
                   else if (e.key === 'Escape') { e.preventDefault(); renameDone.current = true; setEditing(null) }
                 }}
                 onBlur={commitRename}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              />
+            )}
+            {editingDur && editDurLt && !editDurLt.isMilestone && (
+              <input
+                className="inline-rename inline-dur"
+                autoFocus
+                value={editingDur.text}
+                style={{ left: editDurLt.x, top: editDurLt.y + editDurLt.h + 2 }}
+                onChange={(e) => setEditingDur({ id: editingDur.id, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') { e.preventDefault(); commitDuration() }
+                  else if (e.key === 'Escape') { e.preventDefault(); durDone.current = true; setEditingDur(null) }
+                }}
+                onBlur={commitDuration}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
               />

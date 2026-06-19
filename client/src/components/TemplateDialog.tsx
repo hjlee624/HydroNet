@@ -10,7 +10,6 @@ export function TemplateDialog({ onClose }: { onClose: () => void }) {
 
   function pick(t: (typeof TEMPLATES)[number]) {
     a().setProject(t.make())
-    void a().save() // persist the new doc so it survives a close/reopen
     logInfo(`새 도면 생성: ${t.name}`)
     onClose()
   }
@@ -25,7 +24,7 @@ export function TemplateDialog({ onClose }: { onClose: () => void }) {
           </button>
         ))}
       </div>
-      <p className="note" style={{ marginTop: 10 }}>현재 작업은 자동 임시저장되어 있으며, 새 도면을 만들어도 <b>불러오기</b>로 되살릴 수 있습니다.</p>
+      <p className="note" style={{ marginTop: 10 }}>새 도면을 만들면 현재 작업은 사라집니다. 저장하지 않은 변경이 있으면 먼저 <b>저장</b>하세요.</p>
     </Modal>
   )
 }

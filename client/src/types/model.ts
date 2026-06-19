@@ -67,6 +67,10 @@ export interface Task {
   note?: string
   /** Optional 세부공종 (sub-work) grouping label, shown on the left label column. */
   subName?: string
+  /** 막대 아래 공기(기간) 표시 텍스트의 사용자 지정 override. 비어있으면 `${duration}일`로
+   *  자동 계산. 더블클릭 편집 시 순수 숫자는 duration 자체를 바꾸고, 그 외 문자열은 이 라벨로
+   *  저장된다(예: "약 2개월", "120일"). */
+  durationLabel?: string
   /** ON/OFF visibility: when true this activity is hidden from the chart. */
   hidden?: boolean
   /** Manual 주공정(CP) override: true = always critical, false = never, undefined = auto (CPM). */

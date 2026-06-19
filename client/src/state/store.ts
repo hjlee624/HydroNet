@@ -2,7 +2,8 @@
 // Central editor store (zustand). Holds the project, selection, undo/redo
 // history and view zoom, and exposes every mutation as an action. Scheduling
 // fields (es/ef/critical…) are recomputed after each change so the canvas and
-// the critical-path highlight stay in sync. Changes autosave (debounced).
+// the critical-path highlight stay in sync. 저장은 자동이 아니라 사용자가 "저장"을
+// 누를 때만 파일로 저장된다(state/fileIO.ts) — 편집은 dirty 플래그로만 표시.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { create } from 'zustand'
@@ -17,7 +18,7 @@ import { paperMm } from '../engine/paper'
 import { daysInMonth, doyToMonthDay, monthDayToDoy, toISO } from '../engine/dates'
 import { createSampleProject } from '../data/sampleProject'
 import { DEFAULT_PALETTE } from '../styles/theme'
-import { autosaveProject, saveProject } from './api'
+import { saveProjectToFile } from './fileIO'
 import { logInfo, logWarn } from './logger'
 
 const HISTORY_LIMIT = 50
@@ -65,6 +66,14 @@ export interface RecalcChange {
   deltaDays: number
 }
 
+/** 복사한 공종 묶음 — 공종 + 그 공정 + (양 끝이 묶음 안에 있는) 내부 연결.
+ *  Ctrl+C로 채우고 Ctrl+V(pasteCategories)로 새 id를 부여해 붙여넣는다. */
+export interface CategoryClipboard {
+  categories: Category[]
+  tasks: Task[]
+  links: Link[]
+}
+
 /** Summary of what a reschedule/cascade changed, shown in the 재계산 popup. */
 export interface RecalcReport {
   kind: 'reschedule' | 'cascade'
@@ -79,6 +88,10 @@ export interface EditorState {
   selectedTaskId: ID | null
   selectedLinkId: ID | null
   selectedCategoryId: ID | null
+  /** 다중 선택된 공종 id(표시 순서). 단일 선택이면 [그 id], 미선택이면 []. */
+  selectedCategoryIds: ID[]
+  /** Ctrl+C로 복사한 공종 묶음(없으면 null). */
+  categoryClipboard: CategoryClipboard | null
   /** When set, the inspector shows the text-style editor for this role. */
   selectedTextRole: TextRole | null
   linking: LinkingState | null
@@ -135,6 +148,8 @@ export interface EditorState {
   deleteCategory: (id: ID) => void
   toggleCollapse: (id: ID) => void
   moveCategory: (id: ID, dir: -1 | 1) => void
+  /** 공종 드래그 재배치 — `beforeId` 앞으로(null = 맨 끝) 옮기고 order를 0..n-1로 재부여. */
+  reorderCategory: (id: ID, beforeId: ID | null) => void
 
   // ON/OFF chart visibility
   toggleCategoryVisible: (id: ID) => void
@@ -185,6 +200,12 @@ export interface EditorState {
   selectTask: (id: ID | null) => void
   selectLink: (id: ID | null) => void
   selectCategory: (id: ID | null) => void
+  /** 다중 선택 설정(ids는 표시 순서, anchor는 Shift 범위선택의 기준 공종). */
+  selectCategories: (ids: ID[], anchor: ID | null) => void
+  /** 선택한 공종들(+공정+내부연결)을 클립보드에 복사(Ctrl+C). */
+  copyCategories: (ids: ID[]) => void
+  /** 클립보드의 공종들을 새 id로 맨 끝에 붙여넣기(Ctrl+V). */
+  pasteCategories: () => void
   selectTextRole: (role: TextRole | null) => void
   setZoom: (z: number) => void
   setNavMode: (m: NavMode) => void
@@ -280,12 +301,6 @@ function buildRecalcReport(
   return { kind, changes, totalMoved: changes.length, startDate: after.startDate }
 }
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null
-function scheduleSave(get: () => EditorState) {
-  if (saveTimer) clearTimeout(saveTimer)
-  saveTimer = setTimeout(() => void get().save(), 800)
-}
-
 export const useEditor = create<EditorState>()((set, get) => {
   /** Apply a mutation to the project with history + reschedule + autosave. */
   function commit(
@@ -316,7 +331,6 @@ export const useEditor = create<EditorState>()((set, get) => {
       past: history ? [...s.past, prev].slice(-HISTORY_LIMIT) : s.past,
       future: history ? [] : s.future,
     }))
-    scheduleSave(get)
   }
 
   const initial = withSchedule(normalize(createSampleProject())).project
@@ -326,6 +340,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedTaskId: null,
     selectedLinkId: null,
     selectedCategoryId: null,
+    selectedCategoryIds: [],
+    categoryClipboard: null,
     selectedTextRole: null,
     linking: null,
     zoom: 1,
@@ -348,7 +364,6 @@ export const useEditor = create<EditorState>()((set, get) => {
       blank.tasks = []
       blank.links = []
       set({ project: withSchedule(blank).project, past: [], future: [], dirty: true, selectedTaskId: null })
-      scheduleSave(get)
       logInfo('새 프로젝트를 생성했습니다.')
     },
     loadSample: () => {
@@ -374,7 +389,6 @@ export const useEditor = create<EditorState>()((set, get) => {
         sheets, activeSheet: { id: target.id, role: target.role, name: target.name },
       }
       set({ project: withSchedule(next).project, past: [], future: [], selectedTaskId: null, selectedLinkId: null, selectedTextRole: null, dirty: true })
-      scheduleSave(get)
       logInfo(`공정표 전환: ${target.name}`)
     },
 
@@ -519,7 +533,7 @@ export const useEditor = create<EditorState>()((set, get) => {
           ...partial,
         })
       })
-      set({ selectedCategoryId: id })
+      set({ selectedCategoryId: id, selectedCategoryIds: [id] })
       return id
     },
     updateCategory: (id, patch) => commit((p) => {
@@ -544,6 +558,23 @@ export const useEditor = create<EditorState>()((set, get) => {
       const a = sorted[idx], b = sorted[swap]
       const ao = a.order; a.order = b.order; b.order = ao
     }),
+    reorderCategory: (id, beforeId) => {
+      if (beforeId === id) return // 자기 자신 앞으로 = 무동작
+      commit((p) => {
+        const sorted = [...p.categories].sort((a, b) => a.order - b.order)
+        const moving = sorted.find((c) => c.id === id)
+        if (!moving) return
+        const without = sorted.filter((c) => c.id !== id)
+        let insertAt = without.length // beforeId 없음 → 맨 끝
+        if (beforeId) {
+          const bi = without.findIndex((c) => c.id === beforeId)
+          if (bi >= 0) insertAt = bi
+        }
+        without.splice(insertAt, 0, moving)
+        without.forEach((c, i) => { c.order = i }) // order를 0..n-1로 정규화
+      })
+      set({ selectedCategoryId: id, selectedCategoryIds: [id] })
+    },
 
     toggleCategoryVisible: (id) => commit((p) => {
       const c = p.categories.find((x) => x.id === id)
@@ -695,7 +726,47 @@ export const useEditor = create<EditorState>()((set, get) => {
 
     selectTask: (id) => set({ selectedTaskId: id, selectedLinkId: null, selectedTextRole: null }),
     selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTextRole: null }),
-    selectCategory: (id) => set({ selectedCategoryId: id }),
+    selectCategory: (id) => set({ selectedCategoryId: id, selectedCategoryIds: id ? [id] : [] }),
+    selectCategories: (ids, anchor) => set({ selectedCategoryIds: ids, selectedCategoryId: anchor }),
+    copyCategories: (ids) => {
+      const p = get().project
+      const idset = new Set(ids)
+      const categories = p.categories.filter((c) => idset.has(c.id))
+      if (!categories.length) return
+      const tasks = p.tasks.filter((t) => idset.has(t.categoryId))
+      const taskIds = new Set(tasks.map((t) => t.id))
+      const links = p.links.filter((l) => taskIds.has(l.from) && taskIds.has(l.to))
+      set({ categoryClipboard: { categories: clone(categories), tasks: clone(tasks), links: clone(links) } })
+      logInfo(`공종 ${categories.length}개를 복사했습니다.`)
+    },
+    pasteCategories: () => {
+      const clip = get().categoryClipboard
+      if (!clip || !clip.categories.length) return
+      const newIds: ID[] = []
+      commit((p) => {
+        let order = p.categories.length
+        const catMap = new Map<ID, ID>() // 원본 공종 id → 새 id
+        const taskMap = new Map<ID, ID>() // 원본 공정 id → 새 id (내부 연결 재배선용)
+        for (const c of clip.categories) {
+          const nid = `c-${nanoid(8)}`
+          catMap.set(c.id, nid); newIds.push(nid)
+          p.categories.push({ ...clone(c), id: nid, order: order++ })
+        }
+        for (const t of clip.tasks) {
+          const cat = catMap.get(t.categoryId)
+          if (!cat) continue
+          const nid = `t-${nanoid(8)}`
+          taskMap.set(t.id, nid)
+          p.tasks.push({ ...clone(t), id: nid, categoryId: cat })
+        }
+        for (const l of clip.links) {
+          const from = taskMap.get(l.from), to = taskMap.get(l.to)
+          if (from && to) p.links.push({ ...clone(l), id: `l-${nanoid(8)}`, from, to })
+        }
+      })
+      set({ selectedCategoryIds: newIds, selectedCategoryId: newIds[newIds.length - 1] ?? null })
+      logInfo(`공종 ${clip.categories.length}개를 붙여넣었습니다.`)
+    },
     selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedLinkId: null }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
     setNavMode: (m) => set({ navMode: m }),
@@ -709,27 +780,24 @@ export const useEditor = create<EditorState>()((set, get) => {
       const { past, project, future } = get()
       if (!past.length) return
       const prev = past[past.length - 1]
-      set({ project: withSchedule(prev).project, past: past.slice(0, -1), future: [project, ...future].slice(0, HISTORY_LIMIT) })
-      scheduleSave(get)
+      set({ project: withSchedule(prev).project, past: past.slice(0, -1), future: [project, ...future].slice(0, HISTORY_LIMIT), dirty: true })
     },
     redo: () => {
       const { past, project, future } = get()
       if (!future.length) return
       const next = future[0]
-      set({ project: withSchedule(next).project, past: [...past, project].slice(-HISTORY_LIMIT), future: future.slice(1) })
-      scheduleSave(get)
+      set({ project: withSchedule(next).project, past: [...past, project].slice(-HISTORY_LIMIT), future: future.slice(1), dirty: true })
     },
 
+    // 사용자가 명시적으로 "저장"을 누르거나 Ctrl+S 했을 때만 동작 — 사용자가 고른
+    // 경로의 .json으로 저장한다(state/fileIO.ts). 자동저장은 없다.
     save: async () => {
-      const p = get().project
       try {
-        await saveProject(p)
-        set({ dirty: false })
+        const ok = await saveProjectToFile(get().project)
+        if (ok) set({ dirty: false }) // 사용자가 취소하면 dirty 유지
       } catch (e) {
         logWarn('저장 실패', e)
       }
-      // Best-effort named temp snapshot (recovery after close/reopen).
-      void autosaveProject(p)
     },
   }
 })

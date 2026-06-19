@@ -77,6 +77,13 @@ export function ScheduleModule() {
       if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
         e.preventDefault(); s.redo(); return
       }
+      // 공종 다중선택 복사/붙여넣기(왼쪽 사이드바). 입력 중이 아닐 때만 가로챈다.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !typing && s.selectedCategoryIds.length > 0) {
+        e.preventDefault(); s.copyCategories(s.selectedCategoryIds); return
+      }
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && !typing && s.categoryClipboard) {
+        e.preventDefault(); s.pasteCategories(); return
+      }
       if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) {
         if (s.selectedTaskId) { e.preventDefault(); s.deleteTask(s.selectedTaskId) }
         else if (s.selectedLinkId) { e.preventDefault(); s.deleteLink(s.selectedLinkId) }

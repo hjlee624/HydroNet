@@ -3,7 +3,7 @@
 // index.html; this script then base64-embeds the KoPub OTFs into the @font-face
 // rules so the drawing renders in KoPub on ANY PC. Output: <repo>/HydroNet.html
 //   • double-click to open; edit + every export (PNG/JPG/PDF/SVG/DXF) work offline
-//   • save/load falls back to the browser's localStorage (no server needed)
+//   • 저장/불러오기는 사용자가 고른 .json 파일로(자동저장 없음, state/fileIO.ts)
 // Run: npx tsx scripts/build-single.ts   (or: npm run build:single)
 import { execSync } from 'node:child_process'
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
@@ -69,4 +69,4 @@ console.log('› 외부 자산 참조 없음 — 완전 self-contained ✓')
 const out = resolve(REPO, 'HydroNet.html')
 writeFileSync(out, html)
 console.log(`✓ 생성: ${out}  (${(html.length / 1024 / 1024).toFixed(1)} MB)`)
-console.log('  더블클릭으로 실행 — 편집·모든 출력 가능(오프라인), 저장은 브라우저 localStorage.')
+console.log('  더블클릭으로 실행 — 편집·모든 출력 가능(오프라인), 저장/불러오기는 원하는 .json 파일로(수동).')

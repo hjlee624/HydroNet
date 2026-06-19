@@ -3,8 +3,9 @@
 
 import { useEffect, useState } from 'react'
 import { useEditor } from '../state/store'
+import { openProjectFromFile } from '../state/fileIO'
+import { logWarn } from '../state/logger'
 import { HelpDialog } from './HelpDialog'
-import { LoadDialog } from './LoadDialog'
 import { TemplateDialog } from './TemplateDialog'
 
 interface TopBarProps {
@@ -27,8 +28,18 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const pro = uiMode === 'pro'
 
   const [helpOpen, setHelpOpen] = useState(false)
-  const [loadOpen, setLoadOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
+
+  // 사용자가 고른 .json 파일을 열어 현재 사업으로 교체(요구: 원하는 경로에서 불러오기).
+  async function onLoadFromFile() {
+    try {
+      const p = await openProjectFromFile()
+      if (p) a().setProject(p)
+    } catch (e) {
+      logWarn('불러오기 실패', e)
+      if (typeof window !== 'undefined') window.alert('불러오기에 실패했습니다. 올바른 HydroNet 프로젝트(.json) 파일인지 확인하세요.')
+    }
+  }
 
   // Local text state for the zoom field so multi-digit entry isn't clamped on
   // every keystroke; commit (apply) only on blur / Enter.
@@ -57,7 +68,8 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
 
       <div className="topbar__actions">
         <button className="btn btn--sm btn--ghost" title="템플릿을 골라 새 도면 시작" onClick={() => setNewOpen(true)}>＋ 새 도면</button>
-        <button className="btn btn--sm btn--ghost" title="임시저장된 작업 불러오기" onClick={() => setLoadOpen(true)}>불러오기</button>
+        <button className="btn btn--sm" title="작업 파일(.json)을 원하는 경로에 저장 (Ctrl+S)" onClick={() => void a().save()}>저장</button>
+        <button className="btn btn--sm btn--ghost" title="원하는 경로의 작업 파일(.json) 불러오기" onClick={() => void onLoadFromFile()}>불러오기</button>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
         <button className="btn btn--icon btn--sm" title="실행 취소 (Ctrl+Z)" disabled={!canUndo} onClick={() => a().undo()}>↶</button>
         <button className="btn btn--icon btn--sm" title="다시 실행 (Ctrl+Y)" disabled={!canRedo} onClick={() => a().redo()}>↷</button>
@@ -108,7 +120,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
           <button className="btn btn--icon btn--sm" title="확대" onClick={() => a().setZoom(zoom + 0.1)}>＋</button>
         </div>
 
-        <span className={`save-state ${dirty ? 'dirty' : ''}`}>{dirty ? '● 저장 중…' : '저장됨'}</span>
+        <span className={`save-state ${dirty ? 'dirty' : ''}`} title={dirty ? '저장되지 않은 변경이 있습니다 — 저장 또는 Ctrl+S' : '마지막 저장 이후 변경 없음'}>{dirty ? '● 미저장' : '저장됨'}</span>
         <button className="btn btn--sm btn--dark" title="사용 방법 · 단축키" aria-label="도움말" onClick={() => setHelpOpen(true)}>? 도움말</button>
         <button className="btn btn--sm" title="출력 전 전체 화면 미리보기 (Esc 종료)" onClick={onToggleFullscreen}>
           {fullscreen ? '⤢ 종료' : '⤢ 전체 화면'}
@@ -117,7 +129,6 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       </div>
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
-      {loadOpen && <LoadDialog onClose={() => setLoadOpen(false)} />}
       {newOpen && <TemplateDialog onClose={() => setNewOpen(false)} />}
     </header>
   )

@@ -26,6 +26,13 @@ const dom = new JSDOM(html, {
   beforeParse(window) {
     // jsdom has no canvas; the app only needs it for raster export, not mount.
     ;(window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext = () => null
+    // Boot straight into the 공정관리(schedule) module so the chart actually renders.
+    // The first-entry gate (shell.initialModule) otherwise forces the dashboard until
+    // a 사업 단계 is picked, leaving no #hydronet-chart. Mirrors mount-test.ts.
+    try {
+      window.localStorage.setItem('hydronet:typeChosen', '1')
+      window.localStorage.setItem('hydronet:module', 'schedule')
+    } catch { /* localStorage unavailable → chart assertion will surface it */ }
   },
 })
 

@@ -2,6 +2,11 @@
 
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
+## ⏳ 대기 (2026-06-19 — 클라이언트 전용, dist 스왑)
+- **사이드바·저장 개편 등 사용자 요청 8건** — 모두 **클라이언트 변경**(서버 코드 무변경): ① 공종 드래그 재배치 ② 공종 삭제(✕) ③ 막대 공기 텍스트 더블클릭 편집(durationLabel) ④ 사이드바 공종·공정 더블클릭 이름수정 ⑤⑥⑦ **자동저장 제거 → 수동 파일 저장/불러오기**(`state/fileIO.ts`, File System Access + 다운로드/파일선택 폴백) ⑧ 공종 다중선택(Ctrl·Shift) + Ctrl+C/V 복붙.
+- **반영 방법**: `dev`에서 `cd client && npm run build` 후 `client/dist`를 운영에 `dist` 스왑(robocopy /E, 기존 백업). **서버 재시작 불필요**(엔드포인트 추가 없음). 단일 HTML(`HydroNet.html`) 배포본을 쓰는 경우 dev의 새 `HydroNet.html`을 전달.
+- **주의**: 이 변경으로 **서버 자동저장(`/api/autosave`) 사용이 클라에서 제거됨** — 운영도 dist 스왑 시 자동저장 UI가 사라지고 수동 파일 저장으로 통일된다(아래 ‘재시작 대기’ 항목은 사실상 불필요해짐). 검증: tsc·smoke·mount·build·build:single·check-single 전부 통과.
+
 ## 현재 상태 (2026-06-12 배포함)
 - ✅ **클라이언트 전부 반영 완료(무중단)** — dev 빌드 `index-BfICcB_y.js`를 운영 `client/dist`에 `dist` 스왑(robocopy /E, 백업 `client/dist.bak.20260612`). 운영 4000이 새 클라를 서빙함을 HTTP로 검증(`/`·새 번들·`/api/projects` 모두 200). 서버 무재시작.
 - ⏳ **자동저장 서버(`/api/autosave`) — 파일 스테이징 완료, 4000 재시작 대기.** 운영 `server/src/index.js`를 dev 버전으로 교체(백업 `index.js.bak.20260612`, PORT 기본값 4000 유지, 라우트 4개 확인). **단, 운영 서버(PID 40284)는 아직 옛 코드를 메모리에서 구동 중 → `start-lan.bat`로 4000을 재시작해야 자동저장이 켜짐.** (재시작 전까지 클라는 `/api/projects` 폴백으로 정상 동작.)
