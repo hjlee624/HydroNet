@@ -202,6 +202,12 @@ function ChartSvgBase({
         {routed.map((r) => {
           const crit = showCriticalPath && r.critical
           const selected = r.id === selectedLinkId
+          // User-chosen line style overrides the auto pattern (auto = critical solid,
+          // others dashed) so arrows can be drawn 실선/파선/점선 individually.
+          const dash = r.style === 'solid' ? undefined
+            : r.style === 'dashed' ? '7 4'
+              : r.style === 'dotted' ? '1.5 3.5'
+                : (crit ? undefined : '5 3')
           return (
             <path
               key={r.id}
@@ -209,7 +215,7 @@ function ChartSvgBase({
               fill="none"
               stroke={selected ? colors.primary : crit ? colors.critical : colors.steel}
               strokeWidth={selected ? 2.4 : crit ? 2 : 1.3}
-              strokeDasharray={crit ? undefined : '5 3'}
+              strokeDasharray={dash}
               markerEnd={`url(#${crit ? 'hn-arrow-crit' : 'hn-arrow'})`}
               style={{ cursor: 'pointer' }}
               onClick={(e) => { e.stopPropagation(); onLinkClick(e, r.id) }}

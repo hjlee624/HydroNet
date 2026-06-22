@@ -4,7 +4,8 @@
 import { createSampleProject } from '../src/data/sampleProject'
 import { computeSchedule, applyCascade } from '../src/engine/scheduling'
 import { computeLayout, fitToPaperView } from '../src/engine/layout'
-import { PROJECT_TYPES } from '../src/data/templates'
+import { PROJECT_TYPES, makeProject } from '../src/data/templates'
+import { FACILITY_TYPES, facilitySchedule } from '../src/data/facilities'
 import { routeLinks } from '../src/engine/routing'
 import { paperPx } from '../src/engine/paper'
 import { projectKpis, toNum } from '../src/engine/kpis'
@@ -103,6 +104,67 @@ for (const t of PROJECT_TYPES) {
       check(mm.tasks.length > 0 && mm.tasks.every((lt) => Number.isFinite(lt.cy)), `${t.label}: 마일스톤 시트 유효(${mm.tasks.length})`)
     }
   }
+}
+
+// 7b. 시설물 유형 프리셋 — 모든 유형이 유효한 시공 공정표(공종·바·화살표)를 생성
+console.log('')
+for (const f of FACILITY_TYPES) {
+  const data = facilitySchedule(f.key)
+  const fp = makeProject('construction', f.key)
+  const fm = computeLayout(fp)
+  const finite = fm.tasks.every((lt) => Number.isFinite(lt.x) && Number.isFinite(lt.cy) && lt.w >= 0)
+  const fr = routeLinks(fm, fp.links)
+  const routesOk = fr.every((r) => r.d.length > 0 && !r.d.includes('NaN'))
+  check(finite && fm.categories.length > 0 && routesOk && data.tasks.length > 0,
+    `시설물 프리셋 유효: ${f.label} (공종 ${fm.categories.length}·바 ${fm.tasks.length})`)
+  // 마일스톤 위생(적대적 리뷰 수정): 같은 이름 마일스톤 중복 없음, 준공/상업운전은 작업
+  // 종료 이후, 착공/착수는 첫 공정 이전·동시.
+  const msNames = data.tasks.filter((t) => t.isMilestone).map((t) => t.name)
+  const dup = msNames.filter((n, i) => msNames.indexOf(n) !== i)
+  check(dup.length === 0, `${f.label}: 마일스톤 이름 중복 없음${dup.length ? ' — ' + dup.join(',') : ''}`)
+  const workEnd = Math.max(...data.tasks.filter((t) => !t.isMilestone).map((t) => t.start + t.duration))
+  const workStart = Math.min(...data.tasks.map((t) => t.start))
+  const endMs = data.tasks.filter((t) => t.isMilestone && /준공|상업운전/.test(t.name)).sort((a, b) => a.start - b.start)
+  const lastEnd = endMs[endMs.length - 1]
+  check(!!lastEnd && lastEnd.start >= workEnd - 1, `${f.label}: 준공/상업운전이 작업 종료 이후(${Math.round((lastEnd?.start ?? 0) / 30)}≥${Math.round(workEnd / 30)}mo)`)
+  const startMs = data.tasks.find((t) => t.isMilestone && /착공|착수/.test(t.name))
+  check(!!startMs && startMs.start <= workStart + 1, `${f.label}: 착공/착수가 첫 공정 이전·동시`)
+}
+
+// 7c. 한 줄(row) 패키지 모델 — 양수발전 상부댐: 굴착→축조→페이스슬라브→충수가 한 행에
+{
+  const pp = makeProject('construction', 'pumped')
+  const pm = computeLayout(pp)
+  const damCat = pp.categories.find((c) => c.name === '댐공사')!
+  const upper = pm.tasks.filter((lt) => lt.categoryId === damCat.id && (lt.task.subName ?? '').includes('상부댐'))
+  const cys = new Set(upper.map((lt) => Math.round(lt.cy)))
+  check(upper.length >= 4 && cys.size === 1, `상부댐 4공정이 한 줄(같은 행)에 배치 (${upper.length}공정·행수 ${cys.size})`)
+  const ordered = [...upper].sort((a, b) => a.task.start - b.task.start).map((lt) => lt.task.name)
+  check(ordered.length > 0 && ordered[0].includes('굴착') && ordered[ordered.length - 1].includes('충수'),
+    `상부댐 순서: ${ordered.join(' → ')}`)
+  // 댐공사 레인은 상·하부댐 2줄 → 한 패키지를 여러 줄로도 표현
+  const damRows = new Set(pm.tasks.filter((lt) => lt.categoryId === damCat.id).map((lt) => lt.subRow))
+  check(damRows.size === 2, `댐공사 레인 = 상·하부댐 2줄 (행수 ${damRows.size})`)
+  // 링크 선 스타일(실선/점선)이 라우팅 결과에 전달됨
+  const styled = pp.links.length ? [{ ...pp.links[0], style: 'dotted' as const }, ...pp.links.slice(1)] : []
+  const sr = routeLinks(pm, styled)
+  check(styled.length === 0 || sr.some((r) => r.style === 'dotted'), '링크 선 스타일이 라우팅 결과에 전달됨')
+}
+
+// 7d. 한 줄 패키지의 순차 막대 사이 화살표는 수평(옆으로) — same-row forward route
+{
+  const pp = makeProject('construction', 'pumped')
+  const pm = computeLayout(pp)
+  const damCat = pp.categories.find((c) => c.name === '댐공사')!
+  const upper = pm.tasks.filter((lt) => lt.categoryId === damCat.id && (lt.task.subName ?? '').includes('상부댐'))
+    .sort((a, b) => a.task.start - b.task.start)
+  const a0 = upper[0].task.id, a1 = upper[1].task.id
+  const link = pp.links.find((l) => l.from === a0 && l.to === a1)
+  if (link) {
+    const r = routeLinks(pm, [link])[0]
+    const flat = Math.abs(r.arrowY - upper[0].cy) < 2 // 화살표가 같은 행 높이로 도착(수평)
+    check(flat, '같은 줄 순차 공정 화살표가 수평(옆으로) 도착')
+  } else check(false, '상부댐 굴착→축조 연결 존재')
 }
 
 // 8. projectKpis — 단일 셀렉터(일정·진척·원가·EVM·경보·베이스라인) 무결성

@@ -118,6 +118,8 @@ export interface EditorState {
   loadSample: () => void
   /** Switch the active 공정표 시트(예정공정표 ↔ 마일스톤) within the 사업. */
   switchSheet: (id: ID) => void
+  /** Rename a 공정표 시트(탭 더블클릭). 활성 시트면 activeSheet도 갱신. */
+  renameSheet: (id: ID, name: string) => void
 
   // tasks
   addTask: (categoryId: ID, partial?: Partial<Task>) => ID
@@ -126,10 +128,10 @@ export interface EditorState {
   setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
   toggleMilestone: (id: ID) => void
-  /** Move a task to a 공종 and insert it right before `beforeId` (null = end of
-   *  that lane). Drives sidebar + chart drag-to-reorder; the array order is the
-   *  single source of truth both views render in. */
-  reorderTask: (id: ID, targetCategoryId: ID, beforeId: ID | null, opts?: { history?: boolean }) => void
+  /** 공정을 다른 줄(row)로 보낸다 — 차트 세로 드래그 + 사이드바 드롭. `anchorId` 공정의 줄에 합치거나
+   *  (merge) 그 위/아래(above/below)에 새 줄을 만든다. 같은 줄의 공정들은 시작일 순으로
+   *  옆으로 배치돼 한 패키지를 한 줄로 표현할 수 있다(굴착→축조→…). */
+  moveTaskToRow: (id: ID, targetCategoryId: ID, anchorId: ID | null, mode: 'merge' | 'above' | 'below', opts?: { history?: boolean }) => void
   /** 실적 진척률(0–100) 설정 — 진척·실적 모듈. */
   setTaskProgress: (id: ID, progress: number) => void
 
@@ -150,6 +152,9 @@ export interface EditorState {
   moveCategory: (id: ID, dir: -1 | 1) => void
   /** 공종 드래그 재배치 — `beforeId` 앞으로(null = 맨 끝) 옮기고 order를 0..n-1로 재부여. */
   reorderCategory: (id: ID, beforeId: ID | null) => void
+  /** 여러 공종을 한 번에 재배치 — 선택된 공종들을 상대순서 유지한 채 `beforeId` 앞으로
+   *  (null = 맨 끝) 옮긴다(Shift 다중선택 드래그). */
+  reorderCategories: (ids: ID[], beforeId: ID | null) => void
 
   // ON/OFF chart visibility
   toggleCategoryVisible: (id: ID) => void
@@ -391,6 +396,15 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ project: withSchedule(next).project, past: [], future: [], selectedTaskId: null, selectedLinkId: null, selectedTextRole: null, dirty: true })
       logInfo(`공정표 전환: ${target.name}`)
     },
+    renameSheet: (id, name) => {
+      const v = name.trim()
+      if (!v) return
+      commit((p) => {
+        if (p.activeSheet?.id === id) p.activeSheet = { ...p.activeSheet, name: v }
+        const s = p.sheets?.find((x) => x.id === id)
+        if (s) s.name = v
+      }, { history: false })
+    },
 
     addTask: (categoryId, partial) => {
       const id = `t-${nanoid(8)}`
@@ -452,25 +466,39 @@ export const useEditor = create<EditorState>()((set, get) => {
         }
       }, { cascade: true })
     },
-    reorderTask: (id, targetCategoryId, beforeId, opts) => {
-      if (beforeId === id) return // dropping a task onto itself is a no-op
+    moveTaskToRow: (id, targetCategoryId, anchorId, mode, opts) => {
       commit((p) => {
         const moving = p.tasks.find((t) => t.id === id)
         if (!moving) return
         moving.categoryId = targetCategoryId
-        const without = p.tasks.filter((t) => t.id !== id)
-        let insertAt: number
-        if (beforeId) {
-          const bi = without.findIndex((t) => t.id === beforeId)
-          insertAt = bi >= 0 ? bi : without.length
-        } else {
-          // No anchor → append after the target lane's current last task.
-          let last = -1
-          without.forEach((t, i) => { if (t.categoryId === targetCategoryId) last = i })
-          insertAt = last >= 0 ? last + 1 : without.length
-        }
-        without.splice(insertAt, 0, moving)
-        p.tasks = without
+        // Existing rows of the target lane (excluding the moving task). An explicit
+        // Task.row wins; tasks without one fall back to a running index, matching the
+        // layout engine — so a lane never touched still reads one-task-per-row.
+        const lane = p.tasks.filter((t) => t.categoryId === targetCategoryId && t.id !== id)
+        let auto = 0
+        const rawOf = new Map<ID, number>()
+        for (const t of lane) rawOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
+        const distinct = [...new Set(lane.map((t) => rawOf.get(t.id)!))].sort((a, b) => a - b)
+        const rows: Task[][] = distinct.map((rv) => lane.filter((t) => rawOf.get(t.id) === rv))
+        const anchorRow = anchorId != null && rawOf.has(anchorId) ? distinct.indexOf(rawOf.get(anchorId)!) : -1
+        if (mode === 'merge' && anchorRow >= 0) {
+          // 같은 줄에 시간이 겹치는 공정을 합치면 막대가 포개진다 → 겹치면 합치지 말고
+          // 그 줄 바로 아래 새 줄로 보낸다.
+          const overlaps = rows[anchorRow].some((t) => t.start < moving.start + moving.duration && moving.start < t.start + t.duration)
+          if (overlaps) rows.splice(anchorRow + 1, 0, [moving])
+          else rows[anchorRow].push(moving)
+        } else if (anchorRow >= 0) rows.splice(mode === 'above' ? anchorRow : anchorRow + 1, 0, [moving])
+        else rows.push([moving]) // no usable anchor → new last row
+        // Renumber rows densely and order each row left→right by start; rewrite the
+        // lane's tasks in (row, start) order so the sidebar list mirrors the chart.
+        const newOrder: Task[] = []
+        rows.forEach((rt, i) => {
+          rt.sort((x, y) => x.start - y.start)
+          for (const t of rt) { t.row = i; newOrder.push(t) }
+        })
+        const laneSet = new Set(newOrder.map((t) => t.id))
+        let k = 0
+        p.tasks = p.tasks.map((t) => (laneSet.has(t.id) ? newOrder[k++] : t))
       }, { history: opts?.history ?? true, cascade: false })
       set({ selectedTaskId: id, selectedLinkId: null })
     },
@@ -540,12 +568,19 @@ export const useEditor = create<EditorState>()((set, get) => {
       const c = p.categories.find((x) => x.id === id)
       if (c) Object.assign(c, patch)
     }),
-    deleteCategory: (id) => commit((p) => {
-      p.categories = p.categories.filter((c) => c.id !== id)
-      const removed = new Set(p.tasks.filter((t) => t.categoryId === id).map((t) => t.id))
-      p.tasks = p.tasks.filter((t) => t.categoryId !== id)
-      p.links = p.links.filter((l) => !removed.has(l.from) && !removed.has(l.to))
-    }),
+    deleteCategory: (id) => {
+      commit((p) => {
+        p.categories = p.categories.filter((c) => c.id !== id)
+        const removed = new Set(p.tasks.filter((t) => t.categoryId === id).map((t) => t.id))
+        p.tasks = p.tasks.filter((t) => t.categoryId !== id)
+        p.links = p.links.filter((l) => !removed.has(l.from) && !removed.has(l.to))
+      })
+      // 삭제된 공종 id가 다중선택에 잔존하지 않도록 정리(deleteTask/deleteLink와 동일 위생).
+      set((s) => {
+        const ids = s.selectedCategoryIds.filter((x) => x !== id)
+        return { selectedCategoryIds: ids, selectedCategoryId: s.selectedCategoryId === id ? (ids[ids.length - 1] ?? null) : s.selectedCategoryId }
+      })
+    },
     toggleCollapse: (id) => commit((p) => {
       const c = p.categories.find((x) => x.id === id)
       if (c) c.collapsed = !c.collapsed
@@ -574,6 +609,29 @@ export const useEditor = create<EditorState>()((set, get) => {
         without.forEach((c, i) => { c.order = i }) // order를 0..n-1로 정규화
       })
       set({ selectedCategoryId: id, selectedCategoryIds: [id] })
+    },
+    reorderCategories: (ids, beforeId) => {
+      const idset = new Set(ids)
+      if (idset.size <= 1) { get().reorderCategory(ids[0], beforeId); return }
+      commit((p) => {
+        const sorted = [...p.categories].sort((a, b) => a.order - b.order)
+        const moving = sorted.filter((c) => idset.has(c.id)) // 상대순서 유지
+        if (!moving.length) return
+        // beforeId가 선택집합 멤버여도, 표시 순서상 그 위치 이후의 첫 '비선택' 공종을
+        // 앵커로 삼아 사용자가 가리킨 위치에 그룹을 삽입한다(맨 끝 점프 방지).
+        let anchorIdx = sorted.length
+        if (beforeId) { const si = sorted.findIndex((c) => c.id === beforeId); if (si >= 0) anchorIdx = si }
+        const anchorId = sorted.slice(anchorIdx).find((c) => !idset.has(c.id))?.id ?? null
+        const without = sorted.filter((c) => !idset.has(c.id))
+        let insertAt = without.length // 기본 = 맨 끝
+        if (anchorId) {
+          const bi = without.findIndex((c) => c.id === anchorId)
+          if (bi >= 0) insertAt = bi
+        }
+        without.splice(insertAt, 0, ...moving)
+        without.forEach((c, i) => { c.order = i })
+      })
+      set({ selectedCategoryIds: ids, selectedCategoryId: ids[ids.length - 1] ?? null })
     },
 
     toggleCategoryVisible: (id) => commit((p) => {
@@ -742,15 +800,17 @@ export const useEditor = create<EditorState>()((set, get) => {
     pasteCategories: () => {
       const clip = get().categoryClipboard
       if (!clip || !clip.categories.length) return
+      // 붙여넣기 기준 = 현재 선택된 공종 바로 뒤(없으면 맨 끝). 무조건 맨 아래로 붙던 동작 교체.
+      const anchorId = get().selectedCategoryId
       const newIds: ID[] = []
       commit((p) => {
-        let order = p.categories.length
         const catMap = new Map<ID, ID>() // 원본 공종 id → 새 id
         const taskMap = new Map<ID, ID>() // 원본 공정 id → 새 id (내부 연결 재배선용)
+        const newCats: Category[] = []
         for (const c of clip.categories) {
           const nid = `c-${nanoid(8)}`
           catMap.set(c.id, nid); newIds.push(nid)
-          p.categories.push({ ...clone(c), id: nid, order: order++ })
+          newCats.push({ ...clone(c), id: nid, order: 0 }) // order는 아래에서 일괄 재부여
         }
         for (const t of clip.tasks) {
           const cat = catMap.get(t.categoryId)
@@ -763,6 +823,16 @@ export const useEditor = create<EditorState>()((set, get) => {
           const from = taskMap.get(l.from), to = taskMap.get(l.to)
           if (from && to) p.links.push({ ...clone(l), id: `l-${nanoid(8)}`, from, to })
         }
+        // 선택된 공종 바로 뒤에 삽입한 뒤 order를 0..n-1로 재부여.
+        const sorted = [...p.categories].sort((a, b) => a.order - b.order)
+        let insertAt = sorted.length
+        if (anchorId) {
+          const ai = sorted.findIndex((c) => c.id === anchorId)
+          if (ai >= 0) insertAt = ai + 1
+        }
+        sorted.splice(insertAt, 0, ...newCats)
+        sorted.forEach((c, i) => { c.order = i })
+        p.categories = sorted
       })
       set({ selectedCategoryIds: newIds, selectedCategoryId: newIds[newIds.length - 1] ?? null })
       logInfo(`공종 ${clip.categories.length}개를 붙여넣었습니다.`)

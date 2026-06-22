@@ -3,19 +3,52 @@
 // storage / simple-milestone / blank) beyond the single demo sample.
 
 import { nanoid } from 'nanoid'
-import type { Category, Link, Project, ProjectKind, Sheet, SheetRole, Task } from '../types/model'
+import type { Category, Link, Project, ProjectKind, Sheet, Task } from '../types/model'
 import { dateToDay, parseISO } from '../engine/dates'
 import { applyCascade } from '../engine/scheduling'
 import { lanePalette, DEFAULT_PALETTE } from '../styles/theme'
 import { DEFAULT_CI } from './ciLogo'
 import { createSampleProject } from './sampleProject'
+import { facilitySchedule, facilityLabel } from './facilities'
 
 const START = '2026-01-01'
 
 interface CatDef { id: string; name: string; commissioning?: boolean }
 interface TaskDef { id: string; cat: string; name: string; start: string; dur: number; milestone?: boolean; sub?: string }
 
-function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[string, string]>, opts: { kind?: ProjectKind; rainy?: boolean } = {}): Project {
+/** Wrap already-built categories/tasks/links into a full Project with the standard
+ *  paper/view/branding defaults. Shared by the CatDef/TaskDef `build` (design plans)
+ *  and the facility-schedule construction presets (day-offset data). */
+function projectShell(
+  name: string,
+  categories: Category[], tasks: Task[], links: Link[],
+  opts: { kind?: ProjectKind; facility?: string; rainy?: boolean } = {},
+): Project {
+  const now = new Date().toISOString()
+  return {
+    id: `proj-${nanoid(8)}`,
+    name,
+    kind: opts.kind ?? 'construction',
+    ...(opts.facility ? { facility: opts.facility } : {}),
+    startDate: START,
+    paper: { size: 'A1', orientation: 'landscape', marginMm: 10, dpi: 150, fitToPage: true },
+    view: {
+      pxPerDay: 1.5, rowHeight: 46, labelWidth: 150, headerHeight: 56, scale: 'month',
+      showCriticalPath: true, showFloat: false, showGrid: true, showTitle: true, textStyles: {},
+    },
+    categories,
+    tasks,
+    links,
+    // Design-phase schedules don't model 우기 shading; construction does.
+    rainySeasons: opts.rainy === false ? [] : [{ id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 }],
+    palette: [...DEFAULT_PALETTE],
+    branding: { logos: [{ src: DEFAULT_CI, w: 168, h: 60 }] },
+    commissioningEnabled: false,
+    meta: { createdAt: now, updatedAt: now, schemaVersion: 1 },
+  }
+}
+
+function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[string, string]>, opts: { kind?: ProjectKind; facility?: string; rainy?: boolean } = {}): Project {
   const day = (iso: string) => dateToDay(START, parseISO(iso))
   const categories: Category[] = cats.map((c, i) => ({
     id: c.id, name: c.name, color: lanePalette[i % lanePalette.length],
@@ -27,63 +60,8 @@ function build(name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[
   }))
   const lk: Link[] = links.map(([from, to], i) => ({ id: `l-${i + 1}`, from, to, type: 'FS', lag: 0 }))
   const consistent = applyCascade(tasks, lk).tasks
-  const now = new Date().toISOString()
-  return {
-    id: `proj-${nanoid(8)}`,
-    name,
-    kind: opts.kind ?? 'construction',
-    startDate: START,
-    paper: { size: 'A1', orientation: 'landscape', marginMm: 10, dpi: 150, fitToPage: true },
-    view: {
-      pxPerDay: 1.5, rowHeight: 46, labelWidth: 150, headerHeight: 56, scale: 'month',
-      showCriticalPath: true, showFloat: false, showGrid: true, showTitle: true, textStyles: {},
-    },
-    categories,
-    tasks: consistent,
-    links: lk,
-    // Design-phase schedules don't model 우기 shading; construction does.
-    rainySeasons: opts.rainy === false ? [] : [{ id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 }],
-    palette: [...DEFAULT_PALETTE],
-    branding: { logos: [{ src: DEFAULT_CI, w: 168, h: 60 }] },
-    commissioningEnabled: false,
-    meta: { createdAt: now, updatedAt: now, schemaVersion: 1 },
-  }
+  return projectShell(name, categories, consistent, lk, opts)
 }
-
-// ── 양수발전 ──
-const PUMPED_CATS: CatDef[] = [
-  { id: 'cp-temp', name: '가설공' },
-  { id: 'cp-upper', name: '상부저수지' },
-  { id: 'cp-tunnel', name: '진입·수직터널' },
-  { id: 'cp-penstock', name: '수압관로' },
-  { id: 'cp-power', name: '지하발전소' },
-  { id: 'cp-tail', name: '방수로' },
-  { id: 'cp-turbine', name: '수차·발전기' },
-  { id: 'cp-aux', name: '부대공' },
-  { id: 'cp-comm', name: '시운전', commissioning: true },
-]
-const PUMPED_TASKS: TaskDef[] = [
-  { id: 'pt-1', cat: 'cp-temp', name: '가설건물·진입로', start: '2026-01-10', dur: 70 },
-  { id: 'pt-2', cat: 'cp-upper', name: '상부저수지 굴착', start: '2026-03-01', dur: 180 },
-  { id: 'pt-3', cat: 'cp-upper', name: '상부저수지 차수', start: '2026-09-10', dur: 120 },
-  { id: 'pt-4', cat: 'cp-tunnel', name: '진입터널 굴착', start: '2026-04-01', dur: 200 },
-  { id: 'pt-5', cat: 'cp-tunnel', name: '수직터널 굴착', start: '2026-11-01', dur: 150 },
-  { id: 'pt-6', cat: 'cp-power', name: '지하발전소 굴착', start: '2027-01-15', dur: 180 },
-  { id: 'pt-7', cat: 'cp-power', name: '발전소 구조물', start: '2027-08-01', dur: 200 },
-  { id: 'pt-8', cat: 'cp-penstock', name: '수압관로 설치', start: '2027-05-01', dur: 160 },
-  { id: 'pt-9', cat: 'cp-tail', name: '방수로 라이닝', start: '2027-09-01', dur: 120 },
-  { id: 'pt-10', cat: 'cp-turbine', name: '수차 설치', start: '2028-03-01', dur: 120 },
-  { id: 'pt-11', cat: 'cp-turbine', name: '발전기 설치', start: '2028-07-01', dur: 90 },
-  { id: 'pt-12', cat: 'cp-aux', name: '◆ 초기 담수', start: '2028-06-15', dur: 0, milestone: true },
-  { id: 'pt-13', cat: 'cp-aux', name: '◆ 준공', start: '2028-11-30', dur: 0, milestone: true },
-  { id: 'pt-14', cat: 'cp-comm', name: '개별 시운전', start: '2028-10-01', dur: 30 },
-  { id: 'pt-15', cat: 'cp-comm', name: '◆ 상업운전', start: '2028-12-15', dur: 0, milestone: true },
-]
-const PUMPED_LINKS: Array<[string, string]> = [
-  ['pt-4', 'pt-6'], ['pt-6', 'pt-7'], ['pt-7', 'pt-10'], ['pt-10', 'pt-11'],
-  ['pt-11', 'pt-12'], ['pt-12', 'pt-13'], ['pt-12', 'pt-14'], ['pt-14', 'pt-15'],
-  ['pt-2', 'pt-3'], ['pt-5', 'pt-8'],
-]
 
 // ── 간단 마일스톤 ──
 const SIMPLE_CATS: CatDef[] = [
@@ -124,8 +102,8 @@ export const TEMPLATES: TemplateDef[] = [
   {
     key: 'pumped',
     name: '양수발전 시공·시운전',
-    desc: '상부저수지·터널·수압관로·지하발전소·수차/발전기·시운전',
-    make: () => build('양수발전 시공·시운전 마일스톤', PUMPED_CATS, PUMPED_TASKS, PUMPED_LINKS),
+    desc: '상·하부댐(CFRD)·터널·수압관로·지하발전소·옥외변전소 (영상 기반)',
+    make: () => makeProject('construction', 'pumped'),
   },
   {
     key: 'simple',
@@ -211,34 +189,17 @@ const DETAIL_TASKS: TaskDef[] = [
 const DETAIL_LINKS: Array<[string, string]> = [['d-1', 'd-2'], ['d-2', 'd-3'], ['d-3', 'd-4'], ['d-3', 'd-5'], ['d-4', 'd-6'], ['d-5', 'd-6'], ['d-6', 'd-7'], ['d-6', 'd-8'], ['d-8', 'd-9'], ['d-9', 'd-10'], ['d-3', 'd-11'], ['d-10', 'd-12'], ['d-12', 'd-13']]
 
 // ── 공정표 시트(예정공정표 / 마일스톤) ───────────────────────────────────────
-function mkSheet(id: string, role: SheetRole, name: string, cats: CatDef[], taskDefs: TaskDef[], links: Array<[string, string]>): Sheet {
-  const day = (iso: string) => dateToDay(START, parseISO(iso))
-  const categories: Category[] = cats.map((c, i) => ({
-    id: c.id, name: c.name, color: lanePalette[i % lanePalette.length], collapsed: false, order: i, isCommissioning: c.commissioning,
-  }))
-  const tasks: Task[] = taskDefs.map((t) => ({
-    id: t.id, categoryId: t.cat, name: t.name, start: day(t.start), duration: t.dur, isMilestone: !!t.milestone, ...(t.sub ? { subName: t.sub } : {}),
-  }))
-  const lk: Link[] = links.map(([from, to], i) => ({ id: `${id}-l-${i + 1}`, from, to, type: 'FS', lag: 0 }))
-  return { id, role, name, categories, tasks: applyCascade(tasks, lk).tasks, links: lk, rainySeasons: [] }
-}
-
-// 건설(시공) 마일스톤 — 설계 단계 사업의 '마일스톤' 시트. 날짜 마커라 연결(cascade) 없음.
-const CONST_MS_CATS: CatDef[] = [{ id: 'cm-ms', name: '건설 마일스톤' }]
-const CONST_MS_TASKS: TaskDef[] = [
-  { id: 'cm-1', cat: 'cm-ms', name: '◆ 실시설계 완료', start: '2026-11-20', dur: 0, milestone: true },
-  { id: 'cm-2', cat: 'cm-ms', name: '◆ 착공', start: '2027-03-02', dur: 0, milestone: true },
-  { id: 'cm-3', cat: 'cm-ms', name: '◆ 본체 착수', start: '2027-09-01', dur: 0, milestone: true },
-  { id: 'cm-4', cat: 'cm-ms', name: '◆ 초기 담수', start: '2029-06-01', dur: 0, milestone: true },
-  { id: 'cm-5', cat: 'cm-ms', name: '◆ 준공', start: '2029-12-20', dur: 0, milestone: true },
-  { id: 'cm-6', cat: 'cm-ms', name: '◆ 상업운전', start: '2030-03-02', dur: 0, milestone: true },
-]
-const CONST_MS_LINKS: Array<[string, string]> = []
-
 const PLAN_META = { id: 'sh-plan', role: 'plan' as const, name: '예정공정표' }
-function withDesignSheets(p: Project): Project {
+
+/** 설계 단계 사업의 '마일스톤' 시트 = 선택한 시설물 유형의 시공 공정표(패키지/세부공정).
+ *  기존의 고정 6개 '건설 마일스톤' 대신 유형별 실제 시공 공정으로 채운다. */
+function milestoneSheet(facility?: string): Sheet {
+  const data = facilitySchedule(facility)
+  return { id: 'sh-ms', role: 'milestone', name: '시공 마일스톤', categories: data.categories, tasks: data.tasks, links: data.links, rainySeasons: [] }
+}
+function withDesignSheets(p: Project, facility?: string): Project {
   p.activeSheet = { ...PLAN_META }
-  p.sheets = [mkSheet('sh-ms', 'milestone', '마일스톤', CONST_MS_CATS, CONST_MS_TASKS, CONST_MS_LINKS)]
+  p.sheets = [milestoneSheet(facility)]
   return p
 }
 
@@ -248,6 +209,29 @@ export const KIND_META: Record<ProjectKind, { label: string; icon: string; sched
   'basic-design': { label: '기본설계', icon: '📐', scheduleLabel: '설계 공정표' },
   'detailed-design': { label: '실시설계', icon: '📑', scheduleLabel: '설계 공정표' },
   construction: { label: '시공', icon: '🏗️', scheduleLabel: '시공 공정표' },
+}
+
+const DESIGN_PRESETS: Record<Exclude<ProjectKind, 'construction'>, { cats: CatDef[]; tasks: TaskDef[]; links: Array<[string, string]> }> = {
+  feasibility: { cats: FEAS_CATS, tasks: FEAS_TASKS, links: FEAS_LINKS },
+  'basic-design': { cats: BASIC_CATS, tasks: BASIC_TASKS, links: BASIC_LINKS },
+  'detailed-design': { cats: DETAIL_CATS, tasks: DETAIL_TASKS, links: DETAIL_LINKS },
+}
+
+/** 새 사업 생성 — 설계 단계(kind)와 시설물 유형(facility)으로 공정표 프리셋을 만든다.
+ *  설계 단계: 예정공정표(설계 과업, 활성) + 시공 마일스톤(유형별 패키지) 시트.
+ *  시공: 유형별 시공 공정표가 곧 활성 시트(마일스톤만). */
+export function makeProject(kind: ProjectKind, facility: string): Project {
+  if (kind === 'construction') {
+    const data = facilitySchedule(facility)
+    const name = `${facilityLabel(facility)} 시공 공정표`.trim()
+    const p = projectShell(name, data.categories, data.tasks, data.links, { kind: 'construction', facility, rainy: true })
+    p.activeSheet = { id: 'sh-cons', role: 'milestone', name: '시공 공정표' }
+    p.sheets = []
+    return p
+  }
+  const ds = DESIGN_PRESETS[kind]
+  const name = `${facilityLabel(facility)} ${KIND_META[kind].label} 예정공정표`.trim()
+  return withDesignSheets(build(name, ds.cats, ds.tasks, ds.links, { kind, facility, rainy: false }), facility)
 }
 
 export interface ProjectTypeDef {
@@ -264,23 +248,17 @@ export const PROJECT_TYPES: ProjectTypeDef[] = [
   { kind: 'feasibility', ...KIND_META.feasibility,
     desc: '사업 추진 여부 판단 — 개략 검토·경제성·환경 중심',
     highlights: ['자료조사·현황분석', '수요·입지', '경제성(B/C)', '환경·재해', '종합보고서'],
-    make: () => withDesignSheets(build('타당성조사 예정공정표', FEAS_CATS, FEAS_TASKS, FEAS_LINKS, { kind: 'feasibility', rainy: false })) },
+    make: () => makeProject('feasibility', 'concrete-gravity') },
   { kind: 'basic-design', ...KIND_META['basic-design'],
     desc: '기본구상·대안비교 + 기본설계 + 개략공사비',
     highlights: ['측량·지반·수문', '대안비교', '기본설계', '인허가 협의', '심의·납품'],
-    make: () => withDesignSheets(build('기본설계 예정공정표', BASIC_CATS, BASIC_TASKS, BASIC_LINKS, { kind: 'basic-design', rainy: false })) },
+    make: () => makeProject('basic-design', 'concrete-gravity') },
   { kind: 'detailed-design', ...KIND_META['detailed-design'],
     desc: '실시설계·상세도면·시방·적산·인허가',
     highlights: ['실시설계', '상세 도면', '시방서·내역', '수량·적산', '인허가·심의'],
-    make: () => withDesignSheets(build('실시설계 예정공정표', DETAIL_CATS, DETAIL_TASKS, DETAIL_LINKS, { kind: 'detailed-design', rainy: false })) },
+    make: () => makeProject('detailed-design', 'concrete-gravity') },
   { kind: 'construction', ...KIND_META.construction,
     desc: '착공~준공 시공 공정 + 시운전 (마일스톤·CPM·우기 음영)',
     highlights: ['가설·가물막이', '본체·부대공', '시운전', '우기 음영', '주공정'],
-    make: () => {
-      const p = createSampleProject()
-      p.id = `proj-${nanoid(8)}`; p.kind = 'construction'
-      p.activeSheet = { id: 'sh-ms', role: 'milestone', name: '마일스톤' }
-      p.sheets = [] // 시공은 마일스톤 시트만
-      return p
-    } },
+    make: () => makeProject('construction', 'concrete-gravity') },
 ]

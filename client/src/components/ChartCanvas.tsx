@@ -45,8 +45,9 @@ export function ChartCanvas() {
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
   // 막대 아래 공기(기간) 텍스트 인라인 편집(이름 편집과 별개 입력).
   const [editingDur, setEditingDur] = useState<{ id: string; text: string } | null>(null)
-  // Live "drop here" insertion line while dragging a bar vertically to re-order.
-  const [reorderHint, setReorderHint] = useState<{ catId: string; beforeId: string | null; lineY: number } | null>(null)
+  // Live "drop here" hint while dragging a bar vertically: a line for a new row
+  // (above/below) or a highlighted band for merging onto an existing row.
+  const [reorderHint, setReorderHint] = useState<{ lineY: number; merge: boolean } | null>(null)
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
@@ -70,31 +71,36 @@ export function ChartCanvas() {
     return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom }
   }
 
-  // Map a content-Y (while dragging task `taskId`) to a drop target: which lane,
-  // and which task to insert before (null = lane end). Returns null when the
-  // drop wouldn't change anything (so a purely-horizontal drag never re-orders).
-  function computeReorderTarget(taskId: string, contentY: number) {
+  // Map a content-Y (while dragging task `taskId`) to a row drop target: which lane,
+  // which existing row to MERGE onto (so the bar joins a one-line package), or a new
+  // row ABOVE/BELOW an anchor row. `anchorId` references a concrete task so the
+  // target survives the include/exclude shift when the dragged task is removed.
+  function computeRowTarget(taskId: string, contentY: number) {
     const cats = model.categories
     if (!cats.length) return null
     let cat = cats.find((c) => contentY >= c.y && contentY < c.y + c.height)
     if (!cat) cat = contentY < cats[0].y ? cats[0] : cats[cats.length - 1]
-    const laneTasks = model.tasks
-      .filter((lt) => lt.categoryId === cat.id && lt.task.id !== taskId)
-      .sort((p, q) => p.subRow - q.subRow)
-    let beforeId: string | null = null
-    let lineY = cat.y + cat.height
-    for (const lt of laneTasks) {
-      if (contentY < lt.cy) { beforeId = lt.task.id; lineY = lt.cy - model.rowHeight / 2; break }
+    const rh = model.rowHeight
+    // Existing rows in this lane EXCLUDING the dragged task, each with a representative
+    // (anchor) task and the row centre Y.
+    const byRow = new Map<number, { anchorId: string; cy: number }>()
+    for (const lt of model.tasks) {
+      if (lt.categoryId !== cat.id || lt.task.id === taskId) continue
+      if (!byRow.has(lt.subRow)) byRow.set(lt.subRow, { anchorId: lt.task.id, cy: lt.cy })
     }
-    // No-op when dropping right where the task already sits in its own lane.
-    const dragged = model.tasks.find((lt) => lt.task.id === taskId)
-    if (dragged && dragged.categoryId === cat.id) {
-      const order = model.tasks.filter((lt) => lt.categoryId === cat.id).sort((p, q) => p.subRow - q.subRow)
-      const di = order.findIndex((lt) => lt.task.id === taskId)
-      const curNext = order[di + 1]?.task.id ?? null
-      if (beforeId === curNext) return null
+    const rows = [...byRow.values()].sort((a, b) => a.cy - b.cy)
+    if (!rows.length) return { catId: cat.id, anchorId: null as string | null, mode: 'below' as const, lineY: cat.y + cat.height / 2, merge: false }
+    for (const r of rows) {
+      const top = r.cy - rh / 2
+      const frac = (contentY - top) / rh
+      if (frac < 0 || frac >= 1) continue
+      if (frac < 0.28) return { catId: cat.id, anchorId: r.anchorId, mode: 'above' as const, lineY: top, merge: false }
+      if (frac > 0.72) return { catId: cat.id, anchorId: r.anchorId, mode: 'below' as const, lineY: top + rh, merge: false }
+      return { catId: cat.id, anchorId: r.anchorId, mode: 'merge' as const, lineY: r.cy, merge: true }
     }
-    return { catId: cat.id, beforeId, lineY }
+    if (contentY < rows[0].cy) return { catId: cat.id, anchorId: rows[0].anchorId, mode: 'above' as const, lineY: rows[0].cy - rh / 2, merge: false }
+    const last = rows[rows.length - 1]
+    return { catId: cat.id, anchorId: last.anchorId, mode: 'below' as const, lineY: last.cy + rh / 2, merge: false }
   }
 
   // ── Zoom-to-cursor: after a wheel-driven zoom commits, shift scroll so the
@@ -248,9 +254,10 @@ export function ChartCanvas() {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
-      // Vertical component → preview where the bar would re-order to (skip when
-      // a filter is active: lanes/rows are a subset and the math is ambiguous).
-      setReorderHint(filterActive(useEditor.getState().filter) ? null : computeReorderTarget(drag.taskId, y))
+      // Vertical component → preview which row the bar would join / create (skip
+      // when a filter is active: lanes/rows are a subset and the math is ambiguous).
+      if (filterActive(useEditor.getState().filter)) setReorderHint(null)
+      else { const t = computeRowTarget(drag.taskId, y); setReorderHint(t ? { lineY: t.lineY, merge: t.merge } : null) }
     } else if (drag.kind === 'resize') {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
       const day = model.dayOf(x)
@@ -287,11 +294,18 @@ export function ChartCanvas() {
     setReorderHint(null)
     if (!drag) return
     if (drag.kind === 'move' && drag.started && !filterActive(useEditor.getState().filter)) {
-      // The vertical part of the move re-orders the activity (and may move it to
-      // another 공종). Part of the same gesture, so history:false (already snapped).
+      // The vertical part of the move assigns the activity's row — merging onto an
+      // existing row (one-line package) or making a new row above/below — and may
+      // move it to another 공종. Same gesture, so history:false (already snapped).
       const { y } = toContent(e.clientX, e.clientY)
-      const target = computeReorderTarget(drag.taskId, y)
-      if (target) useEditor.getState().reorderTask(drag.taskId, target.catId, target.beforeId, { history: false })
+      const dragged = model.tasks.find((lt) => lt.task.id === drag.taskId)
+      const target = computeRowTarget(drag.taskId, y)
+      // A near-horizontal drag within the task's own row is a pure schedule move —
+      // don't restack rows.
+      const tinyVertical = !!dragged && target?.catId === dragged.categoryId && Math.abs(y - dragged.cy) < model.rowHeight * 0.5
+      if (target && !tinyVertical) {
+        useEditor.getState().moveTaskToRow(drag.taskId, target.catId, target.anchorId, target.mode, { history: false })
+      }
     }
     if (drag.kind === 'link') {
       const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null
@@ -440,13 +454,23 @@ export function ChartCanvas() {
                 onDoubleClick={(e) => e.stopPropagation()}
               />
             )}
-            {reorderHint && (
+            {reorderHint && (reorderHint.merge ? (
+              <div
+                data-export-hide="1"
+                style={{
+                  position: 'absolute', top: reorderHint.lineY - model.rowHeight / 2, height: model.rowHeight,
+                  left: model.labelWidth, width: Math.max(0, model.contentWidth - model.labelWidth),
+                  background: 'rgba(250,81,17,0.12)', border: '1.5px solid var(--primary)', borderRadius: 4,
+                  pointerEvents: 'none', zIndex: 5,
+                }}
+              />
+            ) : (
               <div
                 className="reorder-line"
                 data-export-hide="1"
                 style={{ top: reorderHint.lineY, left: model.labelWidth, width: Math.max(0, model.contentWidth - model.labelWidth) }}
               />
-            )}
+            ))}
           </div>
         </div>
       </div>

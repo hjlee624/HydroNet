@@ -123,7 +123,14 @@ function CategoryNode({ cat, nextId, orderedIds, selectedTaskId }: { cat: Catego
       e.preventDefault()
       const pos = catDrop ?? 'before'
       setCatDrop(null); setDragOver(false); setDropAt(null)
-      if (!filtered && catId !== cat.id) a().reorderCategory(catId, pos === 'before' ? cat.id : nextId)
+      if (!filtered && catId !== cat.id) {
+        const beforeId = pos === 'before' ? cat.id : nextId
+        // If the dragged 공종 belongs to a multi-selection, move the whole group at
+        // once (Shift/Ctrl 다중선택), preserving their relative order; else single.
+        const sel = a().selectedCategoryIds
+        if (sel.length > 1 && sel.includes(catId)) a().reorderCategories(sel, beforeId)
+        else a().reorderCategory(catId, beforeId)
+      }
       return
     }
     onLaneTaskDrop(e) // otherwise it's an activity dropped on the lane body
@@ -135,7 +142,10 @@ function CategoryNode({ cat, nextId, orderedIds, selectedTaskId }: { cat: Catego
     setDropAt(null)
     if (filtered) return
     const id = e.dataTransfer.getData('text/hn-task')
-    if (id) a().reorderTask(id, cat.id, null) // dropped on the lane body → end of lane
+    // Row-aware move (matches the chart) → new last row of the lane. Using the row
+    // model keeps the sidebar order and the chart's vertical position in lock-step,
+    // even for preset lanes whose tasks all carry an explicit row.
+    if (id) a().moveTaskToRow(id, cat.id, null, 'below')
   }
 
   function onTaskDragOver(e: RDragEvent<HTMLDivElement>, taskId: string) {
@@ -160,7 +170,9 @@ function CategoryNode({ cat, nextId, orderedIds, selectedTaskId }: { cat: Catego
     // Insert before this row (top half) or before the next row (bottom half).
     const pos = target?.taskId === tasks[idx].id ? target.pos : 'before'
     const beforeId = pos === 'before' ? tasks[idx].id : (tasks[idx + 1]?.id ?? null)
-    a().reorderTask(id, cat.id, beforeId)
+    // Give the task its own row just above the anchor's row (or the lane end when no
+    // anchor) — row-aware so the chart follows the sidebar drop exactly.
+    a().moveTaskToRow(id, cat.id, beforeId, beforeId ? 'above' : 'below')
   }
 
   function commitName() {

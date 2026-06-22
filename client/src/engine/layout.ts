@@ -173,7 +173,16 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     Math.ceil((fs('headerTitle') + fs('headerSub')) * 1.4),
   )
 
-  const title = view.showTitle !== false && project.name ? project.name : ''
+  // Drawing title = 사업명, plus the active 시트명 when the 사업 has more than one
+  // 공정표(예정공정표 + 마일스톤) so each sheet reads as its own titled drawing.
+  const sheetName = project.activeSheet?.name
+  const multiSheet = (project.sheets?.length ?? 0) >= 1
+  // Append the sheet name only when it isn't already the tail of 사업명 (avoids
+  // "…예정공정표 · 예정공정표" when a preset name ends with the sheet name).
+  const showSheet = multiSheet && sheetName && !project.name.endsWith(sheetName)
+  const title = view.showTitle !== false && project.name
+    ? (showSheet ? `${project.name} · ${sheetName}` : project.name)
+    : ''
   const titleHeight = title ? Math.max(TITLE_BAND, Math.ceil(fs('title') * 1.5 + 12)) : 0
   const logoItems = project.branding?.logos ?? []
   const maxLogoH = logoItems.reduce((m, l) => Math.max(m, l.h), 0)
@@ -227,15 +236,25 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     // a lane out in full (visibility is controlled by `hidden`, not `collapsed`).
     const laneY = cursorY
 
-    // One row per 공정 in the user's manual order (= array order within the
-    // lane). The sidebar lists tasks in this same order, so the two views stay
-    // in lock-step and the user can drag an activity to any exact row instead of
-    // the engine auto-packing non-overlapping bars onto a shared row.
+    // Group tasks into visual rows. An explicit Task.row places a task on that
+    // shared line (so a 패키지 like 상부댐 can run 굴착→축조→페이스슬라브→충수 as
+    // adjacent bars on ONE row); a task without a row falls back to a running
+    // index, so an untouched lane stays one-task-per-row exactly as before.
+    // Distinct row values are collapsed to dense visual indices (gaps removed).
+    let auto = 0
+    const rawRowOf = new Map<string, number>()
+    for (const t of catTasks) rawRowOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
+    const distinctRows = [...new Set(catTasks.map((t) => rawRowOf.get(t.id)!))].sort((a, b) => a - b)
+    const denseOf = new Map<number, number>()
+    distinctRows.forEach((r, i) => denseOf.set(r, i))
+    const visualRowCount = Math.max(1, distinctRows.length)
+
     const hasNamed = catTasks.some((t) => (t.subName ?? '').trim() !== '')
     const headerInset = hasNamed ? Math.max(CATEGORY_HEADER_INSET, Math.ceil(fs('categoryLabel') * 1.4)) : 0
 
-    catTasks.forEach((t, row) => {
-      const rowMidY = laneY + headerInset + row * rowHeight + rowHeight / 2
+    for (const t of catTasks) {
+      const vrow = denseOf.get(rawRowOf.get(t.id)!) ?? 0
+      const rowMidY = laneY + headerInset + vrow * rowHeight + rowHeight / 2
       const startX = xOf(t.start)
       const endX = xOf(t.start + t.duration)
       laidTasks.push({
@@ -249,30 +268,35 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
         cy: rowMidY,
         startX,
         endX: t.isMilestone ? startX : endX,
-        subRow: row,
+        subRow: vrow,
         isMilestone: t.isMilestone,
         critical: !!t.critical,
       })
-    })
+    }
 
-    // 세부공종 labels span each maximal run of consecutive same-subName rows
-    // (manual ordering means a group is whatever the user keeps adjacent).
+    // 세부공종 labels: name each visual row by its first sub-named task, then merge
+    // consecutive rows sharing a name (one-task-per-row lanes behave as before).
+    const rowBuckets: string[] = distinctRows.map(() => '')
+    for (const t of catTasks) {
+      const vi = denseOf.get(rawRowOf.get(t.id)!)!
+      const sn = (t.subName ?? '').trim()
+      if (sn && !rowBuckets[vi]) rowBuckets[vi] = sn
+    }
     const subGroups: LaidSubGroup[] = []
-    for (let i = 0; i < catTasks.length;) {
-      const name = (catTasks[i].subName ?? '').trim()
+    for (let i = 0; i < rowBuckets.length;) {
+      const name = rowBuckets[i]
       let j = i + 1
-      while (j < catTasks.length && (catTasks[j].subName ?? '').trim() === name) j++
+      while (j < rowBuckets.length && rowBuckets[j] === name) j++
       if (name !== '') {
         subGroups.push({ name, y: laneY + headerInset + i * rowHeight, height: (j - i) * rowHeight, rows: j - i })
       }
       i = j
     }
 
-    const subRows = Math.max(1, catTasks.length)
-    const laneHeight = headerInset + subRows * rowHeight
+    const laneHeight = headerInset + visualRowCount * rowHeight
     laidCategories.push({
       id: cat.id, name: cat.name, color: cat.color,
-      y: laneY, height: laneHeight, subRows, collapsed: false, subGroups,
+      y: laneY, height: laneHeight, subRows: visualRowCount, collapsed: false, subGroups,
     })
     cursorY += laneHeight
   }

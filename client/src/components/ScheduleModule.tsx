@@ -2,7 +2,7 @@
 // former App body: panels, resizable widths, fullscreen preview, and the
 // schedule-only keyboard shortcuts (active only while this module is mounted).
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { TopBar } from './TopBar'
 import { Sidebar } from './Sidebar'
 import { Resizer } from './Resizer'
@@ -33,6 +33,17 @@ export function ScheduleModule() {
   // Fullscreen preview hides the side panels so the chart can be checked
   // full-bleed before printing.
   const [presentation, setPresentation] = useState(false)
+  // 시트 탭 이름 더블클릭 인라인 편집(렌더는 sheet-tabs 안에서). tabDone ref로
+  // Enter→blur 이중 커밋(undo 2회) 차단 — 사이드바 인라인 편집과 동일 패턴.
+  const [editTab, setEditTab] = useState<{ id: string; text: string } | null>(null)
+  const tabDone = useRef(false)
+  function commitTab() {
+    if (!editTab || tabDone.current) return
+    tabDone.current = true
+    const v = editTab.text.trim()
+    if (v) useEditor.getState().renameSheet(editTab.id, v)
+    setEditTab(null)
+  }
   // 예정공정표 ↔ 마일스톤 시트 탭 (한 사업이 여러 공정표 시트를 가질 때).
   const sheets = useEditor((s) => s.project.sheets)
   const activeSheet = useEditor((s) => s.project.activeSheet)
@@ -111,9 +122,31 @@ export function ScheduleModule() {
           {!presentation && tabs.length > 1 && (
             <div className="sheet-tabs">
               {tabs.map((t) => (
-                <button key={t.id} className={`sheet-tab ${t.id === activeSheet!.id ? 'active' : ''}`} onClick={() => a().switchSheet(t.id)}>
-                  <span className="sheet-tab__ic">{t.role === 'plan' ? '📋' : '◆'}</span>{t.name}
-                </button>
+                editTab?.id === t.id ? (
+                  <input
+                    key={t.id}
+                    autoFocus
+                    value={editTab.text}
+                    style={{ font: 'inherit', padding: '5px 10px', width: 150, border: '1px solid var(--primary)', borderRadius: 7 }}
+                    onChange={(e) => setEditTab({ id: t.id, text: e.target.value })}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') { e.preventDefault(); commitTab() }
+                      else if (e.key === 'Escape') { e.preventDefault(); tabDone.current = true; setEditTab(null) }
+                    }}
+                    onBlur={commitTab}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                ) : (
+                  <button
+                    key={t.id}
+                    className={`sheet-tab ${t.id === activeSheet!.id ? 'active' : ''}`}
+                    onClick={() => a().switchSheet(t.id)}
+                    onDoubleClick={() => { tabDone.current = false; setEditTab({ id: t.id, text: t.name }) }}
+                    title="클릭=전환 · 더블클릭=이름 수정"
+                  >
+                    <span className="sheet-tab__ic">{t.role === 'plan' ? '📋' : '◆'}</span>{t.name}
+                  </button>
+                )
               ))}
             </div>
           )}

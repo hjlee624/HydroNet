@@ -9,7 +9,7 @@ import { dateToDay, dayToDate, daysInMonth, parseISO, toISO } from '../engine/da
 import { computeLayout, fitToPaperView } from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
 import { PALETTE_MAX } from '../types/model'
-import type { LinkType, PaperSize, TextRole } from '../types/model'
+import type { LinkStyle, LinkType, PaperSize, TextRole } from '../types/model'
 import { TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS, FONT_FAMILY_OPTIONS } from '../styles/theme'
 
 export function Inspector({ width }: { width: number }) {
@@ -268,6 +268,16 @@ function LinkInspector({ id }: { id: string }) {
           <label>지연(일)</label>
           <input className="input" type="number" value={link.lag} onChange={(e) => a().updateLink(id, { lag: Number(e.target.value) })} />
         </div>
+      </div>
+      <div className="field">
+        <label>화살표 선 스타일</label>
+        <select className="select" value={link.style ?? 'auto'}
+          onChange={(e) => { const v = e.target.value; a().updateLink(id, { style: v === 'auto' ? undefined : (v as LinkStyle) }) }}>
+          <option value="auto">자동 (주공정 실선·그 외 파선)</option>
+          <option value="solid">─── 실선</option>
+          <option value="dashed">– – – 파선</option>
+          <option value="dotted">····· 점선</option>
+        </select>
       </div>
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteLink(id)}>연결 삭제</button>
     </>

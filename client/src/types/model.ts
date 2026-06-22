@@ -10,6 +10,9 @@ export type PaperSize = 'A4' | 'A3' | 'A2' | 'A1' | 'A0'
 export type Orientation = 'landscape' | 'portrait'
 export type LinkType = 'FS' | 'SS' | 'FF' | 'SF'
 export type LabelPosition = 'above' | 'below' | 'inside'
+/** Dependency-arrow line style (user-editable). Undefined = auto (critical=solid,
+ *  else dashed) for backward compatibility with older saved projects. */
+export type LinkStyle = 'solid' | 'dashed' | 'dotted'
 
 /** Every distinct text element on the drawing that can be individually styled. */
 export type TextRole =
@@ -60,7 +63,10 @@ export interface Task {
   /** Duration in days. Milestones use 0. */
   duration: number
   isMilestone: boolean
-  /** Optional explicit sub-row within the lane; auto-stacked when undefined. */
+  /** Explicit sub-row WITHIN the lane (0-based). Tasks sharing the same row sit on
+   *  one horizontal line, positioned by start/duration — so a package like 상부댐 can
+   *  run 굴착→축조→페이스슬라브→충수 as adjacent bars on a single row. Undefined =
+   *  auto (one task per row, in array order) for backward compatibility. */
   row?: number
   color?: string
   labelPosition?: LabelPosition
@@ -95,6 +101,9 @@ export interface Link {
   type: LinkType
   /** Lag in days (may be negative for lead). */
   lag: number
+  /** Line style of the arrow (실선/파선/점선). Undefined = auto (critical=solid,
+   *  else dashed). User-set via the 연결 속성 inspector. */
+  style?: LinkStyle
 }
 
 /**
@@ -215,6 +224,9 @@ export interface Project {
   name: string
   /** 사업 단계/유형 (없으면 시공으로 간주 — 구버전 호환). */
   kind?: ProjectKind
+  /** 시설물 유형 키(data/facilities.ts FACILITY_TYPES). 새 사업 생성 시 선택하며,
+   *  예정공정표·마일스톤(시공 패키지) 프리셋을 결정한다. 구버전엔 없음. */
+  facility?: string
   /** 패키지 모듈별 기록(키 = ModuleId). 기록형 모듈(품질·안전·문서·원가 등)에서 사용. */
   modules?: Record<string, ModuleRecord[]>
   /** 기준선(베이스라인) 스냅샷. 없으면 미설정(구버전 호환). */

@@ -23,6 +23,8 @@ export interface RoutedLink {
   arrowAngle: number // radians, direction of travel at the head
   critical: boolean
   type: Link['type']
+  /** User-chosen line style (실선/파선/점선); undefined = auto. */
+  style?: Link['style']
 }
 
 const STUB = 12
@@ -94,20 +96,28 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
 
     const sx = src.x + src.dir * STUB
     const dx = dst.x + dst.dir * STUB
+    const sameRow = Math.abs(a.cy - b.cy) < 1
+    // Sequential bars on ONE row (e.g. 굴착→축조→페이스슬라브→충수): source exits
+    // right, target enters left, target sits at/after the source → a clean straight
+    // horizontal hop instead of a hump.
+    const forwardSameRow = sameRow && src.dir === 1 && dst.dir === -1 && dst.x >= src.x - 1
 
-    const pts: Array<[number, number]> = [[src.x, src.y], [sx, src.y]]
-
-    if (src.dir === 1 && dst.dir === -1 && dx > sx) {
-      // Standard downstream FS: route through a vertical mid-line.
-      const midX = (sx + dx) / 2
-      pts.push([midX, src.y], [midX, dstY], [dx, dstY])
+    let pts: Array<[number, number]>
+    if (forwardSameRow) {
+      pts = [[src.x, src.y], [dst.x, dstY]]
     } else {
-      // Wrap-around: drop to a channel between the two rows then approach.
-      const channelY =
-        a.cy === b.cy ? src.y - model.rowHeight * 0.55 : (src.y + dstY) / 2
-      pts.push([sx, channelY], [dx, channelY], [dx, dstY])
+      pts = [[src.x, src.y], [sx, src.y]]
+      if (src.dir === 1 && dst.dir === -1 && dx > sx) {
+        // Standard downstream FS: route through a vertical mid-line.
+        const midX = (sx + dx) / 2
+        pts.push([midX, src.y], [midX, dstY], [dx, dstY])
+      } else {
+        // Wrap-around: drop to a channel between the two rows then approach.
+        const channelY = sameRow ? src.y - model.rowHeight * 0.55 : (src.y + dstY) / 2
+        pts.push([sx, channelY], [dx, channelY], [dx, dstY])
+      }
+      pts.push([dst.x, dstY])
     }
-    pts.push([dst.x, dstY])
 
     const d = orthoPath(pts)
     const head = pts[pts.length - 1]
@@ -125,6 +135,7 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
       arrowAngle,
       critical: !!(a.critical && b.critical),
       type: link.type,
+      style: link.style,
     })
   }
   return routed
