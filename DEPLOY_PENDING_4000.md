@@ -2,6 +2,10 @@
 
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
+## ⏳ 대기 (2026-06-22b — 클라이언트 전용, dist 스왑)
+- **마일스톤 화살표 클릭 개선 + 간단/전문가 토글 제거** — 모두 **클라이언트 변경**(서버 무변경): ① 의존성 화살표를 투명 14px 히트 path(`pointer-events:stroke`)로 감싸 **클릭이 잘 잡히게**(파선/점선 빈칸·마일스톤 화살표 포함) ② 보기 막대의 **간단/전문가 모드 제거** → 그 자리에 **Z·H 단축키 안내**, `uiMode`는 'pro' 고정(고급 기능 항상 노출). `ChartSvg`·`ViewBar`·`index.css`·`store.ts`·`HelpDialog` 변경.
+- **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html` 전달. 검증: tsc·smoke·mount·build·build:single·check-single 통과.
+
 ## ⏳ 대기 (2026-06-22 — 클라이언트 전용, dist 스왑)
 - **시설물 유형 프리셋 + 한 줄 패키지 + 화살표 편집 + 시트 이름 등 사용자 요청 6건** — 모두 **클라이언트 변경**(서버 무변경): ① 시트별 도면 제목 + 시트 탭 더블클릭 rename ② 공종 복붙을 선택 공종 바로 뒤에 삽입 ③ 다중 공종 동시 드래그 이동 ④ 새 사업 창 **시설물 유형 선택**(9종) + 유형별 예정공정표·시공 마일스톤 프리셋(기존 고정 6 건설마일스톤 제거) ⑤ `Task.row`로 한 줄에 여러 공정(굴착→축조→슬라브→충수) + 화살표 옆/아래 라우팅 + **선 스타일(실선/파선/점선)** 편집 ⑥ 양수발전 영상 기반 샘플. 신규 `data/facilities.ts`, 딥리서치 `RESEARCH_facility_packages.json`.
 - **반영 방법**: 위와 동일(`npm run build` → `client/dist` 스왑, 서버 재시작 불필요). 단일 HTML 배포 시 새 `HydroNet.html` 전달. 검증: tsc·smoke·mount·build·build:single·check-single 통과.

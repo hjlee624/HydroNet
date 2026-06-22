@@ -13,6 +13,8 @@ dist-single/
 # Single-file build: bundled KoPub OTFs (large binaries, not committed) + output
 client/public/fonts/*.otf
 /HydroNet.html
+/HydroNet_*.html
+/HydroNet*.html
 
 # Logs (ABS_RULE: program logs live in error.log; keep them local, not in VCS)
 error.log

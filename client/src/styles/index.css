@@ -862,6 +862,14 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
 .viewbar__label { font-size: 11px; font-weight: 600; color: var(--steel); letter-spacing: 0.3px; }
 .viewbar__spacer { flex: 1; min-width: 12px; }
 .viewbar__sep { width: 1px; height: 20px; background: var(--hairline); }
+.viewbar__hint { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--steel); }
+.viewbar__hint-sep { color: var(--hairline-strong); }
+.viewbar__kbd {
+  display: inline-block; min-width: 15px; padding: 1px 5px;
+  border: 1px solid var(--hairline-strong); border-bottom-width: 2px; border-radius: 5px;
+  background: #fff; color: var(--slate);
+  font-size: 10px; font-weight: 700; line-height: 1.4; text-align: center;
+}
 .viewbar__search {
   height: 26px; width: 150px; padding: 0 8px;
   border: 1px solid var(--hairline-strong); border-radius: 6px; background: var(--canvas);

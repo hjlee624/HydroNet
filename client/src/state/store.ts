@@ -353,7 +353,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     navMode: 'edit',
     filter: { ...FILTER_OFF },
     colorMode: (lsGet('hydronet:colorMode', 'category') as ColorMode),
-    uiMode: (lsGet('hydronet:uiMode', 'pro') as UiMode),
+    // 간단/전문가 토글 제거(2026-06-22) → 항상 전체 기능 노출. 과거 'simple'이
+    // localStorage에 남아 기능이 숨겨진 채 갇히지 않도록 'pro'로 고정한다.
+    uiMode: 'pro' as UiMode,
     autoCascade: true,
     dirty: false,
     warnings: [],

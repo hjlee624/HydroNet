@@ -1,12 +1,11 @@
 // Slim view-control bar above the chart: subset filters (declutter a busy chart),
-// bar colour scheme, and the simple/pro (progressive-disclosure) mode toggle.
+// bar colour scheme, and a canvas-tool shortcut hint (Z 줌 / H 화면 이동).
 
 import { useEditor, filterActive } from '../state/store'
 
 export function ViewBar() {
   const filter = useEditor((s) => s.filter)
   const colorMode = useEditor((s) => s.colorMode)
-  const uiMode = useEditor((s) => s.uiMode)
   const a = useEditor.getState
   const active = filterActive(filter)
 
@@ -31,11 +30,13 @@ export function ViewBar() {
 
       <span className="viewbar__sep" />
 
-      <span className="viewbar__label">보기</span>
-      <div className="seg seg--sm" title="간단: 자주 쓰는 기능만 / 전문가: 모든 기능">
-        <button className={uiMode === 'simple' ? 'active' : ''} onClick={() => a().setUiMode('simple')}>간단</button>
-        <button className={uiMode === 'pro' ? 'active' : ''} onClick={() => a().setUiMode('pro')}>전문가</button>
-      </div>
+      {/* Canvas-tool shortcut hint (replaces the old 간단/전문가 toggle). */}
+      <span className="viewbar__label">단축키</span>
+      <span className="viewbar__hint" title="Z: 휠로 확대·축소 / H: 드래그로 화면 이동 / V·Esc: 편집 복귀">
+        <kbd className="viewbar__kbd">Z</kbd> 확대·축소
+        <span className="viewbar__hint-sep">·</span>
+        <kbd className="viewbar__kbd">H</kbd> 화면 이동
+      </span>
     </div>
   )
 }

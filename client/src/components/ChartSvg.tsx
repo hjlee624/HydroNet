@@ -209,17 +209,32 @@ function ChartSvgBase({
               : r.style === 'dotted' ? '1.5 3.5'
                 : (crit ? undefined : '5 3')
           return (
-            <path
-              key={r.id}
-              d={r.d}
-              fill="none"
-              stroke={selected ? colors.primary : crit ? colors.critical : colors.steel}
-              strokeWidth={selected ? 2.4 : crit ? 2 : 1.3}
-              strokeDasharray={dash}
-              markerEnd={`url(#${crit ? 'hn-arrow-crit' : 'hn-arrow'})`}
-              style={{ cursor: 'pointer' }}
-              onClick={(e) => { e.stopPropagation(); onLinkClick(e, r.id) }}
-            />
+            <g key={r.id}>
+              {/* Invisible fat hit area: pointer-events:'stroke' makes the WHOLE
+                  route clickable — including the gaps between dashes/dots — so a
+                  ~14px target replaces the 1.3px visible line that was nearly
+                  impossible to hit (esp. arrows landing on milestone diamonds).
+                  Hidden from export; the visible path below ignores pointers. */}
+              <path
+                d={r.d}
+                fill="none"
+                stroke="transparent"
+                strokeWidth={14}
+                strokeLinecap="round"
+                data-export-hide="1"
+                style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
+                onClick={(e) => { e.stopPropagation(); onLinkClick(e, r.id) }}
+              />
+              <path
+                d={r.d}
+                fill="none"
+                stroke={selected ? colors.primary : crit ? colors.critical : colors.steel}
+                strokeWidth={selected ? 2.4 : crit ? 2 : 1.3}
+                strokeDasharray={dash}
+                markerEnd={`url(#${crit ? 'hn-arrow-crit' : 'hn-arrow'})`}
+                style={{ pointerEvents: 'none' }}
+              />
+            </g>
           )
         })}
       </g>
