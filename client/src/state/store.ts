@@ -12,7 +12,7 @@ import type {
   Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, RainySeason, Sheet, Task, TextRole, TextStyle, ViewSettings,
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
-import { applyCascade, computeSchedule, reschedule } from '../engine/scheduling'
+import { applyCascade, computeSchedule, linkConstrainedStart, reschedule } from '../engine/scheduling'
 import { fitToPaperView } from '../engine/layout'
 import { paperMm } from '../engine/paper'
 import { daysInMonth, doyToMonthDay, monthDayToDoy, toISO } from '../engine/dates'
@@ -86,6 +86,9 @@ export interface RecalcReport {
 export interface EditorState {
   project: Project
   selectedTaskId: ID | null
+  /** 다중 선택된 공정 id들. 단일 선택이면 [그 id], 미선택이면 []. 막대 강조에 사용하고,
+   *  2개 이상이면 그중 하나를 드래그할 때 수평으로 함께 이동한다. */
+  selectedTaskIds: ID[]
   selectedLinkId: ID | null
   selectedCategoryId: ID | null
   /** 다중 선택된 공종 id(표시 순서). 단일 선택이면 [그 id], 미선택이면 []. */
@@ -128,6 +131,10 @@ export interface EditorState {
   setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
   toggleMilestone: (id: ID) => void
+  /** DUMMY(가상/연결) 공정 표시 토글 — 막대를 공종색 60% 투명으로 렌더(우클릭/인스펙터). */
+  toggleDummy: (id: ID) => void
+  /** 다중 선택된 공정들을 한 번에 수평 이동(라이브 드래그). gesture는 이미 스냅샷됨. */
+  setTasksStartLive: (moves: Array<{ id: ID; start: number }>) => void
   /** 공정을 다른 줄(row)로 보낸다 — 차트 세로 드래그 + 사이드바 드롭. `anchorId` 공정의 줄에 합치거나
    *  (merge) 그 위/아래(above/below)에 새 줄을 만든다. 같은 줄의 공정들은 시작일 순으로
    *  옆으로 배치돼 한 패키지를 한 줄로 표현할 수 있다(굴착→축조→…). */
@@ -203,6 +210,10 @@ export interface EditorState {
 
   // selection / view
   selectTask: (id: ID | null) => void
+  /** 공정 다중 선택을 토글(Ctrl/⌘+클릭) — id를 누적/해제한다. */
+  toggleTaskSelection: (id: ID) => void
+  /** 공정 다중 선택을 통째로 설정(표시 순서). */
+  selectTasks: (ids: ID[]) => void
   selectLink: (id: ID | null) => void
   selectCategory: (id: ID | null) => void
   /** 다중 선택 설정(ids는 표시 순서, anchor는 Shift 범위선택의 기준 공종). */
@@ -306,6 +317,15 @@ function buildRecalcReport(
   return { kind, changes, totalMoved: changes.length, startDate: after.startDate }
 }
 
+/** Move 후행 공정 `toId` onto the exact start implied by its incoming
+ *  FS/SS/FF/SF + lag links (양방향 스냅). No-op when it has no predecessor. */
+function snapSuccessor(p: Project, toId: ID): void {
+  const s = linkConstrainedStart(p.tasks, p.links, toId)
+  if (s == null) return
+  const t = p.tasks.find((x) => x.id === toId)
+  if (t) t.start = s
+}
+
 export const useEditor = create<EditorState>()((set, get) => {
   /** Apply a mutation to the project with history + reschedule + autosave. */
   function commit(
@@ -343,6 +363,7 @@ export const useEditor = create<EditorState>()((set, get) => {
   return {
     project: initial,
     selectedTaskId: null,
+    selectedTaskIds: [],
     selectedLinkId: null,
     selectedCategoryId: null,
     selectedCategoryIds: [],
@@ -441,6 +462,15 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (t) t.start = Math.max(0, Math.round(startDay))
       }, { history: false, cascade: true })
     },
+    setTasksStartLive: (moves) => {
+      // 다중 선택 공정을 한 제스처로 동시 수평 이동(cascade 1회). gesture 스냅샷은 호출 측.
+      commit((p) => {
+        for (const m of moves) {
+          const t = p.tasks.find((x) => x.id === m.id)
+          if (t) t.start = Math.max(0, Math.round(m.start))
+        }
+      }, { history: false, cascade: true })
+    },
     setTaskSpanLive: (id, startDay, duration) => {
       // Live edge-resize of a bar (start + duration). Gesture already snapshotted.
       commit((p) => {
@@ -456,7 +486,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         p.tasks = p.tasks.filter((t) => t.id !== id)
         p.links = p.links.filter((l) => l.from !== id && l.to !== id)
       })
-      set((s) => ({ selectedTaskId: s.selectedTaskId === id ? null : s.selectedTaskId }))
+      set((s) => ({
+        selectedTaskId: s.selectedTaskId === id ? null : s.selectedTaskId,
+        selectedTaskIds: s.selectedTaskIds.filter((x) => x !== id),
+      }))
     },
     toggleMilestone: (id) => {
       commit((p) => {
@@ -468,6 +501,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         }
       }, { cascade: true })
     },
+    toggleDummy: (id) => commit((p) => {
+      const t = p.tasks.find((x) => x.id === id)
+      if (t) t.isDummy = !t.isDummy
+    }),
     moveTaskToRow: (id, targetCategoryId, anchorId, mode, opts) => {
       commit((p) => {
         const moving = p.tasks.find((t) => t.id === id)
@@ -667,13 +704,23 @@ export const useEditor = create<EditorState>()((set, get) => {
       const exists = get().project.links.some((l) => l.from === from && l.to === to)
       if (exists) { logWarn('이미 동일한 연결이 존재합니다.'); return }
       const id = `l-${nanoid(8)}`
-      commit((p) => { p.links.push({ id, from, to, type, lag }) }, { cascade: true })
+      commit((p) => {
+        p.links.push({ id, from, to, type, lag })
+        snapSuccessor(p, to) // place 후행 공정 exactly on the new 선후행+lag
+      }, { cascade: true })
       set({ selectedLinkId: id })
     },
-    updateLink: (id, patch) => commit((p) => {
-      const l = p.links.find((x) => x.id === id)
-      if (l) Object.assign(l, patch)
-    }, { cascade: true }),
+    updateLink: (id, patch) => {
+      // lag/type 변경은 후행 공정 위치를 양방향으로 다시 맞춘다(스냅). style 등
+      // 비-일정 변경은 일정·재계산을 건드리지 않는다.
+      const moves = 'lag' in patch || 'type' in patch
+      commit((p) => {
+        const l = p.links.find((x) => x.id === id)
+        if (!l) return
+        Object.assign(l, patch)
+        if (moves) snapSuccessor(p, l.to)
+      }, { cascade: moves })
+    },
     deleteLink: (id) => {
       commit((p) => { p.links = p.links.filter((l) => l.id !== id) })
       set((s) => ({ selectedLinkId: s.selectedLinkId === id ? null : s.selectedLinkId }))
@@ -784,8 +831,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     setAutoCascade: (v) => set({ autoCascade: v }),
     closeRecalcReport: () => set({ recalcReport: null }),
 
-    selectTask: (id) => set({ selectedTaskId: id, selectedLinkId: null, selectedTextRole: null }),
-    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTextRole: null }),
+    selectTask: (id) => set({ selectedTaskId: id, selectedTaskIds: id ? [id] : [], selectedLinkId: null, selectedTextRole: null }),
+    toggleTaskSelection: (id) => set((s) => {
+      const has = s.selectedTaskIds.includes(id)
+      const ids = has ? s.selectedTaskIds.filter((x) => x !== id) : [...s.selectedTaskIds, id]
+      return { selectedTaskIds: ids, selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null }
+    }),
+    selectTasks: (ids) => set({ selectedTaskIds: [...ids], selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null }),
+    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTaskIds: [], selectedTextRole: null }),
     selectCategory: (id) => set({ selectedCategoryId: id, selectedCategoryIds: id ? [id] : [] }),
     selectCategories: (ids, anchor) => set({ selectedCategoryIds: ids, selectedCategoryId: anchor }),
     copyCategories: (ids) => {
@@ -839,7 +892,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selectedCategoryIds: newIds, selectedCategoryId: newIds[newIds.length - 1] ?? null })
       logInfo(`공종 ${clip.categories.length}개를 붙여넣었습니다.`)
     },
-    selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedLinkId: null }),
+    selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedTaskIds: [], selectedLinkId: null }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
     setNavMode: (m) => set({ navMode: m }),
     setFilter: (patch) => set((s) => ({ filter: { ...s.filter, ...patch } })),

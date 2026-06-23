@@ -2,7 +2,7 @@
 // routing. Verifies there are no exceptions, no NaN geometry, and that the
 // critical spine and milestones come out as expected. Run: npx tsx scripts/smoke.ts
 import { createSampleProject } from '../src/data/sampleProject'
-import { computeSchedule, applyCascade } from '../src/engine/scheduling'
+import { computeSchedule, applyCascade, linkConstrainedStart } from '../src/engine/scheduling'
 import { computeLayout, fitToPaperView } from '../src/engine/layout'
 import { PROJECT_TYPES, makeProject } from '../src/data/templates'
 import { FACILITY_TYPES, facilitySchedule } from '../src/data/facilities'
@@ -220,6 +220,51 @@ console.log('')
   check(kMismatch.baseline === null, '다른 공정표에서 박제한 기준선은 표류 비교 안 함(null)')
   const kMatch = projectKpis({ ...project, tasks: shifted, activeSheet: active, baseline: { ...base, sheetId: 'sh-plan' } }, asOf)
   check(kMatch.baseline !== null && kMatch.baseline.slippedCount >= 1, '같은 공정표 기준선은 표류 계산')
+}
+
+// 12. 지연일수(lag) 정확 반영 — linkConstrainedStart가 FS/SS/FF/SF + lag를 정확히 산출
+{
+  const mk = (id: string, start: number, duration: number): any => ({ id, categoryId: 'c', name: id, start, duration, isMilestone: false })
+  const pred = mk('p', 10, 20) // EF = 30
+  const succ = mk('s', 100, 5)
+  const tasks = [pred, succ]
+  const L = 4
+  const at = (type: string) => linkConstrainedStart(tasks, [{ id: 'l', from: 'p', to: 's', type: type as any, lag: L }], 's')
+  console.log('\n[Lag] FS/SS/FF/SF + lag 정확 산출(양방향 스냅)')
+  check(at('FS') === 30 + L, `FS+${L}: 후행 시작 = 선행 종료+lag (${at('FS')}=${30 + L})`)
+  check(at('SS') === 10 + L, `SS+${L}: 후행 시작 = 선행 시작+lag (${at('SS')}=${10 + L})`)
+  check(at('FF') === 30 + L - 5, `FF+${L}: 후행 종료 = 선행 종료+lag (start=${at('FF')})`)
+  check(at('SF') === 10 + L - 5, `SF+${L}: 후행 종료 = 선행 시작+lag (start=${at('SF')})`)
+  check(linkConstrainedStart(tasks, [{ id: 'l', from: 'p', to: 's', type: 'FS', lag: 0 }], 's') === 30,
+    'lag 0이면 후행이 선행 종료(30)로 당겨짐(양방향)')
+  const p2 = mk('p2', 50, 10) // EF=60
+  const multi = linkConstrainedStart([pred, p2, succ], [
+    { id: 'l1', from: 'p', to: 's', type: 'FS', lag: 0 },
+    { id: 'l2', from: 'p2', to: 's', type: 'FS', lag: 0 },
+  ], 's')
+  check(multi === 60, `다중 선행은 가장 늦은 제약으로 결정 (${multi}=60)`)
+  check(linkConstrainedStart(tasks, [], 's') === null, '선행 없으면 null(스냅 안 함)')
+}
+
+// 13. 화살표 수렴 — 한 막대로 들어오는 여러 화살표는 분산(fan-out) 없이 같은 지점으로 수렴
+{
+  const base: any = makeProject('construction', 'concrete-gravity')
+  const cat = base.categories[0].id
+  base.tasks = [
+    { id: 'x1', categoryId: cat, name: 'A', start: 0, duration: 20, isMilestone: false, row: 0 },
+    { id: 'x2', categoryId: cat, name: 'B', start: 0, duration: 20, isMilestone: false, row: 1 },
+    { id: 'x3', categoryId: cat, name: 'C', start: 60, duration: 20, isMilestone: false, row: 2 },
+  ]
+  base.links = [
+    { id: 'la', from: 'x1', to: 'x3', type: 'FS', lag: 0 },
+    { id: 'lb', from: 'x2', to: 'x3', type: 'FS', lag: 0 },
+  ]
+  const m = computeLayout(base)
+  const rr = routeLinks(m, base.links)
+  const toC = rr.filter((l) => l.to === 'x3')
+  console.log('\n[Arrows] 한 막대로 들어오는 화살표 수렴(분산 없음)')
+  check(toC.length === 2 && Math.abs(toC[0].arrowY - toC[1].arrowY) < 0.01,
+    `여러 화살표가 같은 Y(막대 중심)로 수렴 (${toC.map((l) => l.arrowY.toFixed(1)).join(' / ')})`)
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

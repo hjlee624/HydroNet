@@ -83,6 +83,10 @@ export interface Task {
   forceCritical?: boolean
   /** 실적 진척률 0–100 (진척·실적 모듈). undefined = 미입력(0). */
   progress?: number
+  /** DUMMY(가상/연결) 공정 표시 — 막대를 공종색 60% 투명(opacity 0.4)으로 칠해
+   *  실제 작업이 아닌 연결/대기 구간임을 나타낸다. CPM 계산엔 일반 공정과 동일하게
+   *  참여(기간·선후행 유지). undefined/false = 일반 공정. */
+  isDummy?: boolean
 
   // ── Computed by the CPM engine (never persisted as authoritative) ──
   es?: number // early start

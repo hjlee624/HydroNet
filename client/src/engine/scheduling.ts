@@ -205,6 +205,32 @@ export function reschedule(tasks: Task[], links: Link[]): { tasks: Task[]; warni
   return { tasks: out, warnings: g.warnings }
 }
 
+/**
+ * Earliest feasible `start` of `toId` implied by ALL of its incoming links
+ * (the binding one wins via max), using each predecessor's current `start` as
+ * its ES/EF. Returns null when the task has no usable predecessor.
+ *
+ * Used to SNAP a successor exactly onto its FS/SS/FF/SF + lag relationship the
+ * moment a link is created or its lag/type is edited — so changing the lag moves
+ * the bar in BOTH directions (the plain cascade only ever pushes forward, which
+ * is why reducing a lag never tightened the gap).
+ */
+export function linkConstrainedStart(tasks: Task[], links: Link[], toId: ID): number | null {
+  const byId = new Map<ID, Task>(tasks.map((t) => [t.id, t]))
+  const to = byId.get(toId)
+  if (!to) return null
+  let es = -Infinity
+  for (const l of links) {
+    if (l.to !== toId || l.from === toId) continue
+    const pred = byId.get(l.from)
+    if (!pred) continue
+    // Anchor the predecessor on its own bar position (start-based ES/EF).
+    const p: Task = { ...pred, es: pred.start, ef: pred.start + pred.duration }
+    es = Math.max(es, linkEarliestStart(p, to, l))
+  }
+  return Number.isFinite(es) ? Math.max(0, Math.round(es)) : null
+}
+
 /** Convenience: ordered list of task ids on a critical path (for highlighting). */
 export function criticalTaskIds(tasks: Task[]): Set<ID> {
   return new Set(tasks.filter((t) => t.critical).map((t) => t.id))

@@ -74,13 +74,6 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
   const map = laidTaskMap(model)
   const routed: RoutedLink[] = []
 
-  // Fan-out offsets so multiple links sharing a target don't stack exactly.
-  const targetGroups = new Map<string, Link[]>()
-  for (const l of links) {
-    if (!targetGroups.has(l.to)) targetGroups.set(l.to, [])
-    targetGroups.get(l.to)!.push(l)
-  }
-
   for (const link of links) {
     const a = map.get(link.from)
     const b = map.get(link.to)
@@ -89,10 +82,11 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
     const src = sourceAnchor(a, link.type)
     const dst = targetAnchor(b, link.type)
 
-    const group = targetGroups.get(link.to)!
-    const idx = group.indexOf(link)
-    const spread = group.length > 1 ? (idx - (group.length - 1) / 2) * 6 : 0
-    const dstY = dst.y + spread
+    // No per-link fan-out: every arrow sharing a target converges on that bar's
+    // centre (and leaves from the source's centre), so multiple arrows into/out of
+    // one bar read as a single clean junction — vertical/horizontal segments stay
+    // aligned instead of stepping downward.
+    const dstY = dst.y
 
     const sx = src.x + src.dir * STUB
     const dx = dst.x + dst.dir * STUB

@@ -166,6 +166,15 @@ function TaskInspector({ id }: { id: string }) {
           마일스톤(◆)으로 표시
         </label>
       </div>
+      {!task.isMilestone && (
+        <div className="field">
+          <label className="toggle">
+            <input type="checkbox" checked={!!task.isDummy} onChange={() => a().toggleDummy(id)} />
+            DUMMY(가상·연결) 공정 — 공종색 60% 투명
+          </label>
+          <p className="note">막대 위에서 <b>우클릭</b>으로도 켜고 끌 수 있습니다.</p>
+        </div>
+      )}
       {pro && (
         <div className="field">
           <label>주공정(Critical Path)</label>

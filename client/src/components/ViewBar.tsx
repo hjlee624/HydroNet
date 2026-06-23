@@ -32,8 +32,8 @@ export function ViewBar() {
 
       {/* Canvas-tool shortcut hint (replaces the old 간단/전문가 toggle). */}
       <span className="viewbar__label">단축키</span>
-      <span className="viewbar__hint" title="Z: 휠로 확대·축소 / H: 드래그로 화면 이동 / V·Esc: 편집 복귀">
-        <kbd className="viewbar__kbd">Z</kbd> 확대·축소
+      <span className="viewbar__hint" title="Ctrl+휠: 차트 확대·축소(커서 기준) / H: 드래그로 화면 이동 / V·Esc: 편집 복귀 / 빈 곳 드래그: 막대 다중선택">
+        <kbd className="viewbar__kbd">Ctrl</kbd>+휠 확대·축소
         <span className="viewbar__hint-sep">·</span>
         <kbd className="viewbar__kbd">H</kbd> 화면 이동
       </span>

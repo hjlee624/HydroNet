@@ -899,6 +899,15 @@ textarea.input { height: auto; padding: 8px 10px; resize: vertical; }
   z-index: 6;
 }
 
+/* Rubber-band marquee while drag-selecting bars. */
+.marquee {
+  position: absolute;
+  border: 1.5px dashed var(--primary);
+  background: rgba(250, 81, 17, 0.08);
+  pointer-events: none;
+  z-index: 7;
+}
+
 /* ── Inline rename (double-click a bar/milestone) ── */
 .inline-rename {
   position: absolute;

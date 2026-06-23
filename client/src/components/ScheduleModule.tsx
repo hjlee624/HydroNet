@@ -99,10 +99,10 @@ export function ScheduleModule() {
         if (s.selectedTaskId) { e.preventDefault(); s.deleteTask(s.selectedTaskId) }
         else if (s.selectedLinkId) { e.preventDefault(); s.deleteLink(s.selectedLinkId) }
       }
-      // Photoshop-style canvas tools: Z = zoom (wheel), H = pan (drag), V/Esc = edit.
+      // 캔버스 도구: H = 화면 이동(드래그), V/Esc = 편집 복귀. 확대/축소는 (불편하던)
+      // Z 모드 대신 Ctrl+휠(커서 기준)로 동작한다 — ChartCanvas onWheel.
       if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const k = e.key.toLowerCase()
-        if (k === 'z') { e.preventDefault(); s.setNavMode('zoom'); return }
         if (k === 'h') { e.preventDefault(); s.setNavMode('pan'); return }
         if (k === 'v') { e.preventDefault(); s.setNavMode('edit'); return }
       }

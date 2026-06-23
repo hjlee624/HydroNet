@@ -10,7 +10,7 @@
 import { memo } from 'react'
 import type { CSSProperties, MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
 import type { Project, TextRole } from '../types/model'
-import type { LayoutModel } from '../engine/layout'
+import type { LayoutModel, LaidTask } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
 import { colors, fonts, resolveTextStyle } from '../styles/theme'
 import { dayToDate, toISO } from '../engine/dates'
@@ -22,6 +22,8 @@ interface Props {
   routed: RoutedLink[]
   project: Project
   selectedTaskId: string | null
+  /** All selected task ids (단일=[그 id], 다중선택 시 여러 개). Drives bar highlight. */
+  selectedTaskIds: string[]
   selectedLinkId: string | null
   selectedTextRole: TextRole | null
   showCriticalPath: boolean
@@ -37,6 +39,8 @@ interface Props {
   onLogoResizePointerDown: (e: RPointerEvent, index: number) => void
   onTaskClick: (e: RMouseEvent, id: string) => void
   onTaskDoubleClick: (e: RMouseEvent, id: string) => void
+  /** 우클릭 → DUMMY(가상/연결) 공정 토글. */
+  onTaskContextMenu: (e: RMouseEvent, id: string) => void
   /** 막대 아래 공기(기간) 텍스트 더블클릭 → 인라인 편집. */
   onDurationDoubleClick: (id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
@@ -50,15 +54,41 @@ function diamond(cx: number, cy: number, r: number): string {
 }
 
 function ChartSvgBase({
-  model, routed, project, selectedTaskId, selectedLinkId, selectedTextRole,
+  model, routed, project, selectedTaskId, selectedTaskIds, selectedLinkId, selectedTextRole,
   showCriticalPath, showGrid, colorMode = 'category', todayX, linkingGhost,
   onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
-  onTaskClick, onTaskDoubleClick, onDurationDoubleClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
+  onTaskClick, onTaskDoubleClick, onTaskContextMenu, onDurationDoubleClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
   const chartBottom = chartTop + chartHeight
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
+  const selSet = new Set(selectedTaskIds)
+  const singleSel = selectedTaskIds.length <= 1
+  // DUMMY opacity: "투명도 60%" → 60% transparent → 0.4 opaque.
+  const DUMMY_OPACITY = 0.4
+
+  // Auto DUMMY fill: the empty span between consecutive 공정 sharing one row (한 줄
+  // 패키지의 공정 사이 빈 구간) is filled with the lane colour at low opacity so the
+  // package reads as one continuous band. Only multi-task rows produce gaps.
+  const gapRects: Array<{ x: number; y: number; w: number; h: number; color: string }> = []
+  {
+    const byRow = new Map<string, LaidTask[]>()
+    for (const lt of model.tasks) {
+      if (lt.isMilestone) continue
+      const key = `${lt.categoryId}#${lt.subRow}`
+      const arr = byRow.get(key); if (arr) arr.push(lt); else byRow.set(key, [lt])
+    }
+    for (const arr of byRow.values()) {
+      if (arr.length < 2) continue
+      arr.sort((a, b) => a.startX - b.startX)
+      for (let i = 1; i < arr.length; i++) {
+        const prev = arr[i - 1], cur = arr[i]
+        const gap = cur.startX - prev.endX
+        if (gap > 1.5) gapRects.push({ x: prev.endX, y: prev.y, w: gap, h: prev.h, color: laneColor(model, prev.categoryId) })
+      }
+    }
+  }
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -197,6 +227,17 @@ function ChartSvgBase({
         })}
       </g>
 
+      {/* auto DUMMY fill — faded lane-colour band in the gaps between consecutive
+          공정 on one row (한 줄 패키지가 끊김 없이 이어져 보이도록). Exported too. */}
+      {gapRects.length > 0 && (
+        <g>
+          {gapRects.map((r, i) => (
+            <rect key={`gap-${i}`} x={r.x} y={r.y} width={r.w} height={r.h} rx={2}
+              fill={r.color} fillOpacity={DUMMY_OPACITY} pointerEvents="none" />
+          ))}
+        </g>
+      )}
+
       {/* dependency arrows (under bars' selection ring, over grid) */}
       <g>
         {routed.map((r) => {
@@ -250,10 +291,13 @@ function ChartSvgBase({
           // do nothing. 'crit' still gates the CP-overlay flourishes (halo, enlarged
           // diamonds) that legitimately follow the overlay toggle.
           const emphasizeCrit = colorMode === 'critical' ? lt.critical : crit
-          const selected = t.id === selectedTaskId
-          const fill = emphasizeCrit ? colors.critical
+          const selected = selSet.has(t.id)
+          const isDummy = !!t.isDummy && !lt.isMilestone
+          const baseFill = emphasizeCrit ? colors.critical
             : colorMode === 'critical' ? '#CFC8B8' // muted so the critical spine pops
               : (t.color ?? laneColor(model, lt.categoryId))
+          // DUMMY 공정은 항상 공종색을 60% 투명(0.4)으로 칠한다.
+          const fill = isDummy ? laneColor(model, lt.categoryId) : baseFill
           if (lt.isMilestone) {
             // Critical milestones are enlarged with a red halo so the critical
             // path reads clearly even at the diamond markers.
@@ -262,6 +306,7 @@ function ChartSvgBase({
               <g key={t.id}
                 onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}
                 onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
+                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}
                 style={{ cursor: 'pointer' }}>
                 <text x={lt.cx} y={lt.cy - r - 4} textAnchor="middle"
                   {...roleAttrs('milestoneName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
@@ -285,7 +330,8 @@ function ChartSvgBase({
           return (
             <g key={t.id}
               onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}
-              onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}>
+              onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
+              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}>
               <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                 {t.name}
               </text>
@@ -294,8 +340,10 @@ function ChartSvgBase({
                 data-task-id={t.id}
                 x={lt.x} y={lt.y} width={lt.w} height={lt.h} rx={3}
                 fill={fill}
-                stroke={selected ? colors.primary : emphasizeCrit ? colors.critical : 'rgba(0,0,0,0.18)'}
+                fillOpacity={isDummy ? DUMMY_OPACITY : undefined}
+                stroke={selected ? colors.primary : emphasizeCrit ? colors.critical : isDummy ? laneColor(model, lt.categoryId) : 'rgba(0,0,0,0.18)'}
                 strokeWidth={selected ? 2.4 : 1}
+                strokeDasharray={isDummy && !selected ? '4 3' : undefined}
                 onPointerDown={(e) => onTaskPointerDown(e, t.id)}
               />
               <text
@@ -305,8 +353,9 @@ function ChartSvgBase({
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
-              {/* resize grips (drag to change duration) + link anchor (drag to connect) */}
-              {selected && (
+              {/* resize grips (drag to change duration) + link anchor (drag to connect) —
+                  primary single selection only (다중선택 그룹 이동 중엔 숨김). */}
+              {t.id === selectedTaskId && singleSel && (
                 <>
                   <rect
                     data-export-hide="1"

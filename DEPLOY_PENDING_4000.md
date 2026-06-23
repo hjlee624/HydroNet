@@ -2,6 +2,10 @@
 
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
+## ⏳ 대기 (2026-06-23 — 클라이언트 전용, dist 스왑)
+- **CPM·인터랙션 8건** — 모두 **클라이언트 변경**(서버 무변경): ① 지연일수(lag) FS/SS/FF/SF 정확 양방향 스냅 ② 화살표/막대 드래그 시 화면 가장자리 자동 스크롤(화면 밖 공종 도달) ③ DUMMY 막대(공종색 60% 투명 — 우클릭/인스펙터 명시 + 같은 줄 공정 사이 빈구간 자동) ④ 공정 다중선택(Ctrl/⌘+클릭 + 빈 곳 드래그 마키) → 수평 그룹 이동 ⑤ Z 줌모드 제거 → **Ctrl+휠 줌**(브라우저 페이지 줌 차단, 차트만) ⑥ 한 막대로 들어오는 화살표 중심 수렴(fan-out 제거). `scheduling/routing/store/ChartSvg/ChartCanvas/Inspector/ScheduleModule/ViewBar/HelpDialog/index.css` 변경.
+- **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html` 전달. 검증: tsc·smoke·mount·build·build:single·check-single 통과.
+
 ## ⏳ 대기 (2026-06-22b — 클라이언트 전용, dist 스왑)
 - **마일스톤 화살표 클릭 개선 + 간단/전문가 토글 제거** — 모두 **클라이언트 변경**(서버 무변경): ① 의존성 화살표를 투명 14px 히트 path(`pointer-events:stroke`)로 감싸 **클릭이 잘 잡히게**(파선/점선 빈칸·마일스톤 화살표 포함) ② 보기 막대의 **간단/전문가 모드 제거** → 그 자리에 **Z·H 단축키 안내**, `uiMode`는 'pro' 고정(고급 기능 항상 노출). `ChartSvg`·`ViewBar`·`index.css`·`store.ts`·`HelpDialog` 변경.
 - **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html` 전달. 검증: tsc·smoke·mount·build·build:single·check-single 통과.

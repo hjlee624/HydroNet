@@ -16,6 +16,7 @@ import { ChartSvg, type LinkingGhost } from './ChartSvg'
 
 type Drag =
   | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
+  | { kind: 'moveGroup'; base: Array<{ id: string; start: number }>; grabDay: number; started: boolean }
   | { kind: 'resize'; taskId: string; edge: 'start' | 'end'; startDay: number; endDay: number; started: boolean }
   | { kind: 'logo'; index: number; rightEdge: number; ratio: number; started: boolean }
   | { kind: 'link'; fromId: string }
@@ -27,6 +28,7 @@ export function ChartCanvas() {
   const zoom = useEditor((s) => s.zoom)
   const navMode = useEditor((s) => s.navMode)
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
+  const selectedTaskIds = useEditor((s) => s.selectedTaskIds)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
   const selectedTextRole = useEditor((s) => s.selectedTextRole)
   const linking = useEditor((s) => s.linking)
@@ -40,6 +42,12 @@ export function ChartCanvas() {
   const zoomAnchor = useRef<{ cX: number; cY: number; clientX: number; clientY: number; z: number } | null>(null)
   const renameDone = useRef(false)
   const durDone = useRef(false)
+  // Edge auto-scroll while dragging a bar/link past the visible area, plus the last
+  // pointer position (so the gesture re-applies as the view scrolls) and a guard so
+  // the click that ends a drag doesn't collapse a multi-selection.
+  const lastClient = useRef<{ x: number; y: number } | null>(null)
+  const autoScrollRef = useRef<number | null>(null)
+  const movedRef = useRef(false)
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
   const [panning, setPanning] = useState(false)
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
@@ -48,6 +56,9 @@ export function ChartCanvas() {
   // Live "drop here" hint while dragging a bar vertically: a line for a new row
   // (above/below) or a highlighted band for merging onto an existing row.
   const [reorderHint, setReorderHint] = useState<{ lineY: number; merge: boolean } | null>(null)
+  // Rubber-band (marquee) rectangle in content coords while drag-selecting bars.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const marqueeRef = useRef<{ x0: number; y0: number } | null>(null)
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
@@ -122,7 +133,10 @@ export function ChartCanvas() {
     if (!wrap) return
     function onWheel(e: WheelEvent) {
       const st = useEditor.getState()
-      if (st.navMode !== 'zoom') return // leave normal scroll alone
+      // Ctrl(⌘)+휠 = 차트만 커서 기준 확대/축소. preventDefault로 Chrome 등의 페이지
+      // 전체 줌(Ctrl+휠)을 막아 이 페이지에선 마일스톤 차트만 확대/축소된다. 트랙패드
+      // 핀치도 ctrlKey로 들어와 동일하게 동작. 일반 휠은 평소대로 스크롤.
+      if (!(e.ctrlKey || e.metaKey)) return
       e.preventDefault()
       const paper = paperRef.current
       if (!paper) return
@@ -138,6 +152,10 @@ export function ChartCanvas() {
     wrap.addEventListener('wheel', onWheel, { passive: false })
     return () => wrap.removeEventListener('wheel', onWheel)
   }, [])
+
+  // Cancel any running edge auto-scroll loop if we unmount mid-drag (stopAutoScroll
+  // reads the stable ref, so identity across renders doesn't matter).
+  useEffect(() => () => stopAutoScroll(), [])
 
   // ── Hand-tool panning (navMode === 'pan') ──
   function onWrapPointerDown(e: RPointerEvent) {
@@ -163,6 +181,51 @@ export function ChartCanvas() {
     setPanning(false)
   }
 
+  // ── Rubber-band marquee select (edit mode): drag on empty canvas to draw a
+  //    rectangle; every bar/milestone it touches becomes the multi-selection,
+  //    which can then be dragged horizontally as a group. Bars stop their own
+  //    pointerdown, so reaching here means an empty spot. ──
+  function onPaperPointerDown(e: RPointerEvent) {
+    if (useEditor.getState().navMode !== 'edit') return // pan mode handled by the wrap
+    if (e.button !== 0) return
+    e.preventDefault() // suppress native text/drag-select while rubber-banding
+    const { x, y } = toContent(e.clientX, e.clientY)
+    marqueeRef.current = { x0: x, y0: y }
+    movedRef.current = false
+    window.addEventListener('pointermove', onMarqueeMove)
+    window.addEventListener('pointerup', onMarqueeUp)
+  }
+  function marqueeRect(s: { x0: number; y0: number }, clientX: number, clientY: number) {
+    const { x, y } = toContent(clientX, clientY)
+    return { x: Math.min(s.x0, x), y: Math.min(s.y0, y), w: Math.abs(x - s.x0), h: Math.abs(y - s.y0) }
+  }
+  function onMarqueeMove(e: PointerEvent) {
+    const s = marqueeRef.current
+    if (!s) return
+    const r = marqueeRect(s, e.clientX, e.clientY)
+    if (r.w > 3 || r.h > 3) movedRef.current = true
+    setMarquee(r)
+  }
+  function onMarqueeUp(e: PointerEvent) {
+    window.removeEventListener('pointermove', onMarqueeMove)
+    window.removeEventListener('pointerup', onMarqueeUp)
+    const started = marqueeRef.current
+    marqueeRef.current = null
+    setMarquee(null)
+    if (!started || !movedRef.current) return // a plain click → background click clears
+    const r = marqueeRect(started, e.clientX, e.clientY)
+    const hit = (lt: typeof model.tasks[number]) => {
+      const bx = lt.isMilestone ? lt.cx - 8 : lt.x
+      const bw = lt.isMilestone ? 16 : lt.w
+      const by = lt.isMilestone ? lt.cy - 8 : lt.y
+      const bh = lt.isMilestone ? 16 : lt.h
+      return r.x < bx + bw && bx < r.x + r.w && r.y < by + bh && by < r.y + r.h
+    }
+    const ids = model.tasks.filter(hit).map((lt) => lt.task.id)
+    if (ids.length) useEditor.getState().selectTasks(ids)
+    else useEditor.getState().selectTask(null)
+  }
+
   function onTaskPointerDown(e: RPointerEvent, id: string) {
     if (useEditor.getState().navMode !== 'edit') return // let zoom/pan take over
     e.stopPropagation()
@@ -170,12 +233,23 @@ export function ChartCanvas() {
     const store = useEditor.getState()
     const task = project.tasks.find((t) => t.id === id)
     if (!task) return
-    store.selectTask(id)
+    movedRef.current = false
+    // Ctrl/⌘+클릭 = 다중 선택 토글(드래그 시작 안 함).
+    if (e.ctrlKey || e.metaKey) { store.toggleTaskSelection(id); return }
+    const sel = store.selectedTaskIds
     const { x } = toContent(e.clientX, e.clientY)
-    const dayAtPointer = model.dayOf(x)
-    // History is captured lazily on the first real move, so a plain click that
-    // merely selects a bar does not push an empty undo step.
-    dragRef.current = { kind: 'move', taskId: id, grabOffsetDays: dayAtPointer - task.start, started: false }
+    if (sel.length > 1 && sel.includes(id)) {
+      // 다중 선택된 막대 중 하나를 잡고 드래그 → 선택 전체를 수평으로 함께 이동.
+      const base = project.tasks.filter((t) => sel.includes(t.id)).map((t) => ({ id: t.id, start: t.start }))
+      dragRef.current = { kind: 'moveGroup', base, grabDay: model.dayOf(x), started: false }
+    } else {
+      store.selectTask(id)
+      // History is captured lazily on the first real move, so a plain click that
+      // merely selects a bar does not push an empty undo step.
+      dragRef.current = { kind: 'move', taskId: id, grabOffsetDays: model.dayOf(x) - task.start, started: false }
+    }
+    lastClient.current = { x: e.clientX, y: e.clientY }
+    startAutoScroll()
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
   }
@@ -226,6 +300,8 @@ export function ChartCanvas() {
     dragRef.current = { kind: 'link', fromId: id }
     const { x, y } = toContent(e.clientX, e.clientY)
     setGhostFrom(id, x, y)
+    lastClient.current = { x: e.clientX, y: e.clientY }
+    startAutoScroll() // 화면 밖 아래/위 공종으로도 끌어갈 수 있도록 가장자리 자동 스크롤
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
   }
@@ -235,31 +311,31 @@ export function ChartCanvas() {
     if (src) setGhost({ x1: src.endX, y1: src.cy, x2: x, y2: y })
   }
 
-  function onWindowMove(e: PointerEvent) {
+  // Apply the active gesture at a given client pointer position. Shared by the
+  // pointermove handler and the edge auto-scroll loop, so the bar/link/target keeps
+  // tracking the cursor while the canvas scrolls under it.
+  function applyAtPointer(clientX: number, clientY: number) {
     const drag = dragRef.current
     if (!drag) return
-    // If the user switched to a zoom/pan tool mid-drag (keyboard), abort the
-    // edit gesture cleanly instead of continuing to mutate the model.
-    if (useEditor.getState().navMode !== 'edit') {
-      window.removeEventListener('pointermove', onWindowMove)
-      window.removeEventListener('pointerup', onWindowUp)
-      dragRef.current = null
-      setGhost(null)
-      setReorderHint(null)
-      if (drag.kind === 'link') useEditor.getState().cancelLinking()
-      return
-    }
-    const { x, y } = toContent(e.clientX, e.clientY)
+    const { x, y } = toContent(clientX, clientY)
     if (drag.kind === 'move') {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      movedRef.current = true
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
       // Vertical component → preview which row the bar would join / create (skip
       // when a filter is active: lanes/rows are a subset and the math is ambiguous).
       if (filterActive(useEditor.getState().filter)) setReorderHint(null)
       else { const t = computeRowTarget(drag.taskId, y); setReorderHint(t ? { lineY: t.lineY, merge: t.merge } : null) }
+    } else if (drag.kind === 'moveGroup') {
+      // 다중 선택 막대 수평 동시 이동 — 세로(줄 재배치)는 건드리지 않는다.
+      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      movedRef.current = true
+      const delta = model.dayOf(x) - drag.grabDay
+      useEditor.getState().setTasksStartLive(drag.base.map((b) => ({ id: b.id, start: b.start + delta })))
     } else if (drag.kind === 'resize') {
       if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      movedRef.current = true
       const day = model.dayOf(x)
       if (drag.edge === 'end') {
         useEditor.getState().setTaskSpanLive(drag.taskId, drag.startDay, day - drag.startDay)
@@ -285,8 +361,57 @@ export function ChartCanvas() {
     }
   }
 
+  function onWindowMove(e: PointerEvent) {
+    const drag = dragRef.current
+    if (!drag) return
+    // If the user switched to a zoom/pan tool mid-drag (keyboard), abort the
+    // edit gesture cleanly instead of continuing to mutate the model.
+    if (useEditor.getState().navMode !== 'edit') {
+      stopAutoScroll()
+      window.removeEventListener('pointermove', onWindowMove)
+      window.removeEventListener('pointerup', onWindowUp)
+      dragRef.current = null
+      setGhost(null)
+      setReorderHint(null)
+      if (drag.kind === 'link') useEditor.getState().cancelLinking()
+      return
+    }
+    lastClient.current = { x: e.clientX, y: e.clientY }
+    applyAtPointer(e.clientX, e.clientY)
+  }
+
+  // ── Edge auto-scroll: while dragging a bar or pulling a link, scroll the canvas
+  //    when the pointer nears (or passes) an edge so off-screen 공종 become reachable.
+  function stopAutoScroll() {
+    if (autoScrollRef.current != null) { cancelAnimationFrame(autoScrollRef.current); autoScrollRef.current = null }
+  }
+  function startAutoScroll() {
+    if (autoScrollRef.current != null) return
+    const EDGE = 52, MAX = 20
+    const ramp = (over: number) => Math.max(0, Math.min(MAX, Math.ceil((over / EDGE) * MAX)))
+    const tick = () => {
+      const wrap = wrapRef.current, lp = lastClient.current
+      if (!wrap || !lp || !dragRef.current) { autoScrollRef.current = null; return }
+      const r = wrap.getBoundingClientRect()
+      let dx = 0, dy = 0
+      if (lp.y < r.top + EDGE) dy = -ramp(r.top + EDGE - lp.y)
+      else if (lp.y > r.bottom - EDGE) dy = ramp(lp.y - (r.bottom - EDGE))
+      if (lp.x < r.left + EDGE) dx = -ramp(r.left + EDGE - lp.x)
+      else if (lp.x > r.right - EDGE) dx = ramp(lp.x - (r.right - EDGE))
+      if (dx || dy) {
+        const sl = wrap.scrollLeft, st = wrap.scrollTop
+        wrap.scrollLeft = sl + dx
+        wrap.scrollTop = st + dy
+        if (wrap.scrollLeft !== sl || wrap.scrollTop !== st) applyAtPointer(lp.x, lp.y)
+      }
+      autoScrollRef.current = requestAnimationFrame(tick)
+    }
+    autoScrollRef.current = requestAnimationFrame(tick)
+  }
+
   function onWindowUp(e: PointerEvent) {
     const drag = dragRef.current
+    stopAutoScroll()
     window.removeEventListener('pointermove', onWindowMove)
     window.removeEventListener('pointerup', onWindowUp)
     dragRef.current = null
@@ -385,13 +510,18 @@ export function ChartCanvas() {
         ref={wrapRef}
         className={`canvas-wrap${navClass}`}
         onPointerDown={onWrapPointerDown}
-        onClick={() => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(null) }}
+        onClick={() => {
+          if (useEditor.getState().navMode !== 'edit') return
+          if (movedRef.current) { movedRef.current = false; return }
+          useEditor.getState().selectTask(null)
+        }}
       >
         <div className="paper-scale" style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}>
           <div
             ref={paperRef}
             className="paper"
             style={{ width: model.contentWidth, height: model.contentHeight, transform: `scale(${zoom})` }}
+            onPointerDown={onPaperPointerDown}
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={onPaperDoubleClick}
           >
@@ -400,6 +530,7 @@ export function ChartCanvas() {
               routed={routed}
               project={project}
               selectedTaskId={selectedTaskId}
+              selectedTaskIds={selectedTaskIds}
               selectedLinkId={selectedLinkId}
               selectedTextRole={selectedTextRole}
               showCriticalPath={project.view.showCriticalPath}
@@ -411,13 +542,23 @@ export function ChartCanvas() {
               onAnchorPointerDown={onAnchorPointerDown}
               onBarResizePointerDown={onBarResizePointerDown}
               onLogoResizePointerDown={onLogoResizePointerDown}
-              onTaskClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(id) }}
+              onTaskClick={(e, id) => {
+                if (useEditor.getState().navMode !== 'edit') return
+                if (e.ctrlKey || e.metaKey) return        // pointerdown handled the multi-select toggle
+                if (movedRef.current) { movedRef.current = false; return } // a drag just ended → keep selection
+                useEditor.getState().selectTask(id)
+              }}
               onTaskDoubleClick={onTaskDoubleClick}
+              onTaskContextMenu={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().toggleDummy(id) }}
               onDurationDoubleClick={onDurationDoubleClick}
               onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
               onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
               onRainyResizePointerDown={onRainyResizePointerDown}
-              onBackgroundClick={() => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTask(null) }}
+              onBackgroundClick={() => {
+                if (useEditor.getState().navMode !== 'edit') return
+                if (movedRef.current) { movedRef.current = false; return } // marquee/drag just ran → keep selection
+                useEditor.getState().selectTask(null)
+              }}
             />
             {editing && editLt && (
               <input
@@ -471,6 +612,10 @@ export function ChartCanvas() {
                 style={{ top: reorderHint.lineY, left: model.labelWidth, width: Math.max(0, model.contentWidth - model.labelWidth) }}
               />
             ))}
+            {marquee && (marquee.w > 1 || marquee.h > 1) && (
+              <div className="marquee" data-export-hide="1"
+                style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
+            )}
           </div>
         </div>
       </div>
