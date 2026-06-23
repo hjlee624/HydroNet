@@ -6,6 +6,16 @@
 
 HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 마일스톤`)는 `DESIGN/milestone sample.png`와 동일한 형태의 마일스톤 공정표로 렌더링·편집·출력됩니다.
 
+## ▶️ 데모 (약 25초)
+
+처음 실행 시 **새 사업 설정**(사업명·설계 단계·시설물 유형) → 공정관리 **예정공정표 → 시공 마일스톤** → **공종 추가 · 막대 이동 · 화살표 추가/삭제**까지, 실제 작성 과정을 담은 짧은 데모입니다.
+
+<video src="https://github.com/hjlee624/HydroNet/raw/dev/DESIGN/HydroNet-demo.webm" poster="https://github.com/hjlee624/HydroNet/raw/dev/DESIGN/HydroNet-demo-poster.png" controls muted width="860"></video>
+
+[![HydroNet 데모 — 클릭하면 영상 재생](DESIGN/HydroNet-demo-poster.png)](DESIGN/HydroNet-demo.webm)
+
+<sub>영상이 인라인으로 보이지 않으면 위 미리보기 이미지를 클릭하세요 → ▶ [데모 영상(webm) 열기](DESIGN/HydroNet-demo.webm)</sub>
+
 ---
 
 ## ✨ 주요 기능
@@ -150,6 +160,9 @@ node server/src/index.js   # dist가 있으면 서버가 정적 호스팅
 
 ### 📄 단일 HTML 파일 (서버·설치 없이 배포)
 다른 사람에게 **HTML 파일 하나만** 주면 더블클릭으로 바로 쓸 수 있는 완전 독립형 빌드입니다.
+
+> **바로 다운로드** — 빌드 없이 쓰려면 저장소의 **[`HydroNet.html`](HydroNet.html)** (현재 버전, ~19.6MB)을 내려받아 더블클릭하세요. 직접 빌드하려면:
+
 ```bash
 cd client
 # 글꼴 내장이 필요하면 KoPubWorld Dotum_Pro Medium/Bold.otf 를 client/public/fonts/ 에 둠

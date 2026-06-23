@@ -10,11 +10,10 @@ dist-single/
 **/dist-single/
 *.tsbuildinfo
 
-# Single-file build: bundled KoPub OTFs (large binaries, not committed) + output
+# Single-file build: bundled KoPub OTFs (large binaries, not committed).
 client/public/fonts/*.otf
-/HydroNet.html
+# 정식 배포본 HydroNet.html 은 저장소에 포함(다운로드 배포용). 날짜 스냅샷만 무시.
 /HydroNet_*.html
-/HydroNet*.html
 
 # Logs (ABS_RULE: program logs live in error.log; keep them local, not in VCS)
 error.log
