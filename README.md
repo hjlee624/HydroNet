@@ -8,13 +8,11 @@ HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 �
 
 ## ▶️ 데모 (약 25초)
 
-처음 실행 시 **새 사업 설정**(사업명·설계 단계·시설물 유형) → 공정관리 **예정공정표 → 시공 마일스톤** → **공종 추가 · 막대 이동 · 화살표 추가/삭제**까지, 실제 작성 과정을 담은 짧은 데모입니다.
+처음 실행 시 **새 사업 설정**(사업명·설계 단계·시설물 유형) → 공정관리 **예정공정표 → 시공 마일스톤** → **공종 추가 · 막대 이동 · 화살표 추가/삭제**까지, 실제 작성 과정입니다.
 
-<video src="https://github.com/hjlee624/HydroNet/raw/dev/DESIGN/HydroNet-demo.webm" poster="https://github.com/hjlee624/HydroNet/raw/dev/DESIGN/HydroNet-demo-poster.png" controls muted width="860"></video>
+![HydroNet 데모](DESIGN/HydroNet-demo.gif)
 
-[![HydroNet 데모 — 클릭하면 영상 재생](DESIGN/HydroNet-demo-poster.png)](DESIGN/HydroNet-demo.webm)
-
-<sub>영상이 인라인으로 보이지 않으면 위 미리보기 이미지를 클릭하세요 → ▶ [데모 영상(webm) 열기](DESIGN/HydroNet-demo.webm)</sub>
+<sub>위 GIF는 GitHub에서 자동 재생됩니다 · 고화질 영상: ▶ [MP4 다운로드/재생](DESIGN/HydroNet-demo.mp4)</sub>
 
 ---
 
