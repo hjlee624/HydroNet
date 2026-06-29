@@ -705,8 +705,22 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (exists) { logWarn('이미 동일한 연결이 존재합니다.'); return }
       const id = `l-${nanoid(8)}`
       commit((p) => {
+        const successor = p.tasks.find(t => t.id === to)
+        const predecessor = p.tasks.find(t => t.id === from)
+        if (successor && predecessor) {
+          // 이 링크가 추가되기 전, 후행 공정의 이론적 가장 빠른 시작일 계산
+          // (이 링크를 제외한 다른 incoming links만 고려)
+          const existingLinks = p.links.filter(l => l.to === to && l.from !== from)
+          const theoreticalStart = linkConstrainedStart(p.tasks, existingLinks, to)
+
+          // 후행 공정의 현재 시작일이 이론적 시작일보다 늦은 경우,
+          // 그 차이만큼을 lag로 자동 설정 (공정 막대는 그대로 유지)
+          if (theoreticalStart != null && successor.start > theoreticalStart) {
+            lag = successor.start - theoreticalStart
+          }
+        }
         p.links.push({ id, from, to, type, lag })
-        snapSuccessor(p, to) // place 후행 공정 exactly on the new 선후행+lag
+        // snapSuccessor 호출 제거: 후행 공정 위치를 그대로 유지
       }, { cascade: true })
       set({ selectedLinkId: id })
     },
