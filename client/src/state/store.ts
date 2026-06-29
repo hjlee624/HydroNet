@@ -708,10 +708,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         const successor = p.tasks.find(t => t.id === to)
         const predecessor = p.tasks.find(t => t.id === from)
         if (successor && predecessor) {
-          // 이 링크가 추가되기 전, 후행 공정의 이론적 가장 빠른 시작일 계산
-          // (이 링크를 제외한 다른 incoming links만 고려)
-          const existingLinks = p.links.filter(l => l.to === to && l.from !== from)
-          const theoreticalStart = linkConstrainedStart(p.tasks, existingLinks, to)
+          // 이 링크를 포함해서 후행 공정이 있어야 할 이론적 시작일 계산
+          const existingIncoming = p.links.filter(l => l.to === to)
+          const tempLinks = [...existingIncoming, { id, from, to, type, lag: 0 }]
+          const theoreticalStart = linkConstrainedStart(p.tasks, tempLinks, to)
 
           // 후행 공정의 현재 시작일이 이론적 시작일보다 늦은 경우,
           // 그 차이만큼을 lag로 자동 설정 (공정 막대는 그대로 유지)
