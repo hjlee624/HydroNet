@@ -358,5 +358,32 @@ console.log('')
   check(onLong.labelWidth > offLong.labelWidth, '긴 공정명이 있으면 라벨열이 공정명 폭만큼 넓어짐')
 }
 
+// 17. 연결 유형별 라우팅 끝점 — 막대 앞/뒤 양쪽에서 연결(FS/SS/FF/SF) 시 출발·도착 끝점이
+//     정확한 막대 끝(시작=S·종료=F)으로 라우팅되는지(드래그 생성이 의존하는 계약)
+console.log('')
+{
+  const base: any = makeProject('construction', 'concrete-gravity')
+  const cat = base.categories[0].id
+  base.tasks = [
+    { id: 'A', categoryId: cat, name: 'A', start: 0, duration: 30, isMilestone: false, row: 0 },
+    { id: 'B', categoryId: cat, name: 'B', start: 60, duration: 30, isMilestone: false, row: 1 },
+  ]
+  base.links = []
+  const m = computeLayout(base)
+  const la = m.tasks.find((t: any) => t.task.id === 'A')!
+  const lb = m.tasks.find((t: any) => t.task.id === 'B')!
+  const near = (x: number, y: number) => Math.abs(x - y) < 0.6
+  console.log('\n[연결끝점] 앞/뒤 양쪽 연결 — FS/SS/FF/SF 출발·도착 끝점')
+  for (const [type, srcX, dstX] of [
+    ['FS', la.endX, lb.startX], ['SS', la.startX, lb.startX], ['FF', la.endX, lb.endX], ['SF', la.startX, lb.endX],
+  ] as const) {
+    const r = routeLinks(m, [{ id: 'l', from: 'A', to: 'B', type, lag: 0 }] as any)[0]
+    const p0 = r.points[0]
+    const head = r.points[r.points.length - 1]
+    check(near(p0[0], srcX) && near(head[0], dstX),
+      `${type}: 출발=${type[0] === 'F' ? '종료' : '시작'} · 도착=${type[1] === 'F' ? '종료' : '시작'} 끝점으로 라우팅`)
+  }
+}
+
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)

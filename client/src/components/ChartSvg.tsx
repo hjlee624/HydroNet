@@ -34,7 +34,8 @@ interface Props {
   todayX?: number | null
   linkingGhost: LinkingGhost | null
   onTaskPointerDown: (e: RPointerEvent, id: string) => void
-  onAnchorPointerDown: (e: RPointerEvent, id: string) => void
+  /** 의존성 연결 드래그 시작 — `edge`는 막대의 앞(start)·뒤(end) 중 어느 끝에서 출발하는지. */
+  onAnchorPointerDown: (e: RPointerEvent, id: string, edge: 'start' | 'end') => void
   onBarResizePointerDown: (e: RPointerEvent, id: string, edge: 'start' | 'end') => void
   onLogoResizePointerDown: (e: RPointerEvent, index: number) => void
   onTaskClick: (e: RMouseEvent, id: string) => void
@@ -415,12 +416,21 @@ function ChartSvgBase({
                     style={{ cursor: 'ew-resize' }}
                     onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'end')}
                   />
+                  {/* 연결 앵커 2개 — 막대 앞(start)·뒤(end) 양쪽에서 화살표를 끌어 만들 수 있다.
+                      출발 끝점 + 도착 끝점 조합으로 FS/SS/FF/SF가 자동 결정된다. */}
+                  <circle
+                    data-export-hide="1"
+                    className="chart-anchor"
+                    cx={lt.startX - 11} cy={lt.cy} r={5.5}
+                    fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
+                    onPointerDown={(e) => onAnchorPointerDown(e, t.id, 'start')}
+                  />
                   <circle
                     data-export-hide="1"
                     className="chart-anchor"
                     cx={lt.endX + 11} cy={lt.cy} r={5.5}
                     fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
-                    onPointerDown={(e) => onAnchorPointerDown(e, t.id)}
+                    onPointerDown={(e) => onAnchorPointerDown(e, t.id, 'end')}
                   />
                 </>
               )}

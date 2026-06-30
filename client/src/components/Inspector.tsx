@@ -299,7 +299,7 @@ function TaskInspector({ id }: { id: string }) {
       </div>
 
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteTask(id)}>공정 삭제</button>
-      <p className="note">바를 드래그해 이동하고, 선택 후 우측 끝의 동그라미를 다른 공정으로 끌어 연결합니다. 차트의 글자를 클릭하면 글꼴·크기·색을 바꿀 수 있습니다.</p>
+      <p className="note">바를 드래그해 이동하고, 선택 후 <b>막대 앞·뒤 끝의 동그라미</b>를 다른 공정의 앞/뒤로 끌어 연결합니다(끝점 조합으로 FS/SS/FF/SF 자동 결정). 차트의 글자를 클릭하면 글꼴·크기·색을 바꿀 수 있습니다.</p>
     </>
   )
 }

@@ -9,6 +9,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
 import { useEditor, filterActive } from '../state/store'
+import type { LinkType } from '../types/model'
 import { computeLayout, type LayoutModel } from '../engine/layout'
 import { augmentForMirror } from '../engine/mirror'
 import { routeLinks } from '../engine/routing'
@@ -21,7 +22,7 @@ type Drag =
   | { kind: 'moveGroup'; base: Array<{ id: string; start: number }>; grabDay: number; started: boolean }
   | { kind: 'resize'; taskId: string; edge: 'start' | 'end'; startDay: number; endDay: number; started: boolean }
   | { kind: 'logo'; index: number; rightEdge: number; ratio: number; started: boolean }
-  | { kind: 'link'; fromId: string }
+  | { kind: 'link'; fromId: string; fromEdge: 'start' | 'end' }
   | { kind: 'rainy'; seasonId: string; edge: 'start' | 'end'; started: boolean }
   | null
 
@@ -300,24 +301,24 @@ export function ChartCanvas() {
     window.addEventListener('pointerup', onWindowUp)
   }
 
-  function onAnchorPointerDown(e: RPointerEvent, id: string) {
+  function onAnchorPointerDown(e: RPointerEvent, id: string, edge: 'start' | 'end') {
     if (useEditor.getState().navMode !== 'edit') return
     e.stopPropagation()
     e.preventDefault()
     const store = useEditor.getState()
     store.startLinking(id)
-    dragRef.current = { kind: 'link', fromId: id }
+    dragRef.current = { kind: 'link', fromId: id, fromEdge: edge }
     const { x, y } = toContent(e.clientX, e.clientY)
-    setGhostFrom(id, x, y)
+    setGhostFrom(id, edge, x, y)
     lastClient.current = { x: e.clientX, y: e.clientY }
     startAutoScroll() // 화면 밖 아래/위 공종으로도 끌어갈 수 있도록 가장자리 자동 스크롤
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
   }
 
-  function setGhostFrom(fromId: string, x: number, y: number) {
+  function setGhostFrom(fromId: string, edge: 'start' | 'end', x: number, y: number) {
     const src = model.tasks.find((t) => t.task.id === fromId)
-    if (src) setGhost({ x1: src.endX, y1: src.cy, x2: x, y2: y })
+    if (src) setGhost({ x1: edge === 'start' ? src.startX : src.endX, y1: src.cy, x2: x, y2: y })
   }
 
   // Apply the active gesture at a given client pointer position. Shared by the
@@ -366,7 +367,7 @@ export function ChartCanvas() {
       if (drag.edge === 'start') useEditor.getState().setRainySeason({ startMonth: m, startDay: d })
       else useEditor.getState().setRainySeason({ endMonth: m, endDay: d })
     } else {
-      setGhostFrom(drag.fromId, x, y)
+      setGhostFrom(drag.fromId, drag.fromEdge, x, y)
     }
   }
 
@@ -447,8 +448,18 @@ export function ChartCanvas() {
       const target = el?.closest('[data-task-id]') as HTMLElement | null
       const toId = target?.getAttribute('data-task-id')
       const store = useEditor.getState()
-      if (toId && toId !== drag.fromId) store.completeLinking(toId)
-      else store.cancelLinking()
+      if (toId && toId !== drag.fromId) {
+        // 도착 막대의 앞/뒤 중 드롭 위치에 가까운 끝을 도착점으로 삼고(시작=S·종료=F),
+        // 출발 끝점(앞=S·뒤=F)과 조합해 FS/SS/FF/SF 연결 유형을 자동 결정한다.
+        const targetLt = model.tasks.find((lt) => lt.task.id === toId)
+        let toEdge: 'start' | 'end' = 'start'
+        if (targetLt && !targetLt.isMilestone) {
+          const { x } = toContent(e.clientX, e.clientY)
+          toEdge = Math.abs(x - targetLt.startX) <= Math.abs(x - targetLt.endX) ? 'start' : 'end'
+        }
+        const type = `${drag.fromEdge === 'end' ? 'F' : 'S'}${toEdge === 'end' ? 'F' : 'S'}` as LinkType
+        store.completeLinking(toId, type)
+      } else store.cancelLinking()
     }
   }
 

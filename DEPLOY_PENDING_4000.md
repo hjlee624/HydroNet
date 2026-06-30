@@ -2,6 +2,10 @@
 
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
+## ⏳ 대기 (2026-07-01 — 클라이언트 전용, dist 스왑)
+- **연결 드래그 앞·뒤 양쪽** — 화살표를 막대 **앞(start)·뒤(end) 양 끝**에서 시작하고 대상 막대의 **앞/뒤** 어디에든 붙일 수 있게(끝점 조합으로 FS/SS/FF/SF 자동 결정). `ChartSvg`(앵커 ● 2개)·`ChartCanvas`(fromEdge/toEdge→type)·`Inspector`·`HelpDialog` 변경. routing/store 무변경(이미 4유형 지원).
+- **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html`. 검증: tsc·smoke(연결 끝점 4검사 추가)·mount·build·build:single·check-single·render-preview 통과.
+
 ## ⏳ 대기 (2026-06-30 — 클라이언트 전용, dist 스왑)
 - **마일스톤 4대 개선** — 모두 **클라이언트 변경**(서버 무변경): ① **표시 기간 팝업**(마일스톤 상단 연/월 클릭 → 시작~종료 월 지정, 그 구간만 정확히 표시·자동 초기화) ② **도면 제목/CI → CI만**(인스펙터에선 CI만, 제목은 차트 클릭→텍스트 탭에서 표시ON/OFF·글꼴·크기·색) ③ **속성 4탭**(도면·프로젝트/텍스트/공정/연결, 차트 클릭 시 자동 전환) ④ **예정공정표↔마일스톤 라이브 연동(옵트인)**(시공 마일스톤 시트에서 예정 공종/공정을 같은 공종 아래로 함께 표시·표시전용, 🔗 행 스위치로 마일스톤에서만 개별 숨김, 예정 원본 불변) ⑤ **(후속) 공정을 도면 왼쪽에 공종 하위로 나열(WBS, `view.taskColumn` 기본 ON)** + fitToPaper 세로 용지 수렴 보강. `model/layout/store/ChartSvg/ChartCanvas/Inspector/Sidebar/index.css` 변경 + 신규 `engine/mirror.ts`.
 - **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html` 전달. 검증: tsc·smoke(표시기간·미러·공정표 23검사 추가, 세로 맞춤 수렴)·mount·build·build:single·check-single·render-preview 통과.
