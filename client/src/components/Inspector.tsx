@@ -454,6 +454,11 @@ function ProjectInspector() {
         <input type="checkbox" checked={project.view.showGrid} onChange={(e) => a().setView({ showGrid: e.target.checked })} />
         격자 표시
       </label>
+      <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
+        <input type="checkbox" checked={project.view.taskColumn !== false} onChange={(e) => a().setView({ taskColumn: e.target.checked })} />
+        공정명을 왼쪽 표(공종 하위)에 표시
+      </label>
+      <p className="note" style={{ marginTop: 0 }}>도면 왼쪽에 공종 아래로 각 공정 이름을 나열합니다(사이드바 ‘공종 구성’처럼). 끄면 공정명이 막대 위에 표시됩니다. 마일스톤에서 특정 공정을 빼려면 왼쪽 사이드바에서 그 공정의 표시 스위치를 끄세요.</p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>CI (로고)</div>

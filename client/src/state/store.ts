@@ -293,6 +293,8 @@ function normalize(project: Project): Project {
       showTitle: v.showTitle !== false,
       fontScale: v.fontScale ?? 1,
       textStyles: v.textStyles ?? {},
+      // 왼쪽 공정명 표(공종 하위) — 기본 ON(구버전 프로젝트도 켜짐). 끄면 기존(막대 위 이름)으로.
+      taskColumn: v.taskColumn ?? true,
       // 표시 기간 override + 예정↔마일스톤 연동 상태(저장/불러오기 보존 — 옵션이라 없으면 undefined).
       displayStart: v.displayStart,
       displayEnd: v.displayEnd,

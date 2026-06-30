@@ -172,6 +172,9 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // its box instead of clipping the glyph (default sizes keep current geometry).
   const fontScale = view.fontScale ?? 1
   const fs = (role: TextRole) => resolveTextStyle(role, view.textStyles, fontScale).fontSize
+  // 왼쪽 라벨열에 공정명을 공종 하위로 나열할지(기본 ON). 켜지면 공종명은 레인 상단 헤더로
+  // 올라가고 각 공정 줄에 이름이 들어가며, 라벨열 폭도 공정명에 맞춰 넓어진다.
+  const taskCol = view.taskColumn !== false
   const rowHeight = Math.max(
     view.rowHeight,
     Math.ceil(2 * Math.max(11.5 + 0.8 * fs('taskName'), 11 + 0.8 * fs('milestoneName'), 12 + fs('taskDuration'))),
@@ -218,9 +221,12 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     12 + estimateTextWidth('착수 0000-00', fs('headerSub')) + 10,
   )
   for (const c of categories) labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
+  const taskFs = fs('taskName')
   for (const t of tasks) {
     const sn = (t.subName ?? '').trim()
     if (sn) labelWidth = Math.max(labelWidth, 26 + estimateTextWidth(sn, subFs) + 10)
+    // 공정명을 왼쪽에 나열하면 라벨열이 가장 긴 공정명도 담아야 한다(차트 침범 방지).
+    if (taskCol && !t.isMilestone) labelWidth = Math.max(labelWidth, 30 + estimateTextWidth(t.name, taskFs) + 10)
   }
   labelWidth = Math.ceil(labelWidth)
 
@@ -279,7 +285,9 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     const visualRowCount = Math.max(1, distinctRows.length)
 
     const hasNamed = catTasks.some((t) => (t.subName ?? '').trim() !== '')
-    const headerInset = hasNamed ? Math.max(CATEGORY_HEADER_INSET, Math.ceil(fs('categoryLabel') * 1.4)) : 0
+    // 공정명을 왼쪽에 나열하거나(taskCol) 세부공종이 있으면, 공종명을 위한 헤더 줄을 레인 상단에.
+    const headerInset = (hasNamed || (taskCol && catTasks.length > 0))
+      ? Math.max(CATEGORY_HEADER_INSET, Math.ceil(fs('categoryLabel') * 1.4)) : 0
 
     for (const t of catTasks) {
       const vrow = denseOf.get(rawRowOf.get(t.id)!) ?? 0
@@ -499,6 +507,28 @@ export function fitToPaperView(
     // Text legibility: size REF_PX to TARGET_MM on the sheet; only ever ENLARGE.
     const fontScale = clamp((TARGET_MM * (contentWidthAfter / paperWmm)) / REF_PX, 1, 6)
     view = { ...view, pxPerDay, rowHeight, fontScale }
+  }
+
+  // Final aspect-only pass: fontScale has stabilised, so fix the deficient axis once
+  // more WITHOUT re-bumping fontScale. With fontScale frozen, labelWidth & band/header
+  // insets are constants, so content size is exactly affine in pxPerDay (or rowHeight)
+  // → this lands the aspect precisely even when fontScale-coupled insets (e.g. the
+  // per-lane 공종 header for the 왼쪽 공정 표) slowed the iteration's convergence.
+  {
+    const m = computeLayout({ ...project, view })
+    const current = m.contentWidth / m.contentHeight
+    if (Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
+      let { pxPerDay, rowHeight } = view
+      if (current < target) {
+        const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
+        pxPerDay = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
+      } else {
+        const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
+        const fixedV = m.contentHeight - totalRows * m.rowHeight
+        rowHeight = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
+      }
+      view = { ...view, pxPerDay, rowHeight }
+    }
   }
 
   // Net change vs the original view (so fitToPaper's no-op guard fires correctly).

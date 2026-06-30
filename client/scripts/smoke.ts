@@ -336,5 +336,27 @@ console.log('')
   check(!!mvw && (mvw.tasksByCat.get('m1') ?? []).some((r: any) => r.id === 'pt1'), '사이드바 뷰: 공통 공종 아래 예정A 표시')
 }
 
+// 16. 왼쪽 공정명 표(view.taskColumn) — 공정명 폭만큼 라벨열 확장 + 공종 헤더 인셋(요구사항 4 후속)
+console.log('')
+{
+  const dd: any = makeProject('detailed-design', 'rockfill-cfrd') // 예정공정표(세부공종 없음)
+  const on = computeLayout(dd) // taskColumn 기본 ON
+  const off = computeLayout({ ...dd, view: { ...dd.view, taskColumn: false } })
+  console.log(`\n[공정표] height ${Math.round(off.contentHeight)}→${Math.round(on.contentHeight)} (label ${off.labelWidth}/${on.labelWidth})`)
+  check(on.contentHeight > off.contentHeight, '공정을 공종 헤더 아래로 나열해 도면이 높아짐(공종 헤더 인셋)')
+  check(on.labelWidth >= off.labelWidth, '공정명 표시가 라벨열을 좁히지 않음')
+  check(on.tasks.every((lt: any) => Number.isFinite(lt.cy) && Number.isFinite(lt.x)), '공정표 ON 레이아웃 좌표 유한')
+  // 긴 공정명이 있으면 라벨열이 공정명 폭만큼 넓어진다(공정명을 담아 차트 침범 방지).
+  const longName = '아주 긴 공정 이름 테스트용으로 충분히 길게 만든 라벨 문자열입니다'
+  let injected = false
+  const ddLong: any = { ...dd, tasks: dd.tasks.map((t: any) => {
+    if (!injected && !t.isMilestone) { injected = true; return { ...t, name: longName } }
+    return t
+  }) }
+  const onLong = computeLayout(ddLong)
+  const offLong = computeLayout({ ...ddLong, view: { ...ddLong.view, taskColumn: false } })
+  check(onLong.labelWidth > offLong.labelWidth, '긴 공정명이 있으면 라벨열이 공정명 폭만큼 넓어짐')
+}
+
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)
 process.exit(failures === 0 ? 0 : 1)
