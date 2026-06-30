@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
 import { useEditor } from '../state/store'
+import type { InspectorTab } from '../state/store'
 import { dateToDay, dayToDate, daysInMonth, parseISO, toISO } from '../engine/dates'
 import { computeLayout, fitToPaperView } from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
@@ -12,28 +13,77 @@ import { PALETTE_MAX } from '../types/model'
 import type { LinkStyle, LinkType, PaperSize, TextRole } from '../types/model'
 import { TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS, FONT_FAMILY_OPTIONS } from '../styles/theme'
 
+/** 4개 속성 탭(요구사항 3) — 도면·프로젝트 / 텍스트 / 공정 / 연결. SAMPLE.png 형태,
+ *  색은 현 HydroNET 크림/오렌지. 차트에서 항목을 클릭하면 해당 탭으로 자동 전환된다. */
+const INSPECTOR_TABS: { key: InspectorTab; label: string }[] = [
+  { key: 'project', label: '도면·프로젝트' },
+  { key: 'text', label: '텍스트' },
+  { key: 'task', label: '공정 속성' },
+  { key: 'link', label: '연결 속성' },
+]
+
 export function Inspector({ width }: { width: number }) {
+  const tab = useEditor((s) => s.inspectorTab)
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
   const selectedTextRole = useEditor((s) => s.selectedTextRole)
-
-  const heading = selectedTextRole ? '텍스트 스타일'
-    : selectedTaskId ? '공정 속성'
-      : selectedLinkId ? '연결 속성'
-        : '도면 · 프로젝트'
+  const a = useEditor.getState
 
   return (
     <aside className="panel panel--right" style={{ width }}>
-      <div className="panel__header">
-        <span className="panel__title">{heading}</span>
+      <div className="insp-tabs" role="tablist" aria-label="속성 설정">
+        {INSPECTOR_TABS.map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            className={`insp-tab ${tab === t.key ? 'active' : ''}`}
+            title={`${t.label} 설정`}
+            onClick={() => a().setInspectorTab(t.key)}
+          >
+            {t.label}
+          </button>
+        ))}
       </div>
       <div className="panel__scroll">
-        {selectedTextRole ? <TextStyleInspector role={selectedTextRole} />
-          : selectedTaskId ? <TaskInspector id={selectedTaskId} />
-            : selectedLinkId ? <LinkInspector id={selectedLinkId} />
-              : <ProjectInspector />}
+        {tab === 'project' ? <ProjectInspector />
+          : tab === 'text' ? (selectedTextRole ? <TextStyleInspector role={selectedTextRole} /> : <TextRolePicker />)
+            : tab === 'task' ? (selectedTaskId ? <TaskInspector id={selectedTaskId} /> : <SelectHint kind="task" />)
+              : (selectedLinkId ? <LinkInspector id={selectedLinkId} /> : <SelectHint kind="link" />)}
       </div>
     </aside>
+  )
+}
+
+/** 텍스트 탭에서 아직 대상 글자를 안 골랐을 때 — 스타일을 바꿀 텍스트 종류 목록. */
+function TextRolePicker() {
+  const a = useEditor.getState
+  const roles = Object.keys(TEXT_ROLE_LABELS) as TextRole[]
+  return (
+    <>
+      <div className="field">
+        <label>텍스트 스타일</label>
+        <p className="note">스타일을 바꿀 텍스트 종류를 고르거나, 차트에서 글자를 직접 클릭하세요.</p>
+      </div>
+      <div className="role-list">
+        {roles.map((r) => (
+          <button key={r} type="button" className="role-list__item" onClick={() => a().selectTextRole(r)}>
+            {TEXT_ROLE_LABELS[r]}
+          </button>
+        ))}
+      </div>
+    </>
+  )
+}
+
+/** 공정/연결 탭에서 선택된 항목이 없을 때 안내. */
+function SelectHint({ kind }: { kind: 'task' | 'link' }) {
+  return (
+    <div className="empty-hint">
+      {kind === 'task'
+        ? '차트나 왼쪽 공종 구성에서 공정(막대·마일스톤)을 클릭하면 여기에서 속성을 편집할 수 있습니다.'
+        : '차트에서 연결(화살표)을 클릭하면 여기에서 관계·지연·선 스타일을 편집할 수 있습니다.'}
+    </div>
   )
 }
 
@@ -75,6 +125,7 @@ function PtInput({ value, min, max, onCommit, maxWidth, disabled }: {
 
 function TextStyleInspector({ role }: { role: TextRole }) {
   const styles = useEditor((s) => s.project.view.textStyles)
+  const showTitle = useEditor((s) => s.project.view.showTitle) !== false
   const a = useEditor.getState
   const d = TEXT_ROLE_DEFAULTS[role]
   const cur = styles?.[role] ?? {}
@@ -91,6 +142,12 @@ function TextStyleInspector({ role }: { role: TextRole }) {
         </div>
         <p className="note">차트에서 같은 종류의 텍스트 전체에 적용됩니다.</p>
       </div>
+      {role === 'title' && (
+        <label className="toggle" style={{ display: 'flex', marginBottom: 10 }}>
+          <input type="checkbox" checked={showTitle} onChange={() => a().toggleTitle()} />
+          상단 중앙에 도면 제목 표시
+        </label>
+      )}
       <div className="field-row">
         <div className="field">
           <label>글자 크기 (pt)</label>
@@ -112,9 +169,9 @@ function TextStyleInspector({ role }: { role: TextRole }) {
       </div>
       <div style={{ display: 'flex', gap: 8, marginTop: 2 }}>
         <button className="btn btn--sm" style={{ flex: 1 }} onClick={() => a().resetTextStyle(role)}>기본값 초기화</button>
-        <button className="btn btn--sm" style={{ flex: 1 }} onClick={() => a().selectTextRole(null)}>닫기</button>
+        <button className="btn btn--sm" style={{ flex: 1 }} onClick={() => a().selectTextRole(null)}>← 텍스트 목록</button>
       </div>
-      <p className="note">차트의 다른 텍스트를 클릭하면 그 텍스트 스타일 편집으로 전환됩니다.</p>
+      <p className="note">차트의 다른 텍스트(제목·공정명·축 등)를 클릭하면 그 텍스트 스타일 편집으로 전환됩니다.</p>
     </>
   )
 }
@@ -315,7 +372,6 @@ function ProjectInspector() {
   }
   const rainy = project.rainySeasons[0]
   const logos = project.branding?.logos ?? []
-  const titleSize = project.view.textStyles?.title?.fontSize ?? TEXT_ROLE_DEFAULTS.title.fontSize
 
   function onUploadLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -400,16 +456,8 @@ function ProjectInspector() {
       </label>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
-      <div className="panel__title" style={{ marginBottom: 10 }}>도면 제목 / CI</div>
-      <label className="toggle" style={{ display: 'flex', marginBottom: 10 }}>
-        <input type="checkbox" checked={project.view.showTitle !== false} onChange={() => a().toggleTitle()} />
-        상단 중앙에 도면 제목(볼드) 표시
-      </label>
-      <div className="field" style={{ maxWidth: 160 }}>
-        <label>제목 글자 크기 (pt)</label>
-        <PtInput value={titleSize} min={8} max={96} onCommit={(v) => a().setTextStyle('title', { fontSize: v })} />
-      </div>
-      <p className="note">제목을 차트에서 직접 클릭해도 같은 편집 창이 열립니다.</p>
+      <div className="panel__title" style={{ marginBottom: 10 }}>CI (로고)</div>
+      <p className="note" style={{ marginTop: 0, marginBottom: 8 }}>도면 제목은 차트에서 제목 글자를 클릭해 <b>텍스트</b> 탭에서 편집합니다(표시 ON/OFF·글꼴·크기·색).</p>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 10, marginBottom: 10, marginTop: 6 }}>
         {logos.map((logo, i) => (
           <div key={i} style={{ position: 'relative', border: '1px solid var(--hairline-strong)', borderRadius: 8, padding: 5, background: '#fff' }}>

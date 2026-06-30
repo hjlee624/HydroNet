@@ -88,6 +88,11 @@ export interface Task {
    *  참여(기간·선후행 유지). undefined/false = 일반 공정. */
   isDummy?: boolean
 
+  /** 비영속 표시 플래그 — 예정공정표↔마일스톤 연동(augmentForMirror)으로 마일스톤 차트에
+   *  '함께 표시'된 예정 공정임을 나타낸다. 렌더 시점에만 부여되며 저장되지 않는다. 표시 전용
+   *  (드래그/선택/편집 불가)이고, 마일스톤에서만 숨길 수 있다(view.mirrorHidden). */
+  __mirror?: boolean
+
   // ── Computed by the CPM engine (never persisted as authoritative) ──
   es?: number // early start
   ef?: number // early finish
@@ -157,6 +162,16 @@ export interface ViewSettings {
   fontScale?: number
   /** Per-role typography overrides for the chart texts (empty = all defaults). */
   textStyles?: Partial<Record<TextRole, TextStyle>>
+  /** 표시 기간 override (ISO `YYYY-MM-01`). 마일스톤 상단 연/월 클릭 팝업에서 설정.
+   *  둘 다 있으면 타임라인 도메인을 이 구간(시작 월 ~ 종료 월)으로 정확히 고정하고,
+   *  구간 밖 공정은 제외·부분 걸친 막대는 구간 경계로 클램프한다. 없으면 자동(데이터 범위). */
+  displayStart?: string
+  displayEnd?: string
+  /** 예정공정표↔마일스톤 연동(요구사항 4). 활성 시트가 마일스톤이고 plan 시트가 있을 때만
+   *  작동 — 예정공정표의 공종/공정을 마일스톤 차트에 라이브로 함께 표시한다. 기본 off. */
+  mirrorPlan?: boolean
+  /** 미러로 가져온 예정 공정 중 '마일스톤에서만' 숨긴 공정 id들(예정 원본은 불변). */
+  mirrorHidden?: ID[]
 }
 
 /** A CI/logo image (data URL) with its on-drawing box size in px. */

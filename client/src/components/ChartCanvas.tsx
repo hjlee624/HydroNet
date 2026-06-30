@@ -9,10 +9,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
 import { useEditor, filterActive } from '../state/store'
-import { computeLayout } from '../engine/layout'
+import { computeLayout, type LayoutModel } from '../engine/layout'
+import { augmentForMirror } from '../engine/mirror'
 import { routeLinks } from '../engine/routing'
-import { dateToDay, dayToDate, daysInMonth } from '../engine/dates'
+import { dateToDay, dayToDate, daysInMonth, toISO } from '../engine/dates'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
+import { Modal } from './Modal'
 
 type Drag =
   | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
@@ -50,6 +52,8 @@ export function ChartCanvas() {
   const movedRef = useRef(false)
   const [ghost, setGhost] = useState<LinkingGhost | null>(null)
   const [panning, setPanning] = useState(false)
+  // 표시 기간 설정 팝업(마일스톤 상단 연/월 클릭 — 요구사항 1).
+  const [periodOpen, setPeriodOpen] = useState(false)
   const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
   // 막대 아래 공기(기간) 텍스트 인라인 편집(이름 편집과 별개 입력).
   const [editingDur, setEditingDur] = useState<{ id: string; text: string } | null>(null)
@@ -63,9 +67,13 @@ export function ChartCanvas() {
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
   // scales together — not just the horizontal axis.
-  const model = useMemo(() => computeLayout(project, filter), [project, filter])
+  // 예정공정표↔마일스톤 연동(요구사항 4): 미러가 켜져 있으면 예정 시트의 공종/공정을 병합한
+  // 새 project로 레이아웃·라우팅한다(표시 전용). 새 객체는 이 컴포넌트 본문에서만 만든다
+  // (zustand 셀렉터로 반환하면 스냅샷 불안정 → 빈 화면).
+  const augmented = useMemo(() => augmentForMirror(project), [project])
+  const model = useMemo(() => computeLayout(augmented, filter), [augmented, filter])
 
-  const routed = useMemo(() => routeLinks(model, project.links), [model, project.links])
+  const routed = useMemo(() => routeLinks(model, augmented.links), [model, augmented.links])
 
   // "오늘" line position (content coords), or null when today is off-domain.
   const todayX = useMemo(() => {
@@ -221,7 +229,8 @@ export function ChartCanvas() {
       const bh = lt.isMilestone ? 16 : lt.h
       return r.x < bx + bw && bx < r.x + r.w && r.y < by + bh && by < r.y + r.h
     }
-    const ids = model.tasks.filter(hit).map((lt) => lt.task.id)
+    // 미러(예정 연동) 공정은 표시 전용이라 선택 대상에서 제외.
+    const ids = model.tasks.filter((lt) => !lt.task.__mirror && hit(lt)).map((lt) => lt.task.id)
     if (ids.length) useEditor.getState().selectTasks(ids)
     else useEditor.getState().selectTask(null)
   }
@@ -428,7 +437,8 @@ export function ChartCanvas() {
       // A near-horizontal drag within the task's own row is a pure schedule move —
       // don't restack rows.
       const tinyVertical = !!dragged && target?.catId === dragged.categoryId && Math.abs(y - dragged.cy) < model.rowHeight * 0.5
-      if (target && !tinyVertical) {
+      // 미러(예정 연동) 공종 레인으로는 옮길 수 없다 — 실제 공종(현재 시트)만 드롭 대상.
+      if (target && !tinyVertical && project.categories.some((c) => c.id === target.catId)) {
         useEditor.getState().moveTaskToRow(drag.taskId, target.catId, target.anchorId, target.mode, { history: false })
       }
     }
@@ -467,7 +477,8 @@ export function ChartCanvas() {
     const { x, y } = toContent(e.clientX, e.clientY)
     if (x < model.labelWidth) return
     const cat = model.categories.find((c) => y >= c.y && y < c.y + c.height)
-    if (!cat) return
+    // 미러(예정 연동)로 추가된 공종 레인엔 빠른추가 금지 — 실제 공종(현재 시트)만 대상.
+    if (!cat || !project.categories.some((c) => c.id === cat.id)) return
     const day = Math.max(0, Math.round(model.dayOf(x)))
     const id = useEditor.getState().addTask(cat.id, { start: day, duration: 30 })
     const t = useEditor.getState().project.tasks.find((x2) => x2.id === id)
@@ -553,6 +564,7 @@ export function ChartCanvas() {
               onDurationDoubleClick={onDurationDoubleClick}
               onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
               onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
+              onTimelineClick={() => { if (useEditor.getState().navMode === 'edit') setPeriodOpen(true) }}
               onRainyResizePointerDown={onRainyResizePointerDown}
               onBackgroundClick={() => {
                 if (useEditor.getState().navMode !== 'edit') return
@@ -619,6 +631,59 @@ export function ChartCanvas() {
           </div>
         </div>
       </div>
+      {periodOpen && <DisplayPeriodDialog model={model} onClose={() => setPeriodOpen(false)} />}
     </div>
+  )
+}
+
+/** 표시 기간 설정 팝업(요구사항 1) — 시작~종료 월을 지정하면 타임라인을 그 구간으로 고정한다.
+ *  '자동으로 초기화'하면 데이터 범위(착수~준공)로 복귀. */
+function DisplayPeriodDialog({ model, onClose }: { model: LayoutModel; onClose: () => void }) {
+  const project = useEditor((s) => s.project)
+  const a = useEditor.getState
+  const ym = (day: number) => toISO(dayToDate(project.startDate, day)).slice(0, 7) // YYYY-MM
+  const curStart = project.view.displayStart?.slice(0, 7) ?? ym(model.domainStartDay)
+  const curEnd = project.view.displayEnd?.slice(0, 7) ?? ym(Math.max(model.domainStartDay, model.domainEndDay - 1))
+  const [start, setStart] = useState(curStart)
+  const [end, setEnd] = useState(curEnd)
+  const active = !!(project.view.displayStart && project.view.displayEnd)
+
+  function apply() {
+    if (!start || !end) return
+    if (end < start) { if (typeof window !== 'undefined') window.alert('종료 월이 시작 월보다 빠릅니다.'); return }
+    a().setView({ displayStart: `${start}-01`, displayEnd: `${end}-01` })
+    onClose()
+  }
+  function reset() {
+    a().setView({ displayStart: undefined, displayEnd: undefined })
+    onClose()
+  }
+
+  return (
+    <Modal
+      title="표시 기간 설정"
+      sub="마일스톤 타임라인에 표시할 기간(시작~종료 월)을 지정합니다."
+      width={400}
+      onClose={onClose}
+      footer={(close) => (
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <button className="btn btn--sm" style={{ flex: 1 }} onClick={reset} disabled={!active} title="데이터 범위(착수~준공)로 되돌리기">자동으로 초기화</button>
+          <button className="btn btn--sm" onClick={close}>취소</button>
+          <button className="btn btn--primary btn--sm" onClick={apply}>적용</button>
+        </div>
+      )}
+    >
+      <div className="field-row">
+        <div className="field">
+          <label>시작 (연-월)</label>
+          <input className="input" type="month" value={start} onChange={(e) => setStart(e.target.value)} />
+        </div>
+        <div className="field">
+          <label>종료 (연-월)</label>
+          <input className="input" type="month" value={end} onChange={(e) => setEnd(e.target.value)} />
+        </div>
+      </div>
+      <p className="note">지정한 구간만 표시됩니다 — 데이터가 더 길어도 그 구간만, 짧아도 빈 기간을 포함합니다. ‘자동으로 초기화’ 하면 데이터 범위로 돌아갑니다.</p>
+    </Modal>
   )
 }

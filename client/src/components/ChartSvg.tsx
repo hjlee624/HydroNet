@@ -45,6 +45,8 @@ interface Props {
   onDurationDoubleClick: (id: string) => void
   onLinkClick: (e: RMouseEvent, id: string) => void
   onTextClick: (role: TextRole) => void
+  /** 타임라인 헤더의 연/월 클릭 → 표시 기간 설정 팝업(요구사항 1). */
+  onTimelineClick: () => void
   onRainyResizePointerDown: (e: RPointerEvent, seasonId: string, edge: 'start' | 'end') => void
   onBackgroundClick: () => void
 }
@@ -57,7 +59,7 @@ function ChartSvgBase({
   model, routed, project, selectedTaskId, selectedTaskIds, selectedLinkId, selectedTextRole,
   showCriticalPath, showGrid, colorMode = 'category', todayX, linkingGhost,
   onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
-  onTaskClick, onTaskDoubleClick, onTaskContextMenu, onDurationDoubleClick, onLinkClick, onTextClick, onRainyResizePointerDown, onBackgroundClick,
+  onTaskClick, onTaskDoubleClick, onTaskContextMenu, onDurationDoubleClick, onLinkClick, onTextClick, onTimelineClick, onRainyResizePointerDown, onBackgroundClick,
 }: Props) {
   const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
   const yearRowH = headerHeight * 0.46
@@ -184,7 +186,10 @@ function ChartSvgBase({
         {model.years.map((y, i) => (
           <g key={`yr-${i}`}>
             {i > 0 && <line x1={y.x} y1={0} x2={y.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={1} />}
-            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" {...roleAttrs('axisYear')}>
+            {/* 연/월 클릭 = 표시 기간 설정 팝업(요구사항 1). 축 텍스트 스타일은 속성 패널의
+                텍스트 탭에서 역할을 골라 편집한다. */}
+            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" {...roleAttrs('axisYear')}
+              onClick={(e) => { e.stopPropagation(); onTimelineClick() }}>
               {y.year}
             </text>
           </g>
@@ -192,7 +197,8 @@ function ChartSvgBase({
         {model.months.map((m, i) => (
           <g key={`mo-${i}`}>
             <line x1={m.x} y1={yearRowH} x2={m.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={0.75} />
-            <text x={m.x + m.width / 2} y={yearRowH + (headerHeight - yearRowH) * 0.62} textAnchor="middle" {...roleAttrs('axisMonth')}>
+            <text x={m.x + m.width / 2} y={yearRowH + (headerHeight - yearRowH) * 0.62} textAnchor="middle" {...roleAttrs('axisMonth')}
+              onClick={(e) => { e.stopPropagation(); onTimelineClick() }}>
               {m.label}
             </text>
           </g>
@@ -284,14 +290,17 @@ function ChartSvgBase({
       <g>
         {model.tasks.map((lt) => {
           const t = lt.task
-          const crit = showCriticalPath && lt.critical
+          // 미러(예정공정표 연동) 공정은 표시 전용 — 포인터/CP 강조/선택/data-task-id 없이
+          // 옅게(점선·반투명) 그려, 마일스톤 출력에는 포함되되 마일스톤에선 편집할 수 없다.
+          const mirror = !!t.__mirror
+          const crit = !mirror && showCriticalPath && lt.critical
           // In 주공정 강조 colour mode the emphasis follows the task's own critical
           // flag, independent of the 주공정 표시 overlay toggle — otherwise turning
           // that overlay off would mute every bar to grey and the colour mode would
           // do nothing. 'crit' still gates the CP-overlay flourishes (halo, enlarged
-          // diamonds) that legitimately follow the overlay toggle.
-          const emphasizeCrit = colorMode === 'critical' ? lt.critical : crit
-          const selected = selSet.has(t.id)
+          // diamonds) that legitimately follow the overlay toggle. Mirror 공정은 강조 없음.
+          const emphasizeCrit = mirror ? false : (colorMode === 'critical' ? lt.critical : crit)
+          const selected = !mirror && selSet.has(t.id)
           const isDummy = !!t.isDummy && !lt.isMilestone
           const baseFill = emphasizeCrit ? colors.critical
             : colorMode === 'critical' ? '#CFC8B8' // muted so the critical spine pops
@@ -304,22 +313,24 @@ function ChartSvgBase({
             const r = crit ? milestoneR * 1.45 : milestoneR
             return (
               <g key={t.id}
-                onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}
-                onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
-                onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}
-                style={{ cursor: 'pointer' }}>
+                onClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskClick(e, t.id) }}
+                onDoubleClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
+                onContextMenu={(e) => { if (mirror) return; e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}
+                style={{ cursor: mirror ? 'default' : 'pointer', opacity: mirror ? 0.6 : undefined }}>
                 <text x={lt.cx} y={lt.cy - r - 4} textAnchor="middle"
                   {...roleAttrs('milestoneName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
                 {crit && <polygon points={diamond(lt.cx, lt.cy, r + 5)} fill={colors.critical} opacity={0.2} />}
                 <polygon
-                  data-task-id={t.id}
+                  data-task-id={mirror ? undefined : t.id}
                   points={diamond(lt.cx, lt.cy, r)}
                   fill={emphasizeCrit ? colors.critical : colors.milestone}
                   stroke={selected ? colors.primary : crit ? '#ffffff' : colors.canvas}
                   strokeWidth={selected ? 2.5 : crit ? 2 : 1.5}
-                  onPointerDown={(e) => onTaskPointerDown(e, t.id)}
+                  strokeDasharray={mirror ? '2 2' : undefined}
+                  style={mirror ? { pointerEvents: 'none' } : undefined}
+                  onPointerDown={mirror ? undefined : (e) => onTaskPointerDown(e, t.id)}
                 />
                 <text x={lt.cx} y={lt.cy + r + 12} textAnchor="middle" {...roleAttrs('milestoneDate')}>
                   {toISO(dayToDate(project.startDate, t.start)).slice(2)}
@@ -329,33 +340,35 @@ function ChartSvgBase({
           }
           return (
             <g key={t.id}
-              onClick={(e) => { e.stopPropagation(); onTaskClick(e, t.id) }}
-              onDoubleClick={(e) => { e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
-              onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}>
+              onClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskClick(e, t.id) }}
+              onDoubleClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
+              onContextMenu={(e) => { if (mirror) return; e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}
+              style={mirror ? { opacity: 0.6 } : undefined}>
               <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
                 {t.name}
               </text>
               <rect
                 className="chart-bar"
-                data-task-id={t.id}
+                data-task-id={mirror ? undefined : t.id}
                 x={lt.x} y={lt.y} width={lt.w} height={lt.h} rx={3}
                 fill={fill}
-                fillOpacity={isDummy ? DUMMY_OPACITY : undefined}
+                fillOpacity={isDummy ? DUMMY_OPACITY : mirror ? 0.5 : undefined}
                 stroke={selected ? colors.primary : emphasizeCrit ? colors.critical : isDummy ? laneColor(model, lt.categoryId) : 'rgba(0,0,0,0.18)'}
                 strokeWidth={selected ? 2.4 : 1}
-                strokeDasharray={isDummy && !selected ? '4 3' : undefined}
-                onPointerDown={(e) => onTaskPointerDown(e, t.id)}
+                strokeDasharray={mirror ? '3 2' : (isDummy && !selected ? '4 3' : undefined)}
+                style={mirror ? { pointerEvents: 'none' } : undefined}
+                onPointerDown={mirror ? undefined : (e) => onTaskPointerDown(e, t.id)}
               />
               <text
                 x={lt.x} y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
                 {...roleAttrs('taskDuration')}
-                onDoubleClick={(e) => { e.stopPropagation(); onDurationDoubleClick(t.id) }}
+                onDoubleClick={mirror ? undefined : (e) => { e.stopPropagation(); onDurationDoubleClick(t.id) }}
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
               {/* resize grips (drag to change duration) + link anchor (drag to connect) —
-                  primary single selection only (다중선택 그룹 이동 중엔 숨김). */}
-              {t.id === selectedTaskId && singleSel && (
+                  primary single selection only (다중선택 그룹 이동 중엔 숨김 · 미러 제외). */}
+              {t.id === selectedTaskId && singleSel && !mirror && (
                 <>
                   <rect
                     data-export-hide="1"

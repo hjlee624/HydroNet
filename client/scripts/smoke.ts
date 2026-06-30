@@ -10,6 +10,7 @@ import { routeLinks } from '../src/engine/routing'
 import { paperPx } from '../src/engine/paper'
 import { projectKpis, toNum } from '../src/engine/kpis'
 import { dayToDate } from '../src/engine/dates'
+import { augmentForMirror, mirrorActive, planMirrorView } from '../src/engine/mirror'
 
 let failures = 0
 function check(cond: boolean, label: string) {
@@ -265,6 +266,74 @@ console.log('')
   console.log('\n[Arrows] 한 막대로 들어오는 화살표 수렴(분산 없음)')
   check(toC.length === 2 && Math.abs(toC[0].arrowY - toC[1].arrowY) < 0.01,
     `여러 화살표가 같은 Y(막대 중심)로 수렴 (${toC.map((l) => l.arrowY.toFixed(1)).join(' / ')})`)
+}
+
+// 14. 표시 기간(view.displayStart/End) — 지정 구간만 정확히 표시(요구사항 1)
+console.log('')
+{
+  const base: any = makeProject('construction', 'concrete-gravity') // 착수일 2026-01-01
+  const full = computeLayout(base)
+  const win = computeLayout({ ...base, view: { ...base.view, displayStart: '2026-01-01', displayEnd: '2026-06-01' } })
+  console.log(`\n[표시기간] 전체 months=${full.months.length} → 6개월창 months=${win.months.length}, bars ${full.tasks.length}→${win.tasks.length}`)
+  check(win.months.length === 6, `지정 구간 = 6개월만 표시 (got ${win.months.length})`)
+  check(win.months.length < full.months.length, '지정 구간이 전체 데이터 범위보다 짧게 잘림')
+  check(win.tasks.every((lt: any) => lt.startX >= win.labelWidth - 0.5 && lt.endX <= win.contentWidth + 0.5 && lt.x >= win.labelWidth - 0.5),
+    '구간에 걸친 막대는 경계로 클램프(라벨열/우측 넘침 없음)')
+  check(!win.tasks.some((lt: any) => /준공/.test(lt.task.name)), '구간 밖 마일스톤(준공)은 제외')
+  const onlyStart = computeLayout({ ...base, view: { ...base.view, displayStart: '2026-01-01' } })
+  check(onlyStart.months.length === full.months.length, '한쪽만 지정하면 자동(전체) 범위 유지')
+  const inverted = computeLayout({ ...base, view: { ...base.view, displayStart: '2026-06-01', displayEnd: '2026-01-01' } })
+  check(inverted.months.length === full.months.length, '역전 구간은 무시하고 자동 범위')
+}
+
+// 15. 예정공정표↔마일스톤 연동(augmentForMirror) — 병합·숨김·게이팅(요구사항 4)
+console.log('')
+{
+  const baseP: any = createSampleProject()
+  const synth: any = {
+    ...baseP,
+    categories: [{ id: 'm1', name: '공통', color: '#445566', collapsed: false, order: 0 }],
+    tasks: [{ id: 'mt1', categoryId: 'm1', name: '시공A', start: 0, duration: 10, isMilestone: false }],
+    links: [],
+    rainySeasons: [],
+    activeSheet: { id: 'sh-ms', role: 'milestone', name: '시공 마일스톤' },
+    sheets: [{
+      id: 'sh-plan', role: 'plan', name: '예정공정표',
+      categories: [
+        { id: 'pc1', name: '공통', color: '#777', collapsed: false, order: 0 },
+        { id: 'pc2', name: '설계', color: '#999', collapsed: false, order: 1 },
+      ],
+      tasks: [
+        { id: 'pt1', categoryId: 'pc1', name: '예정A', start: 5, duration: 10, isMilestone: false },
+        { id: 'pt2', categoryId: 'pc2', name: '예정B', start: 20, duration: 10, isMilestone: false },
+      ],
+      links: [{ id: 'pl', from: 'pt1', to: 'pt2', type: 'FS', lag: 0 }],
+      rainySeasons: [],
+    }],
+    view: { ...baseP.view, mirrorPlan: true, mirrorHidden: [] },
+  }
+  check(mirrorActive(synth), '미러 활성(마일스톤 시트 + plan 시트 + 토글 ON)')
+  const aug = augmentForMirror(synth)
+  const mir = aug.tasks.filter((t: any) => t.__mirror)
+  console.log(`\n[미러] cats ${synth.categories.length}→${aug.categories.length}, tasks ${synth.tasks.length}→${aug.tasks.length}(미러 ${mir.length})`)
+  check(aug.categories.length === 2, `공종 병합: 같은 이름(공통)은 흡수·설계는 추가 (got ${aug.categories.length})`)
+  check(aug.tasks.length === 3 && mir.length === 2, '예정 공정 2개가 미러로 함께 표시')
+  const pt1 = aug.tasks.find((t: any) => t.id === 'pt1')
+  const pt2 = aug.tasks.find((t: any) => t.id === 'pt2')
+  check(pt1?.categoryId === 'm1', '같은 이름 공종으로 remap(공통→m1)')
+  check(typeof pt2?.categoryId === 'string' && pt2.categoryId.startsWith('mir-cat-'), '예정 전용 공종은 새 레인으로 추가')
+  check(aug.links.some((l: any) => l.from === 'pt1' && l.to === 'pt2'), '미러 공정 간 연결도 함께 표시')
+  const hiddenAug = augmentForMirror({ ...synth, view: { ...synth.view, mirrorHidden: ['pt1'] } })
+  check(hiddenAug.tasks.filter((t: any) => t.__mirror).length === 1, '마일스톤에서 숨긴 예정 공정은 차트에서 제외')
+  check(!hiddenAug.links.some((l: any) => l.from === 'pt1'), '숨긴 공정으로 가는/오는 연결도 제외')
+  check(synth.sheets[0].tasks.length === 2, '예정공정표 원본은 불변(숨겨도 2개 유지)')
+  const off = { ...synth, view: { ...synth.view, mirrorPlan: false } }
+  check(augmentForMirror(off) === off, '토글 OFF면 augment 없이 원본 그대로 반환(===)')
+  check(!mirrorActive({ ...synth, activeSheet: { id: 'sh-plan', role: 'plan', name: '예정공정표' } }), '예정 시트가 활성이면 미러 비활성')
+  const am = computeLayout(aug)
+  check(am.tasks.every((lt: any) => Number.isFinite(lt.x) && Number.isFinite(lt.cy)), '미러 병합 레이아웃 좌표 유한')
+  const mvw = planMirrorView(synth)
+  check(!!mvw && (mvw.tasksByCat.get('m1') ?? []).some((r: any) => r.id === 'pt1'), '사이드바 뷰: 공통 공종 아래 예정A 표시')
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

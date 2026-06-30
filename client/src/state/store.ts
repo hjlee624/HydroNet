@@ -45,6 +45,8 @@ export interface ViewFilter {
 export type ColorMode = 'category' | 'critical'
 /** Progressive disclosure: 'simple' hides advanced controls, 'pro' shows everything. */
 export type UiMode = 'simple' | 'pro'
+/** 오른쪽 속성 패널의 활성 탭(요구사항 3: 도면·프로젝트 / 텍스트 / 공정 / 연결). */
+export type InspectorTab = 'project' | 'text' | 'task' | 'link'
 
 const FILTER_OFF: ViewFilter = { critical: false, milestone: false, query: '' }
 export const filterActive = (f: ViewFilter): boolean => f.critical || f.milestone || f.query.trim() !== ''
@@ -97,6 +99,8 @@ export interface EditorState {
   categoryClipboard: CategoryClipboard | null
   /** When set, the inspector shows the text-style editor for this role. */
   selectedTextRole: TextRole | null
+  /** 오른쪽 속성 패널 활성 탭(요구사항 3). 차트에서 공정/연결/글자를 클릭하면 자동 전환된다. */
+  inspectorTab: InspectorTab
   linking: LinkingState | null
   zoom: number
   /** Active canvas tool (edit / zoom / pan). */
@@ -186,6 +190,10 @@ export interface EditorState {
   setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate'>>) => void
   toggleCommissioning: () => void
   toggleTitle: () => void
+  /** 예정공정표↔마일스톤 연동 토글(요구사항 4) — 마일스톤 시트에서만 의미가 있다. */
+  toggleMirrorPlan: () => void
+  /** 미러로 표시된 예정 공정을 '마일스톤에서만' 숨김/표시 토글(예정 원본은 불변). */
+  toggleMirrorHidden: (id: ID) => void
   addLogo: (src: string, w?: number, h?: number) => void
   setLogoSize: (index: number, w: number, h: number) => void
   moveLogo: (index: number, dir: -1 | 1) => void
@@ -223,6 +231,8 @@ export interface EditorState {
   /** 클립보드의 공종들을 새 id로 맨 끝에 붙여넣기(Ctrl+V). */
   pasteCategories: () => void
   selectTextRole: (role: TextRole | null) => void
+  /** 오른쪽 속성 패널 탭 수동 전환(요구사항 3). */
+  setInspectorTab: (tab: InspectorTab) => void
   setZoom: (z: number) => void
   setNavMode: (m: NavMode) => void
   setFilter: (patch: Partial<ViewFilter>) => void
@@ -283,6 +293,11 @@ function normalize(project: Project): Project {
       showTitle: v.showTitle !== false,
       fontScale: v.fontScale ?? 1,
       textStyles: v.textStyles ?? {},
+      // 표시 기간 override + 예정↔마일스톤 연동 상태(저장/불러오기 보존 — 옵션이라 없으면 undefined).
+      displayStart: v.displayStart,
+      displayEnd: v.displayEnd,
+      mirrorPlan: v.mirrorPlan,
+      mirrorHidden: v.mirrorHidden,
     }))(project.view ?? ({} as Partial<ViewSettings>)),
   }
 }
@@ -369,6 +384,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     selectedCategoryIds: [],
     categoryClipboard: null,
     selectedTextRole: null,
+    inspectorTab: 'project',
     linking: null,
     zoom: 1,
     navMode: 'edit',
@@ -758,6 +774,12 @@ export const useEditor = create<EditorState>()((set, get) => {
     setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }, { history: false }),
     toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),
     toggleTitle: () => commit((p) => { p.view.showTitle = p.view.showTitle === false }, { history: false }),
+    toggleMirrorPlan: () => commit((p) => { p.view = { ...p.view, mirrorPlan: !p.view.mirrorPlan } }, { history: false }),
+    toggleMirrorHidden: (id) => commit((p) => {
+      const cur = new Set(p.view.mirrorHidden ?? [])
+      if (cur.has(id)) cur.delete(id); else cur.add(id)
+      p.view = { ...p.view, mirrorHidden: [...cur] }
+    }, { history: false }),
     addLogo: (src, w = 168, h = 60) => commit((p) => {
       if (!p.branding) p.branding = { logos: [] }
       p.branding.logos.push({ src, w, h })
@@ -845,14 +867,14 @@ export const useEditor = create<EditorState>()((set, get) => {
     setAutoCascade: (v) => set({ autoCascade: v }),
     closeRecalcReport: () => set({ recalcReport: null }),
 
-    selectTask: (id) => set({ selectedTaskId: id, selectedTaskIds: id ? [id] : [], selectedLinkId: null, selectedTextRole: null }),
+    selectTask: (id) => set({ selectedTaskId: id, selectedTaskIds: id ? [id] : [], selectedLinkId: null, selectedTextRole: null, ...(id ? { inspectorTab: 'task' as InspectorTab } : {}) }),
     toggleTaskSelection: (id) => set((s) => {
       const has = s.selectedTaskIds.includes(id)
       const ids = has ? s.selectedTaskIds.filter((x) => x !== id) : [...s.selectedTaskIds, id]
-      return { selectedTaskIds: ids, selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null }
+      return { selectedTaskIds: ids, selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null, inspectorTab: (ids.length ? 'task' : s.inspectorTab) as InspectorTab }
     }),
-    selectTasks: (ids) => set({ selectedTaskIds: [...ids], selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null }),
-    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTaskIds: [], selectedTextRole: null }),
+    selectTasks: (ids) => set({ selectedTaskIds: [...ids], selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null, ...(ids.length ? { inspectorTab: 'task' as InspectorTab } : {}) }),
+    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTaskIds: [], selectedTextRole: null, ...(id ? { inspectorTab: 'link' as InspectorTab } : {}) }),
     selectCategory: (id) => set({ selectedCategoryId: id, selectedCategoryIds: id ? [id] : [] }),
     selectCategories: (ids, anchor) => set({ selectedCategoryIds: ids, selectedCategoryId: anchor }),
     copyCategories: (ids) => {
@@ -906,7 +928,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selectedCategoryIds: newIds, selectedCategoryId: newIds[newIds.length - 1] ?? null })
       logInfo(`공종 ${clip.categories.length}개를 붙여넣었습니다.`)
     },
-    selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedTaskIds: [], selectedLinkId: null }),
+    selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedTaskIds: [], selectedLinkId: null, ...(role ? { inspectorTab: 'text' as InspectorTab } : {}) }),
+    setInspectorTab: (tab) => set({ inspectorTab: tab }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
     setNavMode: (m) => set({ navMode: m }),
     setFilter: (patch) => set((s) => ({ filter: { ...s.filter, ...patch } })),

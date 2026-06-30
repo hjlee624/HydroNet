@@ -155,6 +155,16 @@ function estimateTextWidth(text: string, fontPx: number): number {
   return units * fontPx
 }
 
+/** Resolve a user-pinned 표시 기간(view.displayStart/End, ISO `YYYY-MM`)을 달력 도메인으로.
+ *  둘 다 유효할 때만 활성 — 타임라인을 시작 월 ~ 종료 월(종료 월 포함)로 정확히 고정한다.
+ *  None when either edge is missing/invalid (→ 자동: 데이터 범위). */
+function resolveDisplayWindow(ds?: string, de?: string): { startDate: Date; endDate: Date } | null {
+  if (!ds || !de) return null
+  const startDate = startOfMonth(parseISO(ds))
+  const endDate = addMonths(startOfMonth(parseISO(de)), 1) // end month inclusive
+  return endDate > startDate ? { startDate, endDate } : null
+}
+
 export function computeLayout(project: Project, filter?: LayoutFilter): LayoutModel {
   const { view } = project
   const pxPerDay = view.pxPerDay
@@ -214,16 +224,35 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   }
   labelWidth = Math.ceil(labelWidth)
 
-  // ── Time domain: pad to whole months for a tidy axis ──
-  const minTaskDay = tasks.reduce((m, t) => Math.min(m, t.start), 0)
-  const maxTaskDay = tasks.reduce((m, t) => Math.max(m, t.start + t.duration), 30)
-  const startDate = startOfMonth(dayToDate(project.startDate, minTaskDay))
-  const endDate = addMonths(startOfMonth(dayToDate(project.startDate, maxTaskDay)), 2)
+  // ── Time domain: pad to whole months for a tidy axis. 표시 기간(연/월 클릭 팝업)이
+  //    설정되면 데이터 범위 대신 그 구간으로 도메인을 고정한다. ──
+  const win = resolveDisplayWindow(view.displayStart, view.displayEnd)
+  let startDate: Date, endDate: Date
+  if (win) {
+    startDate = win.startDate
+    endDate = win.endDate
+  } else {
+    const minTaskDay = tasks.reduce((m, t) => Math.min(m, t.start), 0)
+    const maxTaskDay = tasks.reduce((m, t) => Math.max(m, t.start + t.duration), 30)
+    startDate = startOfMonth(dayToDate(project.startDate, minTaskDay))
+    endDate = addMonths(startOfMonth(dayToDate(project.startDate, maxTaskDay)), 2)
+  }
   const domainStartDay = dateToDay(project.startDate, startDate)
   const domainEndDay = dateToDay(project.startDate, endDate)
 
   const xOf = (day: number) => labelWidth + (day - domainStartDay) * pxPerDay
   const dayOf = (x: number) => (x - labelWidth) / pxPerDay + domainStartDay
+
+  // When a 표시 기간 is pinned: drop activities entirely outside it, and clamp those
+  // straddling an edge to the window so no bar bleeds past the axis/label column.
+  const domainTasks = win
+    ? tasks.filter((t) => (t.isMilestone
+        ? t.start >= domainStartDay && t.start <= domainEndDay
+        : t.start <= domainEndDay && t.start + t.duration >= domainStartDay))
+    : tasks
+  const clampX = win
+    ? (x: number) => Math.max(labelWidth, Math.min(xOf(domainEndDay), x))
+    : (x: number) => x
 
   // ── Lanes & sub-row stacking ──
   const laidCategories: LaidCategory[] = []
@@ -231,7 +260,7 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   const headerTop = titleHeight
   let cursorY = titleHeight + headerHeight
   for (const cat of categories) {
-    const catTasks = tasks.filter((t) => t.categoryId === cat.id)
+    const catTasks = domainTasks.filter((t) => t.categoryId === cat.id)
     // The sidebar tree's collapse toggle is sidebar-only; the chart always lays
     // a lane out in full (visibility is controlled by `hidden`, not `collapsed`).
     const laneY = cursorY
@@ -255,8 +284,8 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     for (const t of catTasks) {
       const vrow = denseOf.get(rawRowOf.get(t.id)!) ?? 0
       const rowMidY = laneY + headerInset + vrow * rowHeight + rowHeight / 2
-      const startX = xOf(t.start)
-      const endX = xOf(t.start + t.duration)
+      const startX = clampX(xOf(t.start))
+      const endX = clampX(xOf(t.start + t.duration))
       laidTasks.push({
         task: t,
         categoryId: cat.id,

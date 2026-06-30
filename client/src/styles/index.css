@@ -545,6 +545,49 @@ input, select, textarea {
 .cat__task.is-hidden { opacity: 0.45; }
 .cat.is-hidden .cat__name { opacity: 0.5; text-decoration: line-through; }
 
+/* ── 예정공정표↔마일스톤 연동(미러, 요구사항 4) ── */
+.mirror-bar {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0; padding: 9px 14px;
+  border-bottom: 1px solid var(--hairline-soft);
+  background: var(--cream-soft);
+  font-size: 12px; font-weight: 600; color: var(--slate);
+  cursor: pointer;
+}
+.cat--mirror .cat__name { font-weight: 600; color: var(--steel); }
+.cat--mirror .cat__row { cursor: default; }
+.cat__task--mirror { color: var(--steel); font-style: italic; }
+.cat__task--mirror:hover { background: var(--cream-soft); }
+.cat__task--mirror.is-hidden { opacity: 0.4; }
+
+/* ── 속성 4탭(요구사항 3) — SAMPLE.png 형태, 크림/오렌지 ── */
+.insp-tabs {
+  display: flex; gap: 4px;
+  padding: 8px 8px 0; background: var(--canvas);
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.insp-tab {
+  flex: 1; min-width: 0;
+  height: 30px; padding: 0 6px;
+  border: 1px solid var(--hairline); border-bottom: none;
+  border-radius: 8px 8px 0 0;
+  background: var(--cream-soft); color: var(--steel);
+  font-size: 12px; font-weight: 600; cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.insp-tab:hover { background: var(--cream); }
+.insp-tab.active { background: var(--cream); color: var(--ink); border-color: var(--hairline-strong); }
+
+/* 텍스트 탭 — 스타일 대상(역할) 선택 목록 */
+.role-list { display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+.role-list__item {
+  text-align: left; padding: 8px 10px;
+  border: 1px solid var(--hairline); border-radius: var(--radius-md);
+  background: var(--canvas); color: var(--charcoal);
+  font-size: 13px; font-weight: 500; cursor: pointer;
+}
+.role-list__item:hover { background: var(--cream-soft); border-color: var(--hairline-strong); }
+
 /* ── ON/OFF switch ── */
 .sw {
   width: 28px; height: 15px;

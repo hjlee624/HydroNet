@@ -7,6 +7,7 @@ import { useRef, useState } from 'react'
 import type { DragEvent as RDragEvent, MouseEvent as RMouseEvent } from 'react'
 import { useEditor, filterActive } from '../state/store'
 import type { Category } from '../types/model'
+import { planMirrorView, type MirrorRow } from '../engine/mirror'
 
 /** Small ON/OFF switch controlling whether a lane/activity shows in the chart. */
 function VisToggle({ on, onToggle, title }: { on: boolean; onToggle: () => void; title: string }) {
@@ -34,6 +35,13 @@ export function Sidebar({ width }: { width: number }) {
   const allOn = !project.categories.some((c) => c.hidden) && !project.tasks.some((t) => t.hidden)
   const orderedIds = categories.map((c) => c.id) // 표시 순서 — Shift 범위선택·다중선택 기준
 
+  // 예정공정표↔마일스톤 연동(요구사항 4): 활성 시트가 마일스톤이고 plan 시트가 있을 때만
+  // 토글 노출. mv는 미러 ON일 때 예정 공종/공정(숨김 포함)을 표시 공종별로 묶어 돌려준다.
+  const canMirror = project.activeSheet?.role === 'milestone' && !!project.sheets?.some((s) => s.role === 'plan')
+  const mirrorOn = !!project.view.mirrorPlan && canMirror
+  const mv = planMirrorView(project)
+  const planOnlyCats = mv ? mv.cats.filter((c) => c.planOnly) : []
+
   return (
     <aside className="panel panel--left" style={{ width }}>
       <div className="panel__header">
@@ -46,6 +54,12 @@ export function Sidebar({ width }: { width: number }) {
           <button className="btn btn--sm" onClick={() => a().addCategory()}>＋ 공종</button>
         </div>
       </div>
+      {canMirror && (
+        <label className="mirror-bar toggle" title="예정공정표의 공종·공정을 마일스톤에 함께 표시합니다(표시 전용). 개별 공정은 🔗 행의 스위치로 마일스톤에서만 숨길 수 있습니다.">
+          <input type="checkbox" checked={mirrorOn} onChange={() => a().toggleMirrorPlan()} />
+          예정공정표 공정 함께 표시
+        </label>
+      )}
       <div className="panel__scroll">
         {categories.map((cat, i) => (
           <CategoryNode
@@ -54,9 +68,13 @@ export function Sidebar({ width }: { width: number }) {
             nextId={categories[i + 1]?.id ?? null}
             orderedIds={orderedIds}
             selectedTaskId={selectedTaskId}
+            mirrorRows={mv?.tasksByCat.get(cat.id) ?? []}
           />
         ))}
-        {categories.length === 0 && (
+        {planOnlyCats.map((c) => (
+          <MirrorOnlyNode key={c.id} cat={c} rows={mv!.tasksByCat.get(c.id) ?? []} />
+        ))}
+        {categories.length === 0 && planOnlyCats.length === 0 && (
           <div className="empty-hint">공종이 없습니다.<br />상단 ＋공종 으로 추가하세요.</div>
         )}
       </div>
@@ -64,7 +82,47 @@ export function Sidebar({ width }: { width: number }) {
   )
 }
 
-function CategoryNode({ cat, nextId, orderedIds, selectedTaskId }: { cat: Category; nextId: string | null; orderedIds: string[]; selectedTaskId: string | null }) {
+/** 예정공정표 연동 공정 한 줄(표시 전용) — 🔗 + 이름 + 마일스톤 표시 토글(view.mirrorHidden). */
+function MirrorRowView({ row }: { row: MirrorRow }) {
+  const a = useEditor.getState
+  return (
+    <div
+      className={`cat__task cat__task--mirror ${row.hidden ? 'is-hidden' : ''}`}
+      title="예정공정표에서 연동된 공정(표시 전용) · 스위치로 마일스톤 표시/숨김"
+    >
+      <span>🔗</span>
+      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}>
+        {row.name.replace(/^◆\s*/, '')}
+      </span>
+      <VisToggle on={!row.hidden} onToggle={() => a().toggleMirrorHidden(row.id)} title="이 예정 공정을 마일스톤에 표시 ON/OFF" />
+      <span className="dur">{row.isMilestone ? 'MS' : `${row.duration}일`}</span>
+    </div>
+  )
+}
+
+/** 예정공정표에만 있는(마일스톤 자체 공종과 이름이 안 겹치는) 공종을 연동 표시하는 읽기전용 노드. */
+function MirrorOnlyNode({ cat, rows }: { cat: { id: string; name: string; color: string }; rows: MirrorRow[] }) {
+  const [collapsed, setCollapsed] = useState(false)
+  return (
+    <div className="cat cat--mirror">
+      <div className="cat__row" title="예정공정표에서 연동된 공종(표시 전용)">
+        <button className="icon-btn" title={collapsed ? '펼치기' : '접기'} onClick={() => setCollapsed((v) => !v)}>
+          {collapsed ? '▸' : '▾'}
+        </button>
+        <span className="cat__swatch" style={{ background: cat.color }} />
+        <span className="cat__name">🔗 {cat.name}</span>
+        <span className="cat__count">{rows.length}</span>
+      </div>
+      {!collapsed && (
+        <div className="cat__tasks">
+          {rows.map((m) => <MirrorRowView key={m.id} row={m} />)}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function CategoryNode({ cat, nextId, orderedIds, selectedTaskId, mirrorRows }: { cat: Category; nextId: string | null; orderedIds: string[]; selectedTaskId: string | null; mirrorRows: MirrorRow[] }) {
   // Select the stable array ref and filter in the body — returning a fresh
   // `.filter()` array straight from the selector makes zustand v5's snapshot
   // unstable (useSyncExternalStore → infinite re-render → blank screen).
@@ -300,6 +358,8 @@ function CategoryNode({ cat, nextId, orderedIds, selectedTaskId }: { cat: Catego
               <span className="dur">{t.isMilestone ? 'MS' : `${t.duration}일`}</span>
             </div>
           ))}
+          {/* 예정공정표 연동 공정(표시 전용) — 같은 이름 공종 아래로 함께 표시. */}
+          {mirrorRows.map((m) => <MirrorRowView key={`mir-${m.id}`} row={m} />)}
           <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
             <button className="btn btn--sm btn--ghost" onClick={() => a().addTask(cat.id)}>＋ 공정</button>
             <button className="btn btn--sm btn--ghost" onClick={() => a().addTask(cat.id, { name: '◆ 마일스톤', isMilestone: true, duration: 0 })}>＋ 마일스톤</button>
