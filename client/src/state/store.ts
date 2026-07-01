@@ -12,7 +12,7 @@ import type {
   Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, RainySeason, Sheet, Task, TextRole, TextStyle, ViewSettings,
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
-import { applyCascade, computeSchedule, linkConstrainedStart, reschedule } from '../engine/scheduling'
+import { applyCascade, computeSchedule, linkConstrainedStart, linkLagFromPositions, reschedule } from '../engine/scheduling'
 import { fitToPaperView } from '../engine/layout'
 import { paperMm } from '../engine/paper'
 import { daysInMonth, doyToMonthDay, monthDayToDoy, toISO } from '../engine/dates'
@@ -343,6 +343,20 @@ function snapSuccessor(p: Project, toId: ID): void {
   if (t) t.start = s
 }
 
+/** 위치 → 지연(lag) 역산: 막대(`toId`)를 옮기면 그 막대로 들어오는(incoming) 링크들의
+ *  지연을 새 위치(선행/후행의 실제 start·finish)에 맞춰 갱신한다. snapSuccessor(지연→위치)의
+ *  역방향으로, 드래그와 지연 입력이 서로 반영되게 한다. 선행이 함께 이동하면 갭이 보존돼 lag
+ *  불변. 이후 cascade는 이 lag를 기준으로 하므로 옮긴 막대는 제자리에 남고, 하류만 밀린다. */
+function relinkIncoming(p: Project, toId: ID): void {
+  const to = p.tasks.find((t) => t.id === toId)
+  if (!to) return
+  for (const l of p.links) {
+    if (l.to !== toId || l.from === toId) continue
+    const from = p.tasks.find((t) => t.id === l.from)
+    if (from) l.lag = linkLagFromPositions(from, to, l.type)
+  }
+}
+
 export const useEditor = create<EditorState>()((set, get) => {
   /** Apply a mutation to the project with history + reschedule + autosave. */
   function commit(
@@ -471,13 +485,17 @@ export const useEditor = create<EditorState>()((set, get) => {
       commit((p) => {
         const t = p.tasks.find((x) => x.id === id)
         if (t) Object.assign(t, patch)
+        // 위치(시작·기간)를 바꾸면 incoming 링크 지연을 새 위치에 맞춰 역산(위치↔지연 상호작용).
+        if (affectsSchedule) relinkIncoming(p, id)
       }, { cascade: affectsSchedule, history: opts?.history ?? true })
     },
     setTaskStartLive: (id, startDay) => {
-      // No history push (gesture already snapshotted); cascade respected.
+      // No history push (gesture already snapshotted); cascade respected. 옮긴 막대의
+      // incoming 링크 지연을 새 위치로 역산해 위치↔지연이 항상 일치하게 한다.
       commit((p) => {
         const t = p.tasks.find((x) => x.id === id)
         if (t) t.start = Math.max(0, Math.round(startDay))
+        relinkIncoming(p, id)
       }, { history: false, cascade: true })
     },
     setTasksStartLive: (moves) => {
@@ -487,6 +505,8 @@ export const useEditor = create<EditorState>()((set, get) => {
           const t = p.tasks.find((x) => x.id === m.id)
           if (t) t.start = Math.max(0, Math.round(m.start))
         }
+        // 모든 start 반영 후 지연 역산 — 같은 선택 안의 선후행은 갭 보존(lag 불변).
+        for (const m of moves) relinkIncoming(p, m.id)
       }, { history: false, cascade: true })
     },
     setTaskSpanLive: (id, startDay, duration) => {
@@ -496,6 +516,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (t && !t.isMilestone) {
           t.start = Math.max(0, Math.round(startDay))
           t.duration = Math.max(1, Math.round(duration))
+          relinkIncoming(p, id)
         }
       }, { history: false, cascade: true })
     },

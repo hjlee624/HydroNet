@@ -2,7 +2,7 @@
 // routing. Verifies there are no exceptions, no NaN geometry, and that the
 // critical spine and milestones come out as expected. Run: npx tsx scripts/smoke.ts
 import { createSampleProject } from '../src/data/sampleProject'
-import { computeSchedule, applyCascade, linkConstrainedStart } from '../src/engine/scheduling'
+import { computeSchedule, applyCascade, linkConstrainedStart, linkLagFromPositions } from '../src/engine/scheduling'
 import { computeLayout, fitToPaperView } from '../src/engine/layout'
 import { PROJECT_TYPES, makeProject } from '../src/data/templates'
 import { FACILITY_TYPES, facilitySchedule } from '../src/data/facilities'
@@ -383,6 +383,23 @@ console.log('')
     check(near(p0[0], srcX) && near(head[0], dstX),
       `${type}: 출발=${type[0] === 'F' ? '종료' : '시작'} · 도착=${type[1] === 'F' ? '종료' : '시작'} 끝점으로 라우팅`)
   }
+}
+
+// 18. 막대 이동 시 지연(lag) 자동 갱신 — 위치→지연 역산(snapSuccessor의 역방향, 위치↔지연 상호작용)
+console.log('')
+{
+  const mk = (id: string, start: number, duration: number): any => ({ id, categoryId: 'c', name: id, start, duration, isMilestone: false })
+  const pred = mk('p', 10, 20) // start 10, finish 30
+  const succ = mk('s', 47, 8)  // start 47, finish 55
+  console.log('\n[위치→지연] 막대 위치에서 lag 역산 후 그 lag로 위치가 그대로 재현되는지')
+  for (const type of ['FS', 'SS', 'FF', 'SF'] as const) {
+    const lag = linkLagFromPositions(pred, succ, type)
+    const back = linkConstrainedStart([pred, succ], [{ id: 'l', from: 'p', to: 's', type, lag }], 's')
+    check(back === succ.start, `${type}: 위치→지연(${lag})→위치 재현 (${back}=${succ.start})`)
+  }
+  // 후행을 뒤로 밀면 FS 지연이 그만큼 커지고(양수), 선행 종료보다 당기면 음수(선행/리드).
+  check(linkLagFromPositions(pred, mk('s', 50, 8), 'FS') === 20, 'FS: 뒤로 밀면 지연 +20')
+  check(linkLagFromPositions(pred, mk('s', 25, 8), 'FS') === -5, 'FS: 선행 종료보다 앞서면 음수 지연 -5')
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

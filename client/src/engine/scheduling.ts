@@ -231,6 +231,23 @@ export function linkConstrainedStart(tasks: Task[], links: Link[], toId: ID): nu
   return Number.isFinite(es) ? Math.max(0, Math.round(es)) : null
 }
 
+/**
+ * Inverse of `linkEarliestStart`: the lag implied by the predecessor's and
+ * successor's CURRENT bar positions (start / finish) for a given link type.
+ *
+ * Used when a bar is DRAGGED so its incoming links' lag follows the new position
+ * (position → lag), mirroring `snapSuccessor` (lag → position). Solving
+ * `linkEarliestStart(pred, succ, {type, lag}) === succ.start` for lag gives:
+ *   FS: succ.start − pred.finish   · SS: succ.start − pred.start
+ *   FF: succ.finish − pred.finish  · SF: succ.finish − pred.start
+ * so `linkConstrainedStart` with this lag reproduces `succ.start` exactly.
+ */
+export function linkLagFromPositions(pred: Task, succ: Task, type: Link['type']): number {
+  const predRef = (type === 'SS' || type === 'SF') ? pred.start : pred.start + pred.duration
+  const succRef = (type === 'FF' || type === 'SF') ? succ.start + succ.duration : succ.start
+  return Math.round(succRef - predRef)
+}
+
 /** Convenience: ordered list of task ids on a critical path (for highlighting). */
 export function criticalTaskIds(tasks: Task[]): Set<ID> {
   return new Set(tasks.filter((t) => t.critical).map((t) => t.id))
