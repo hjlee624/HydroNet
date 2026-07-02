@@ -31,6 +31,7 @@ server/data/*.json
 .vscode/
 .idea/
 .omc/
+.claude/
 
 # Electron packaging output (future)
 out/
@@ -53,3 +54,10 @@ sample.dxf
 /*.jpeg
 /*.dxf
 /*.pdf
+
+# Large video assets dropped in repo root (e.g. 한국수력원자력 건설공정 영상 mp4).
+# DESIGN/HydroNet-demo.mp4 stays tracked — only root-level videos are ignored.
+/*.mp4
+/*.mov
+/*.avi
+/*.mkv
