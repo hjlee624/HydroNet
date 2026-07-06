@@ -12,7 +12,7 @@
 | **운영(production)** | `D:\2026\PROGRAM\HydroNet` | `main` | **4000** | 전무님이 서버 가동 중 — **절대 수정·재시작 금지** |
 | **개발(dev) ← 여기서 작업** | `D:\2026\PROGRAM\HydroNET_dev` | `dev` | **4020** | 모든 수정·검증·커밋·푸시는 여기서 |
 
-- 두 폴더는 **같은 GitHub 원격**을 공유: `https://github.com/hjlee624/HydroNet.git`
+- **메인 레포 = Gitea** `https://gitea.hmac.kr/saman/HydroNET.git`(리모트 `origin`, **2026-07-06 전환**). GitHub `hjlee624/HydroNet`은 미러(리모트 `github`).
 - **개발은 `dev` 브랜치에 푸시**(`git push origin dev`). `main`은 운영 라인(동결).
 - dev 서버 테스트 시 **반드시 포트 4020**(또는 그 외, 절대 4000 아님). 운영 4000을 점유/종료하지 말 것.
 - 운영 반영이 필요하면: 운영 PC에서 `git pull` 후 재빌드/재시작(전무님과 협의). 운영 launcher는 `set PORT=4000`으로 포트를 강제하므로 dev 기본값(4020)과 무관하게 4000 유지.
@@ -151,6 +151,17 @@ start-lan.bat            LAN 단일포트 서버 기동(기본 PORT=4020, 외부
 
 - **막대 드래그 시 지연(lag) 자동 갱신 — 위치↔지연 양방향(2026-07-01, dev)**: 사용자 요청 — 지연 입력은 막대를 움직이는데(snapSuccessor), 반대로 연결된 막대를 드래그하면 지연이 자동으로 안 바뀜(게다가 cascade가 막대를 옛 제약으로 튕겨냄). **신규 순수함수 `scheduling.ts linkLagFromPositions(pred, succ, type)`** = linkEarliestStart의 역함수(FS: succ.start−pred.finish, SS: −pred.start, FF: succ.finish−pred.finish, SF: succ.finish−pred.start; 실제 start·finish 사용). store에 **`relinkIncoming(p, toId)`**(옮긴 막대의 incoming 링크 lag를 새 위치로 역산) 추가, **`setTaskStartLive`/`setTasksStartLive`(전부 이동 후)/`setTaskSpanLive`/`updateTask`(start·duration 변경 시)** 에서 호출. mutate 내부라 autoCascade와 무관하게 항상 갱신. **핵심**: relink가 lag를 위치에 맞추므로 이후 cascade에서 옮긴 막대는 제약 위반이 아니라 제자리에 남고(튕김 해소), 하류만 밀린다. 음수 lag(선행/리드) 허용. 선행이 같은 선택으로 함께 이동하면 갭 보존→lag 불변. snapSuccessor(지연→위치)와 정확히 역방향이라 둘이 상호작용. **검증**: build·smoke(위치→지연 FS/SS/FF/SF 왕복 재현 + 갭 부호 6검사 추가)·mount·임시 store 통합체크(드래그→lag 15/-10, lag입력→위치 25 왕복)·build:single·check-single 전부 통과. **운영 4000 미반영.**
   **함정**: 연/월 축 클릭이 이제 '표시 기간' 팝업이라 **축 글자 스타일링은 텍스트 탭 역할 선택기**로만(클릭-스타일 상실 보완). 미러 막대에 `data-task-id`를 주면 링크 드롭 타깃이 돼 dangling link 생김 → 반드시 omit. ChartSvg에서 `data-*`/핸들러 **조건부 spread 금지**(union spread 타입 취약) → `attr={mirror ? undefined : ...}` 직접 지정.
+
+- **전문가 피드백 8건 반영 + 메인 레포 Gitea 전환(2026-07-06, dev)**: 외부 전문가 조언을 딥리서치(26에이전트·핵심 6주장 3표 적대검증)로 검증 후 **권장 순서대로 반영**. 종합 보고서 = 저장소 루트 `EXPERT_FEEDBACK_REVIEW_2026-07-06.html`.
+  ① **Node 24.x LTS 강제** — `.nvmrc`(24)·root/client/server `engines`(">=24 <25", npm">=11")·`.npmrc engine-strict=true`. (전문가 "24 이상"→검증상 비-LTS인 26 배제 위해 **"24.x LTS"로 정정**.)
+  ② **Biome 2.5.2 도입** — 루트 `biome.json` 1개로 client(TS/JSX)+server(순수 JS ESM) 공통 커버(포맷/린트/organizeImports, server console 허용 override), 루트 `lint/format/check` 스크립트. **tsc --noEmit 타입체크는 유지**(Biome는 타입체크 대체 아님). 최초 일괄 `biome format` 적용(52파일).
+  ③ **README 아키텍처 Mermaid** — GitHub·Gitea 네이티브 렌더 flowchart(engine 7종/store/export ↔ server ↔ 저장 .json/localStorage).
+  ④ **PWA** — `client/public/manifest.webmanifest`(standalone·theme #D9622A) + `sw.js`(네트워크 우선·오프라인 폴백, /api 제외), 보안컨텍스트(https·localhost)에서만 SW 등록 → **file://(단일 HTML)·비보안 LAN(http)·jsdom 비활성**. Electron은 보류(전문가 조언, 검증상 Windows Tauri는 메모리 이점 없음=WebView2도 Chromium).
+  ⑤ **Vite 6→7**(+@vitejs/plugin-react 4→5, singlefile은 Vite7 peer 지원). **Rolldown(rolldown-vite@7.3.1) 비파괴 실험**: 빌드 2.04s→**0.296s(~7×)**, build:single(IIFE)·check-single 정상 → 단일 HTML 회귀 없음 확인. 단 프로덕션은 **Vite 7(Rollup) 유지**, Vite 8/Rolldown 정식 승격은 대기(plugin-react@6=Vite8 peer 필요).
+  ⑥ **CRDT** — `docs/CRDT_PLAN.md`(0단계 비파괴: **권위데이터 vs 파생캐시** 경계 명문화 — `es/ef/ls/lf/critical/__mirror`·cascade 결과는 동기화 제외, 사용자 입력 start/duration/lag/type·링크 존재만 권위) + 코드분석 기반 **Gitea 이슈 #1** 자동 발행(https://gitea.hmac.kr/saman/HydroNET/issues/1). 라이브러리 **Yjs 1순위**(순수 JS→단일 HTML/file:// 상성, Y.UndoManager), 붙일 지점 = `store.ts` 단일 `commit()`. **1단계(실제 Y.Doc) 이상은 이슈 검토 후.**
+  ⑦ **메인 레포 Gitea 전환** — `git remote`: `origin`=Gitea, `github`=GitHub 미러. CLAUDE.md/memory 갱신.
+  **이슈 자동생성**: gitea-mcp는 미구성 → Gitea REST API(`POST /api/v1/repos/saman/HydroNET/issues`)에 `git credential`(윈도 자격관리자 캐시) 재사용, 코드분석→본문(`docs/ISSUE_CRDT.md`)→중복검사 후 생성. GitHub였다면 `gh issue create`/공식 MCP로 동등.
+  **검증**: 각 단계 build(tsc+vite)·smoke·mount(+build:single·check-single) 통과. 커밋 단위 분리(tooling / mermaid / pwa / vite7 / crdt-docs / format).
 
 ## 5. 실행 / 검증 명령 (dev 폴더에서)
 ```bash
