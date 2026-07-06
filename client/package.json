@@ -9,6 +9,10 @@
     "build:single": "npx tsx scripts/build-single.ts",
     "preview": "vite preview"
   },
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
   "dependencies": {
     "jspdf": "^2.5.2",
     "nanoid": "^5.0.9",
