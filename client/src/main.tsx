@@ -12,3 +12,15 @@ createRoot(document.getElementById('root')!).render(
     <App />
   </StrictMode>,
 )
+
+// PWA: 설치형/오프라인 지원. 보안 컨텍스트(https·localhost)에서만 등록한다 —
+// file:// 단일 HTML·비보안 LAN(http)·jsdom(mount-test)에서는 조용히 건너뛴다.
+if (
+  'serviceWorker' in navigator &&
+  window.isSecureContext &&
+  window.location.protocol !== 'file:'
+) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {})
+  })
+}

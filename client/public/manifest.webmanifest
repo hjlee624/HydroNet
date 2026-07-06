@@ -1,0 +1,16 @@
+{
+  "name": "HydroNet — 수력 마일스톤 관리",
+  "short_name": "HydroNet",
+  "description": "댐·양수발전 시공/시운전 마일스톤(공정표) 관리 프로그램",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "lang": "ko",
+  "dir": "ltr",
+  "background_color": "#FBF7F0",
+  "theme_color": "#D9622A",
+  "icons": [
+    { "src": "/favicon.svg", "type": "image/svg+xml", "sizes": "any", "purpose": "any" }
+  ]
+}
