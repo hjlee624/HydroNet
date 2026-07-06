@@ -16,7 +16,9 @@ const REPO = resolve(CLIENT, '..')
 const FONTS = ['KoPubWorld Dotum_Pro Medium.otf', 'KoPubWorld Dotum_Pro Bold.otf']
 for (const f of FONTS) {
   if (!existsSync(resolve(CLIENT, 'public', 'fonts', f))) {
-    console.error(`✗ 글꼴 파일이 없습니다: client/public/fonts/${f}\n  (KoPubWorld Dotum_Pro Medium/Bold.otf 를 거기에 두고 다시 실행하세요.)`)
+    console.error(
+      `✗ 글꼴 파일이 없습니다: client/public/fonts/${f}\n  (KoPubWorld Dotum_Pro Medium/Bold.otf 를 거기에 두고 다시 실행하세요.)`,
+    )
     process.exit(1)
   }
 }
@@ -35,8 +37,13 @@ for (const file of FONTS) {
   const re = new RegExp(`url\\([^)]*?${pat}[^)]*?\\)`, 'g')
   const refs = (html.match(re) || []).length
   html = html.replace(re, `url("data:font/otf;base64,${b64}")`)
-  console.log(`› 글꼴 내장: ${file} — ${Math.round(b64.length / 1024)}KB(base64), 참조 ${refs}곳 치환`)
-  if (refs === 0) { console.error(`✗ ${file}: @font-face url 을 찾지 못해 내장 실패`); process.exit(1) }
+  console.log(
+    `› 글꼴 내장: ${file} — ${Math.round(b64.length / 1024)}KB(base64), 참조 ${refs}곳 치환`,
+  )
+  if (refs === 0) {
+    console.error(`✗ ${file}: @font-face url 을 찾지 못해 내장 실패`)
+    process.exit(1)
+  }
 }
 
 // Make the inline entry a CLASSIC script at the END of <body>:
@@ -45,7 +52,10 @@ for (const file of FONTS) {
 //    #root or createRoot() throws (React #299). Moving it to body-end fixes both.
 // The bundle is IIFE (vite.config format:iife) so it is valid as a classic script.
 const m = html.match(/<script type="module"[^>]*>([\s\S]*?)<\/script>/i)
-if (!m) { console.error('✗ 진입 스크립트를 찾지 못함'); process.exit(1) }
+if (!m) {
+  console.error('✗ 진입 스크립트를 찾지 못함')
+  process.exit(1)
+}
 if (/^\s*import[\s({]/.test(m[1].trim())) {
   console.error('✗ 번들이 ES 모듈 형식(IIFE 아님) — vite.config의 format:iife 확인.')
   process.exit(1)
@@ -63,10 +73,15 @@ const external = [
   { name: 'unembedded url(…otf)', re: /url\([^)]*\.otf/i },
 ]
 const remaining = external.filter((e) => e.re.test(html))
-if (remaining.length) { console.error('✗ 외부 참조가 남음:', remaining.map((e) => e.name).join(', ')); process.exit(1) }
+if (remaining.length) {
+  console.error('✗ 외부 참조가 남음:', remaining.map((e) => e.name).join(', '))
+  process.exit(1)
+}
 console.log('› 외부 자산 참조 없음 — 완전 self-contained ✓')
 
 const out = resolve(REPO, 'HydroNet.html')
 writeFileSync(out, html)
 console.log(`✓ 생성: ${out}  (${(html.length / 1024 / 1024).toFixed(1)} MB)`)
-console.log('  더블클릭으로 실행 — 편집·모든 출력 가능(오프라인), 저장/불러오기는 원하는 .json 파일로(수동).')
+console.log(
+  '  더블클릭으로 실행 — 편집·모든 출력 가능(오프라인), 저장/불러오기는 원하는 .json 파일로(수동).',
+)

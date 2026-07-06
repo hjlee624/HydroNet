@@ -15,7 +15,12 @@ import type { RoutedLink } from '../engine/routing'
 import { colors, fonts, resolveTextStyle } from '../styles/theme'
 import { dayToDate, toISO } from '../engine/dates'
 
-export interface LinkingGhost { x1: number; y1: number; x2: number; y2: number }
+export interface LinkingGhost {
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+}
 
 interface Props {
   model: LayoutModel
@@ -57,12 +62,43 @@ function diamond(cx: number, cy: number, r: number): string {
 }
 
 function ChartSvgBase({
-  model, routed, project, selectedTaskId, selectedTaskIds, selectedLinkId, selectedTextRole,
-  showCriticalPath, showGrid, colorMode = 'category', todayX, linkingGhost,
-  onTaskPointerDown, onAnchorPointerDown, onBarResizePointerDown, onLogoResizePointerDown,
-  onTaskClick, onTaskDoubleClick, onTaskContextMenu, onDurationDoubleClick, onLinkClick, onTextClick, onTimelineClick, onRainyResizePointerDown, onBackgroundClick,
+  model,
+  routed,
+  project,
+  selectedTaskId,
+  selectedTaskIds,
+  selectedLinkId,
+  selectedTextRole,
+  showCriticalPath,
+  showGrid,
+  colorMode = 'category',
+  todayX,
+  linkingGhost,
+  onTaskPointerDown,
+  onAnchorPointerDown,
+  onBarResizePointerDown,
+  onLogoResizePointerDown,
+  onTaskClick,
+  onTaskDoubleClick,
+  onTaskContextMenu,
+  onDurationDoubleClick,
+  onLinkClick,
+  onTextClick,
+  onTimelineClick,
+  onRainyResizePointerDown,
+  onBackgroundClick,
 }: Props) {
-  const { labelWidth, headerHeight, contentWidth, contentHeight, chartTop, chartHeight, headerTop, titleHeight, title } = model
+  const {
+    labelWidth,
+    headerHeight,
+    contentWidth,
+    contentHeight,
+    chartTop,
+    chartHeight,
+    headerTop,
+    titleHeight,
+    title,
+  } = model
   const yearRowH = headerHeight * 0.46
   const chartBottom = chartTop + chartHeight
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
@@ -80,15 +116,25 @@ function ChartSvgBase({
     for (const lt of model.tasks) {
       if (lt.isMilestone) continue
       const key = `${lt.categoryId}#${lt.subRow}`
-      const arr = byRow.get(key); if (arr) arr.push(lt); else byRow.set(key, [lt])
+      const arr = byRow.get(key)
+      if (arr) arr.push(lt)
+      else byRow.set(key, [lt])
     }
     for (const arr of byRow.values()) {
       if (arr.length < 2) continue
       arr.sort((a, b) => a.startX - b.startX)
       for (let i = 1; i < arr.length; i++) {
-        const prev = arr[i - 1], cur = arr[i]
+        const prev = arr[i - 1],
+          cur = arr[i]
         const gap = cur.startX - prev.endX
-        if (gap > 1.5) gapRects.push({ x: prev.endX, y: prev.y, w: gap, h: prev.h, color: laneColor(model, prev.categoryId) })
+        if (gap > 1.5)
+          gapRects.push({
+            x: prev.endX,
+            y: prev.y,
+            w: gap,
+            h: prev.h,
+            color: laneColor(model, prev.categoryId),
+          })
       }
     }
   }
@@ -98,13 +144,14 @@ function ChartSvgBase({
   // 공종·마일스톤은 기존대로 막대/다이아몬드에 이름을 표기한다.
   const taskCol = project.view.taskColumn !== false
   const rowMeta = new Map<string, { count: number; hasSub: boolean }>()
-  if (taskCol) for (const lt of model.tasks) {
-    const key = `${lt.categoryId}#${lt.subRow}`
-    const m = rowMeta.get(key) ?? { count: 0, hasSub: false }
-    m.count++
-    if ((lt.task.subName ?? '').trim()) m.hasSub = true
-    rowMeta.set(key, m)
-  }
+  if (taskCol)
+    for (const lt of model.tasks) {
+      const key = `${lt.categoryId}#${lt.subRow}`
+      const m = rowMeta.get(key) ?? { count: 0, hasSub: false }
+      m.count++
+      if ((lt.task.subName ?? '').trim()) m.hasSub = true
+      rowMeta.set(key, m)
+    }
   const nameOnLeft = (lt: LaidTask): boolean => {
     if (!taskCol || lt.isMilestone) return false
     const m = rowMeta.get(`${lt.categoryId}#${lt.subRow}`)
@@ -123,7 +170,10 @@ function ChartSvgBase({
       style,
       'data-text-role': role,
       className: selectedTextRole === role ? 'tr-selected' : undefined,
-      onClick: (e: RMouseEvent<SVGTextElement>) => { e.stopPropagation(); onTextClick(role) },
+      onClick: (e: RMouseEvent<SVGTextElement>) => {
+        e.stopPropagation()
+        onTextClick(role)
+      },
     }
   }
 
@@ -137,43 +187,99 @@ function ChartSvgBase({
       onClick={onBackgroundClick}
     >
       <defs>
-        <marker id="hn-arrow" markerWidth="9" markerHeight="9" refX="7" refY="4.5" orient="auto" markerUnits="userSpaceOnUse">
+        <marker
+          id="hn-arrow"
+          markerWidth="9"
+          markerHeight="9"
+          refX="7"
+          refY="4.5"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
           <path d="M1,1 L8,4.5 L1,8 Z" fill={colors.steel} />
         </marker>
-        <marker id="hn-arrow-crit" markerWidth="10" markerHeight="10" refX="7.5" refY="5" orient="auto" markerUnits="userSpaceOnUse">
+        <marker
+          id="hn-arrow-crit"
+          markerWidth="10"
+          markerHeight="10"
+          refX="7.5"
+          refY="5"
+          orient="auto"
+          markerUnits="userSpaceOnUse"
+        >
           <path d="M1,1 L9,5 L1,9 Z" fill={colors.critical} />
         </marker>
       </defs>
 
       {/* background — screen-only; the exporter supplies its own (white, or none
           for transparent PNG), so this is flagged data-export-hide. */}
-      <rect data-export-hide="1" x={0} y={0} width={contentWidth} height={contentHeight} fill={colors.canvas} />
+      <rect
+        data-export-hide="1"
+        x={0}
+        y={0}
+        width={contentWidth}
+        height={contentHeight}
+        fill={colors.canvas}
+      />
 
       {/* 우기 bands */}
-      {project.rainySeasons.length > 0 && model.rainyRects.map((r, i) => (
-        <g key={`rainy-${i}`}>
-          <rect x={r.x} y={r.y} width={r.width} height={r.height} fill={colors.rainyBand} />
-          <rect x={r.x} y={chartTop} width={r.width} height={Math.max(16, roleAttrs('rainyLabel').fontSize * 1.5)} fill={colors.rainyBandStroke} />
-          <text x={r.x + r.width / 2} y={chartTop + Math.max(16, roleAttrs('rainyLabel').fontSize * 1.5) * 0.72} textAnchor="middle" {...roleAttrs('rainyLabel')}>
-            {r.label}
-          </text>
-        </g>
-      ))}
+      {project.rainySeasons.length > 0 &&
+        model.rainyRects.map((r, i) => (
+          <g key={`rainy-${i}`}>
+            <rect x={r.x} y={r.y} width={r.width} height={r.height} fill={colors.rainyBand} />
+            <rect
+              x={r.x}
+              y={chartTop}
+              width={r.width}
+              height={Math.max(16, roleAttrs('rainyLabel').fontSize * 1.5)}
+              fill={colors.rainyBandStroke}
+            />
+            <text
+              x={r.x + r.width / 2}
+              y={chartTop + Math.max(16, roleAttrs('rainyLabel').fontSize * 1.5) * 0.72}
+              textAnchor="middle"
+              {...roleAttrs('rainyLabel')}
+            >
+              {r.label}
+            </text>
+          </g>
+        ))}
 
       {/* grid: month verticals + lane separators */}
       {showGrid && (
         <g>
           {model.months.map((m, i) => (
-            <line key={`mv-${i}`} x1={m.x} y1={chartTop} x2={m.x} y2={chartBottom}
-              stroke={colors.gridLine} strokeWidth={1} />
+            <line
+              key={`mv-${i}`}
+              x1={m.x}
+              y1={chartTop}
+              x2={m.x}
+              y2={chartBottom}
+              stroke={colors.gridLine}
+              strokeWidth={1}
+            />
           ))}
           {model.years.map((y, i) => (
-            <line key={`yv-${i}`} x1={y.x} y1={headerTop} x2={y.x} y2={chartBottom}
-              stroke={colors.gridLineStrong} strokeWidth={1} />
+            <line
+              key={`yv-${i}`}
+              x1={y.x}
+              y1={headerTop}
+              x2={y.x}
+              y2={chartBottom}
+              stroke={colors.gridLineStrong}
+              strokeWidth={1}
+            />
           ))}
           {model.categories.map((c) => (
-            <line key={`ls-${c.id}`} x1={labelWidth} y1={c.y + c.height} x2={contentWidth} y2={c.y + c.height}
-              stroke={colors.gridLineStrong} strokeWidth={1} />
+            <line
+              key={`ls-${c.id}`}
+              x1={labelWidth}
+              y1={c.y + c.height}
+              x2={contentWidth}
+              y2={c.y + c.height}
+              stroke={colors.gridLineStrong}
+              strokeWidth={1}
+            />
           ))}
         </g>
       )}
@@ -181,9 +287,33 @@ function ChartSvgBase({
       {/* 오늘(today) reference line — screen-only editing aid (not exported) */}
       {todayX != null && todayX >= labelWidth && todayX <= contentWidth && (
         <g data-export-hide="1">
-          <line x1={todayX} y1={chartTop} x2={todayX} y2={chartBottom} stroke={colors.primary} strokeWidth={1.25} strokeDasharray="4 3" />
-          <rect x={todayX - 15} y={chartTop - 1} width={30} height={14} rx={3} fill={colors.primary} />
-          <text x={todayX} y={chartTop + 9.5} textAnchor="middle" fontSize={9} fontWeight={700} fill="#ffffff">오늘</text>
+          <line
+            x1={todayX}
+            y1={chartTop}
+            x2={todayX}
+            y2={chartBottom}
+            stroke={colors.primary}
+            strokeWidth={1.25}
+            strokeDasharray="4 3"
+          />
+          <rect
+            x={todayX - 15}
+            y={chartTop - 1}
+            width={30}
+            height={14}
+            rx={3}
+            fill={colors.primary}
+          />
+          <text
+            x={todayX}
+            y={chartTop + 9.5}
+            textAnchor="middle"
+            fontSize={9}
+            fontWeight={700}
+            fill="#ffffff"
+          >
+            오늘
+          </text>
         </g>
       )}
 
@@ -191,8 +321,20 @@ function ChartSvgBase({
       {titleHeight > 0 && (
         <g>
           <rect x={0} y={0} width={contentWidth} height={titleHeight} fill={colors.cream} />
-          <line x1={0} y1={titleHeight} x2={contentWidth} y2={titleHeight} stroke={colors.beigeDeep} strokeWidth={1} />
-          <text x={contentWidth / 2} y={titleHeight * 0.66} textAnchor="middle" {...roleAttrs('title')}>
+          <line
+            x1={0}
+            y1={titleHeight}
+            x2={contentWidth}
+            y2={titleHeight}
+            stroke={colors.beigeDeep}
+            strokeWidth={1}
+          />
+          <text
+            x={contentWidth / 2}
+            y={titleHeight * 0.66}
+            textAnchor="middle"
+            {...roleAttrs('title')}
+          >
             {title}
           </text>
         </g>
@@ -200,37 +342,104 @@ function ChartSvgBase({
 
       {/* timeline header (offset below the title band) */}
       <g transform={`translate(0, ${headerTop})`}>
-        <rect x={labelWidth} y={0} width={contentWidth - labelWidth} height={headerHeight} fill={colors.cream} />
-        <line x1={labelWidth} y1={yearRowH} x2={contentWidth} y2={yearRowH} stroke={colors.beigeDeep} strokeWidth={1} />
+        <rect
+          x={labelWidth}
+          y={0}
+          width={contentWidth - labelWidth}
+          height={headerHeight}
+          fill={colors.cream}
+        />
+        <line
+          x1={labelWidth}
+          y1={yearRowH}
+          x2={contentWidth}
+          y2={yearRowH}
+          stroke={colors.beigeDeep}
+          strokeWidth={1}
+        />
         {model.years.map((y, i) => (
           <g key={`yr-${i}`}>
-            {i > 0 && <line x1={y.x} y1={0} x2={y.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={1} />}
+            {i > 0 && (
+              <line
+                x1={y.x}
+                y1={0}
+                x2={y.x}
+                y2={headerHeight}
+                stroke={colors.beigeDeep}
+                strokeWidth={1}
+              />
+            )}
             {/* 연/월 클릭 = 표시 기간 설정 팝업(요구사항 1). 축 텍스트 스타일은 속성 패널의
                 텍스트 탭에서 역할을 골라 편집한다. */}
-            <text x={y.x + y.width / 2} y={yearRowH * 0.66} textAnchor="middle" {...roleAttrs('axisYear')}
-              onClick={(e) => { e.stopPropagation(); onTimelineClick() }}>
+            <text
+              x={y.x + y.width / 2}
+              y={yearRowH * 0.66}
+              textAnchor="middle"
+              {...roleAttrs('axisYear')}
+              onClick={(e) => {
+                e.stopPropagation()
+                onTimelineClick()
+              }}
+            >
               {y.year}
             </text>
           </g>
         ))}
         {model.months.map((m, i) => (
           <g key={`mo-${i}`}>
-            <line x1={m.x} y1={yearRowH} x2={m.x} y2={headerHeight} stroke={colors.beigeDeep} strokeWidth={0.75} />
-            <text x={m.x + m.width / 2} y={yearRowH + (headerHeight - yearRowH) * 0.62} textAnchor="middle" {...roleAttrs('axisMonth')}
-              onClick={(e) => { e.stopPropagation(); onTimelineClick() }}>
+            <line
+              x1={m.x}
+              y1={yearRowH}
+              x2={m.x}
+              y2={headerHeight}
+              stroke={colors.beigeDeep}
+              strokeWidth={0.75}
+            />
+            <text
+              x={m.x + m.width / 2}
+              y={yearRowH + (headerHeight - yearRowH) * 0.62}
+              textAnchor="middle"
+              {...roleAttrs('axisMonth')}
+              onClick={(e) => {
+                e.stopPropagation()
+                onTimelineClick()
+              }}
+            >
               {m.label}
             </text>
           </g>
         ))}
-        <line x1={labelWidth} y1={headerHeight} x2={contentWidth} y2={headerHeight} stroke={colors.hairlineStrong} strokeWidth={1} />
+        <line
+          x1={labelWidth}
+          y1={headerHeight}
+          x2={contentWidth}
+          y2={headerHeight}
+          stroke={colors.hairlineStrong}
+          strokeWidth={1}
+        />
       </g>
 
       {/* left label column */}
       <g>
-        <rect x={0} y={titleHeight} width={labelWidth} height={contentHeight - titleHeight} fill={colors.creamSoft} />
-        <line x1={labelWidth} y1={titleHeight} x2={labelWidth} y2={contentHeight} stroke={colors.hairlineStrong} strokeWidth={1} />
+        <rect
+          x={0}
+          y={titleHeight}
+          width={labelWidth}
+          height={contentHeight - titleHeight}
+          fill={colors.creamSoft}
+        />
+        <line
+          x1={labelWidth}
+          y1={titleHeight}
+          x2={labelWidth}
+          y2={contentHeight}
+          stroke={colors.hairlineStrong}
+          strokeWidth={1}
+        />
         <rect x={0} y={headerTop} width={labelWidth} height={headerHeight} fill={colors.cream} />
-        <text x={12} y={headerTop + headerHeight * 0.4} {...roleAttrs('headerTitle')}>공종 / 마일스톤</text>
+        <text x={12} y={headerTop + headerHeight * 0.4} {...roleAttrs('headerTitle')}>
+          공종 / 마일스톤
+        </text>
         <text x={12} y={headerTop + headerHeight * 0.82} {...roleAttrs('headerSub')}>
           착수 {toISO(dayToDate(project.startDate, 0)).slice(0, 7)}
         </text>
@@ -243,23 +452,39 @@ function ChartSvgBase({
           return (
             <g key={`lbl-${c.id}`}>
               <rect x={6} y={swatchY} width={4} height={14} rx={2} fill={c.color} />
-              <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>{c.name}</text>
-              {hasSubs && c.subGroups.map((sg, i) => (
-                <text key={`sg-${i}`} x={26} y={sg.y + sg.height / 2 + 4} {...roleAttrs('subCategoryLabel')}>
-                  {sg.name}
-                </text>
-              ))}
+              <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
+                {c.name}
+              </text>
+              {hasSubs &&
+                c.subGroups.map((sg, i) => (
+                  <text
+                    key={`sg-${i}`}
+                    x={26}
+                    y={sg.y + sg.height / 2 + 4}
+                    {...roleAttrs('subCategoryLabel')}
+                  >
+                    {sg.name}
+                  </text>
+                ))}
             </g>
           )
         })}
         {/* 공정명을 공종(및 세부공종) 하위 행으로 왼쪽 라벨열에 나열 — 사이드바 '공종 구성'
             트리처럼. 막대와 같은 줄 높이(cy)에 맞춰 표시한다. */}
-        {taskCol && model.tasks.map((lt) => (nameOnLeft(lt) ? (
-          <text key={`tl-${lt.task.id}`} x={30} y={lt.cy + 3.5} {...roleAttrs('taskName')}
-            {...(lt.task.__mirror ? { opacity: 0.6 } : {})}>
-            {lt.task.name}
-          </text>
-        ) : null))}
+        {taskCol &&
+          model.tasks.map((lt) =>
+            nameOnLeft(lt) ? (
+              <text
+                key={`tl-${lt.task.id}`}
+                x={30}
+                y={lt.cy + 3.5}
+                {...roleAttrs('taskName')}
+                {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
+              >
+                {lt.task.name}
+              </text>
+            ) : null,
+          )}
       </g>
 
       {/* auto DUMMY fill — faded lane-colour band in the gaps between consecutive
@@ -267,8 +492,17 @@ function ChartSvgBase({
       {gapRects.length > 0 && (
         <g>
           {gapRects.map((r, i) => (
-            <rect key={`gap-${i}`} x={r.x} y={r.y} width={r.w} height={r.h} rx={2}
-              fill={r.color} fillOpacity={DUMMY_OPACITY} pointerEvents="none" />
+            <rect
+              key={`gap-${i}`}
+              x={r.x}
+              y={r.y}
+              width={r.w}
+              height={r.h}
+              rx={2}
+              fill={r.color}
+              fillOpacity={DUMMY_OPACITY}
+              pointerEvents="none"
+            />
           ))}
         </g>
       )}
@@ -280,10 +514,16 @@ function ChartSvgBase({
           const selected = r.id === selectedLinkId
           // User-chosen line style overrides the auto pattern (auto = critical solid,
           // others dashed) so arrows can be drawn 실선/파선/점선 individually.
-          const dash = r.style === 'solid' ? undefined
-            : r.style === 'dashed' ? '7 4'
-              : r.style === 'dotted' ? '1.5 3.5'
-                : (crit ? undefined : '5 3')
+          const dash =
+            r.style === 'solid'
+              ? undefined
+              : r.style === 'dashed'
+                ? '7 4'
+                : r.style === 'dotted'
+                  ? '1.5 3.5'
+                  : crit
+                    ? undefined
+                    : '5 3'
           return (
             <g key={r.id}>
               {/* Invisible fat hit area: pointer-events:'stroke' makes the WHOLE
@@ -299,7 +539,10 @@ function ChartSvgBase({
                 strokeLinecap="round"
                 data-export-hide="1"
                 style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
-                onClick={(e) => { e.stopPropagation(); onLinkClick(e, r.id) }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  onLinkClick(e, r.id)
+                }}
               />
               <path
                 d={r.d}
@@ -328,11 +571,13 @@ function ChartSvgBase({
           // that overlay off would mute every bar to grey and the colour mode would
           // do nothing. 'crit' still gates the CP-overlay flourishes (halo, enlarged
           // diamonds) that legitimately follow the overlay toggle. Mirror 공정은 강조 없음.
-          const emphasizeCrit = mirror ? false : (colorMode === 'critical' ? lt.critical : crit)
+          const emphasizeCrit = mirror ? false : colorMode === 'critical' ? lt.critical : crit
           const selected = !mirror && selSet.has(t.id)
           const isDummy = !!t.isDummy && !lt.isMilestone
-          const baseFill = emphasizeCrit ? colors.critical
-            : colorMode === 'critical' ? '#CFC8B8' // muted so the critical spine pops
+          const baseFill = emphasizeCrit
+            ? colors.critical
+            : colorMode === 'critical'
+              ? '#CFC8B8' // muted so the critical spine pops
               : (t.color ?? laneColor(model, lt.categoryId))
           // DUMMY 공정은 항상 공종색을 60% 투명(0.4)으로 칠한다.
           const fill = isDummy ? laneColor(model, lt.categoryId) : baseFill
@@ -341,16 +586,45 @@ function ChartSvgBase({
             // path reads clearly even at the diamond markers.
             const r = crit ? milestoneR * 1.45 : milestoneR
             return (
-              <g key={t.id}
-                onClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskClick(e, t.id) }}
-                onDoubleClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
-                onContextMenu={(e) => { if (mirror) return; e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}
-                style={{ cursor: mirror ? 'default' : 'pointer', opacity: mirror ? 0.6 : undefined }}>
-                <text x={lt.cx} y={lt.cy - r - 4} textAnchor="middle"
-                  {...roleAttrs('milestoneName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
+              <g
+                key={t.id}
+                onClick={(e) => {
+                  if (mirror) return
+                  e.stopPropagation()
+                  onTaskClick(e, t.id)
+                }}
+                onDoubleClick={(e) => {
+                  if (mirror) return
+                  e.stopPropagation()
+                  onTaskDoubleClick(e, t.id)
+                }}
+                onContextMenu={(e) => {
+                  if (mirror) return
+                  e.preventDefault()
+                  e.stopPropagation()
+                  onTaskContextMenu(e, t.id)
+                }}
+                style={{
+                  cursor: mirror ? 'default' : 'pointer',
+                  opacity: mirror ? 0.6 : undefined,
+                }}
+              >
+                <text
+                  x={lt.cx}
+                  y={lt.cy - r - 4}
+                  textAnchor="middle"
+                  {...roleAttrs('milestoneName')}
+                  {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
+                >
                   {t.name.replace(/^◆\s*/, '')}
                 </text>
-                {crit && <polygon points={diamond(lt.cx, lt.cy, r + 5)} fill={colors.critical} opacity={0.2} />}
+                {crit && (
+                  <polygon
+                    points={diamond(lt.cx, lt.cy, r + 5)}
+                    fill={colors.critical}
+                    opacity={0.2}
+                  />
+                )}
                 <polygon
                   data-task-id={mirror ? undefined : t.id}
                   points={diamond(lt.cx, lt.cy, r)}
@@ -361,40 +635,85 @@ function ChartSvgBase({
                   style={mirror ? { pointerEvents: 'none' } : undefined}
                   onPointerDown={mirror ? undefined : (e) => onTaskPointerDown(e, t.id)}
                 />
-                <text x={lt.cx} y={lt.cy + r + 12} textAnchor="middle" {...roleAttrs('milestoneDate')}>
+                <text
+                  x={lt.cx}
+                  y={lt.cy + r + 12}
+                  textAnchor="middle"
+                  {...roleAttrs('milestoneDate')}
+                >
                   {toISO(dayToDate(project.startDate, t.start)).slice(2)}
                 </text>
               </g>
             )
           }
           return (
-            <g key={t.id}
-              onClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskClick(e, t.id) }}
-              onDoubleClick={(e) => { if (mirror) return; e.stopPropagation(); onTaskDoubleClick(e, t.id) }}
-              onContextMenu={(e) => { if (mirror) return; e.preventDefault(); e.stopPropagation(); onTaskContextMenu(e, t.id) }}
-              style={mirror ? { opacity: 0.6 } : undefined}>
+            <g
+              key={t.id}
+              onClick={(e) => {
+                if (mirror) return
+                e.stopPropagation()
+                onTaskClick(e, t.id)
+              }}
+              onDoubleClick={(e) => {
+                if (mirror) return
+                e.stopPropagation()
+                onTaskDoubleClick(e, t.id)
+              }}
+              onContextMenu={(e) => {
+                if (mirror) return
+                e.preventDefault()
+                e.stopPropagation()
+                onTaskContextMenu(e, t.id)
+              }}
+              style={mirror ? { opacity: 0.6 } : undefined}
+            >
               {/* 공정명이 왼쪽 라벨열로 옮겨간 줄(한 줄·세부공종 없음)은 막대 위 이름을 생략. */}
               {!nameOnLeft(lt) && (
-                <text x={lt.x} y={lt.y - 3.5} {...roleAttrs('taskName')} {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}>
+                <text
+                  x={lt.x}
+                  y={lt.y - 3.5}
+                  {...roleAttrs('taskName')}
+                  {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
+                >
                   {t.name}
                 </text>
               )}
               <rect
                 className="chart-bar"
                 data-task-id={mirror ? undefined : t.id}
-                x={lt.x} y={lt.y} width={lt.w} height={lt.h} rx={3}
+                x={lt.x}
+                y={lt.y}
+                width={lt.w}
+                height={lt.h}
+                rx={3}
                 fill={fill}
                 fillOpacity={isDummy ? DUMMY_OPACITY : mirror ? 0.5 : undefined}
-                stroke={selected ? colors.primary : emphasizeCrit ? colors.critical : isDummy ? laneColor(model, lt.categoryId) : 'rgba(0,0,0,0.18)'}
+                stroke={
+                  selected
+                    ? colors.primary
+                    : emphasizeCrit
+                      ? colors.critical
+                      : isDummy
+                        ? laneColor(model, lt.categoryId)
+                        : 'rgba(0,0,0,0.18)'
+                }
                 strokeWidth={selected ? 2.4 : 1}
-                strokeDasharray={mirror ? '3 2' : (isDummy && !selected ? '4 3' : undefined)}
+                strokeDasharray={mirror ? '3 2' : isDummy && !selected ? '4 3' : undefined}
                 style={mirror ? { pointerEvents: 'none' } : undefined}
                 onPointerDown={mirror ? undefined : (e) => onTaskPointerDown(e, t.id)}
               />
               <text
-                x={lt.x} y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
+                x={lt.x}
+                y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
                 {...roleAttrs('taskDuration')}
-                onDoubleClick={mirror ? undefined : (e) => { e.stopPropagation(); onDurationDoubleClick(t.id) }}
+                onDoubleClick={
+                  mirror
+                    ? undefined
+                    : (e) => {
+                        e.stopPropagation()
+                        onDurationDoubleClick(t.id)
+                      }
+                }
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
@@ -404,15 +723,27 @@ function ChartSvgBase({
                 <>
                   <rect
                     data-export-hide="1"
-                    x={lt.startX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
-                    fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
+                    x={lt.startX - 3}
+                    y={lt.y - 1}
+                    width={6}
+                    height={lt.h + 2}
+                    rx={1.5}
+                    fill={colors.primary}
+                    stroke={colors.canvas}
+                    strokeWidth={0.75}
                     style={{ cursor: 'ew-resize' }}
                     onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'start')}
                   />
                   <rect
                     data-export-hide="1"
-                    x={lt.endX - 3} y={lt.y - 1} width={6} height={lt.h + 2} rx={1.5}
-                    fill={colors.primary} stroke={colors.canvas} strokeWidth={0.75}
+                    x={lt.endX - 3}
+                    y={lt.y - 1}
+                    width={6}
+                    height={lt.h + 2}
+                    rx={1.5}
+                    fill={colors.primary}
+                    stroke={colors.canvas}
+                    strokeWidth={0.75}
                     style={{ cursor: 'ew-resize' }}
                     onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'end')}
                   />
@@ -421,15 +752,23 @@ function ChartSvgBase({
                   <circle
                     data-export-hide="1"
                     className="chart-anchor"
-                    cx={lt.startX - 11} cy={lt.cy} r={5.5}
-                    fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
+                    cx={lt.startX - 11}
+                    cy={lt.cy}
+                    r={5.5}
+                    fill={colors.canvas}
+                    stroke={colors.primary}
+                    strokeWidth={2}
                     onPointerDown={(e) => onAnchorPointerDown(e, t.id, 'start')}
                   />
                   <circle
                     data-export-hide="1"
                     className="chart-anchor"
-                    cx={lt.endX + 11} cy={lt.cy} r={5.5}
-                    fill={colors.canvas} stroke={colors.primary} strokeWidth={2}
+                    cx={lt.endX + 11}
+                    cy={lt.cy}
+                    r={5.5}
+                    fill={colors.canvas}
+                    stroke={colors.primary}
+                    strokeWidth={2}
                     onPointerDown={(e) => onAnchorPointerDown(e, t.id, 'end')}
                   />
                 </>
@@ -442,26 +781,48 @@ function ChartSvgBase({
       {/* 우기 band resize grips — drawn on top so they stay grabbable over bars.
           Near-invisible until hover; never exported (data-export-hide). Dragging
           any year's edge changes the shared (month, day), so all years move. */}
-      {project.rainySeasons.length > 0 && model.rainyRects.map((r, i) => (
-        <g key={`rainy-grip-${i}`}>
-          {r.showStart && (
-            <rect data-export-hide="1" className="rainy-grip" fill="transparent"
-              x={r.startX - 3} y={chartTop} width={6} height={r.height}
-              onPointerDown={(e) => onRainyResizePointerDown(e, r.seasonId, 'start')} />
-          )}
-          {r.showEnd && (
-            <rect data-export-hide="1" className="rainy-grip" fill="transparent"
-              x={r.endX - 3} y={chartTop} width={6} height={r.height}
-              onPointerDown={(e) => onRainyResizePointerDown(e, r.seasonId, 'end')} />
-          )}
-        </g>
-      ))}
+      {project.rainySeasons.length > 0 &&
+        model.rainyRects.map((r, i) => (
+          <g key={`rainy-grip-${i}`}>
+            {r.showStart && (
+              <rect
+                data-export-hide="1"
+                className="rainy-grip"
+                fill="transparent"
+                x={r.startX - 3}
+                y={chartTop}
+                width={6}
+                height={r.height}
+                onPointerDown={(e) => onRainyResizePointerDown(e, r.seasonId, 'start')}
+              />
+            )}
+            {r.showEnd && (
+              <rect
+                data-export-hide="1"
+                className="rainy-grip"
+                fill="transparent"
+                x={r.endX - 3}
+                y={chartTop}
+                width={6}
+                height={r.height}
+                onPointerDown={(e) => onRainyResizePointerDown(e, r.seasonId, 'end')}
+              />
+            )}
+          </g>
+        ))}
 
       {/* footer: CI / logos (bottom-right). Dashed bounds + corner grip are
           flagged data-export-hide so they never appear in exported output. */}
       {model.logos.length > 0 && (
         <g>
-          <line x1={0} y1={chartBottom} x2={contentWidth} y2={chartBottom} stroke={colors.hairlineStrong} strokeWidth={1} />
+          <line
+            x1={0}
+            y1={chartBottom}
+            x2={contentWidth}
+            y2={chartBottom}
+            stroke={colors.hairlineStrong}
+            strokeWidth={1}
+          />
           {model.logos.map((lg) => (
             <g key={`logo-${lg.index}`}>
               <image
@@ -474,13 +835,25 @@ function ChartSvgBase({
               />
               <rect
                 data-export-hide="1"
-                x={lg.x} y={lg.y} width={lg.w} height={lg.h}
-                fill="none" stroke={colors.hairline} strokeWidth={1} strokeDasharray="3 3"
+                x={lg.x}
+                y={lg.y}
+                width={lg.w}
+                height={lg.h}
+                fill="none"
+                stroke={colors.hairline}
+                strokeWidth={1}
+                strokeDasharray="3 3"
               />
               <rect
                 data-export-hide="1"
-                x={lg.x - 5} y={lg.y + lg.h - 5} width={11} height={11} rx={2}
-                fill={colors.primary} stroke={colors.canvas} strokeWidth={1}
+                x={lg.x - 5}
+                y={lg.y + lg.h - 5}
+                width={11}
+                height={11}
+                rx={2}
+                fill={colors.primary}
+                stroke={colors.canvas}
+                strokeWidth={1}
                 style={{ cursor: 'nesw-resize' }}
                 onPointerDown={(e) => onLogoResizePointerDown(e, lg.index)}
               />
@@ -490,14 +863,27 @@ function ChartSvgBase({
       )}
 
       {/* outer drawing frame (테두리) */}
-      <rect x={0.5} y={0.5} width={contentWidth - 1} height={contentHeight - 1}
-        fill="none" stroke={colors.hairlineStrong} strokeWidth={1} />
+      <rect
+        x={0.5}
+        y={0.5}
+        width={contentWidth - 1}
+        height={contentHeight - 1}
+        fill="none"
+        stroke={colors.hairlineStrong}
+        strokeWidth={1}
+      />
 
       {/* linking ghost */}
       {linkingGhost && (
         <line
-          x1={linkingGhost.x1} y1={linkingGhost.y1} x2={linkingGhost.x2} y2={linkingGhost.y2}
-          stroke={colors.primary} strokeWidth={2} strokeDasharray="4 3" markerEnd="url(#hn-arrow-crit)"
+          x1={linkingGhost.x1}
+          y1={linkingGhost.y1}
+          x2={linkingGhost.x2}
+          y2={linkingGhost.y2}
+          stroke={colors.primary}
+          strokeWidth={2}
+          strokeDasharray="4 3"
+          markerEnd="url(#hn-arrow-crit)"
         />
       )}
     </svg>

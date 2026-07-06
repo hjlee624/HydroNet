@@ -93,7 +93,12 @@ export async function deleteProject(id: string): Promise<void> {
 // Best-effort and isolated from the main save's serverOk flag, so a server that
 // lacks the /api/autosave endpoint never disables the working by-id save.
 
-export interface AutosaveItem { file: string; name: string; updatedAt: string; size: number }
+export interface AutosaveItem {
+  file: string
+  name: string
+  updatedAt: string
+  size: number
+}
 
 export async function autosaveProject(project: Project): Promise<void> {
   try {
@@ -102,7 +107,9 @@ export async function autosaveProject(project: Project): Promise<void> {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(project),
     })
-  } catch { /* offline / endpoint missing — the by-id save + localStorage already cover persistence */ }
+  } catch {
+    /* offline / endpoint missing — the by-id save + localStorage already cover persistence */
+  }
 }
 
 export async function listAutosaves(): Promise<{ dir: string; items: AutosaveItem[] }> {
@@ -112,7 +119,9 @@ export async function listAutosaves(): Promise<{ dir: string; items: AutosaveIte
       const data = await res.json()
       if (data && Array.isArray(data.items)) return data as { dir: string; items: AutosaveItem[] }
     }
-  } catch { /* fall through to the by-id store */ }
+  } catch {
+    /* fall through to the by-id store */
+  }
   // Fallback: recover from the by-id project store (older server without autosave).
   const projects = await listProjects()
   return {
@@ -125,7 +134,9 @@ export async function loadAutosave(file: string): Promise<Project | null> {
   try {
     const res = await fetch(`/api/autosave/file/${encodeURIComponent(file)}`)
     if (res.ok) return (await res.json()) as Project
-  } catch { /* fall through */ }
+  } catch {
+    /* fall through */
+  }
   // Fallback: treat `file` as a by-id project key.
   return loadProject(file)
 }
@@ -133,5 +144,7 @@ export async function loadAutosave(file: string): Promise<Project | null> {
 export async function deleteAutosave(file: string): Promise<void> {
   try {
     await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, { method: 'DELETE' })
-  } catch { /* best-effort */ }
+  } catch {
+    /* best-effort */
+  }
 }

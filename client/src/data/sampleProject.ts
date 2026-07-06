@@ -15,7 +15,11 @@ import { DEFAULT_CI } from './ciLogo'
 const START = '2026-01-01'
 const day = (iso: string) => dateToDay(START, parseISO(iso))
 
-interface CatDef { id: string; name: string; commissioning?: boolean }
+interface CatDef {
+  id: string
+  name: string
+  commissioning?: boolean
+}
 const CATS: CatDef[] = [
   { id: 'c-gaseol', name: '가설공' },
   { id: 'c-road', name: '공사용도로' },
@@ -61,9 +65,30 @@ const TASKS: TaskDef[] = [
   { id: 't-r1', cat: 'c-road', name: '공사용도로 개설', start: '2026-02-15', dur: 120 },
   { id: 't-r2', cat: 'c-road', name: '일괄관리도로', start: '2026-06-20', dur: 150 },
   // 가물막이 (critical spine start) — demonstrates 세부공종 left labels
-  { id: 't-cf1', cat: 'c-coffer', name: '상류 가물막이 축조', start: '2026-05-01', dur: 90, sub: '상류 가물막이' },
-  { id: 't-cf2', cat: 'c-coffer', name: '하류 가물막이 축조', start: '2026-05-20', dur: 80, sub: '하류 가물막이' },
-  { id: 't-cf3', cat: 'c-coffer', name: '하천 우회', start: '2026-08-10', dur: 55, sub: '유수전환' },
+  {
+    id: 't-cf1',
+    cat: 'c-coffer',
+    name: '상류 가물막이 축조',
+    start: '2026-05-01',
+    dur: 90,
+    sub: '상류 가물막이',
+  },
+  {
+    id: 't-cf2',
+    cat: 'c-coffer',
+    name: '하류 가물막이 축조',
+    start: '2026-05-20',
+    dur: 80,
+    sub: '하류 가물막이',
+  },
+  {
+    id: 't-cf3',
+    cat: 'c-coffer',
+    name: '하천 우회',
+    start: '2026-08-10',
+    dur: 55,
+    sub: '유수전환',
+  },
   // 접근수로 (critical)
   { id: 't-ap1', cat: 'c-approach', name: '접근수로 굴착', start: '2026-07-30', dur: 120 },
   { id: 't-ap2', cat: 'c-approach', name: '접근수로 콘크리트', start: '2026-11-27', dur: 95 },
@@ -72,7 +97,14 @@ const TASKS: TaskDef[] = [
   { id: 't-ct2', cat: 'c-control', name: '기초 콘크리트', start: '2027-03-07', dur: 120 },
   { id: 't-ct3', cat: 'c-control', name: '구조물 축조', start: '2027-07-05', dur: 220 },
   { id: 't-ct4', cat: 'c-control', name: '수문 설치', start: '2028-02-10', dur: 120 },
-  { id: 't-ms-fill', cat: 'c-control', name: '◆ 초기 담수 시작', start: '2028-06-09', dur: 0, milestone: true },
+  {
+    id: 't-ms-fill',
+    cat: 'c-control',
+    name: '◆ 초기 담수 시작',
+    start: '2028-06-09',
+    dur: 0,
+    milestone: true,
+  },
   // 도류부
   { id: 't-ch1', cat: 'c-chute', name: '도류부 굴착', start: '2027-02-01', dur: 90 },
   { id: 't-ch2', cat: 'c-chute', name: '도류부 라이닝', start: '2027-05-10', dur: 150 },
@@ -97,7 +129,14 @@ const TASKS: TaskDef[] = [
   // 시운전 (commissioning — hidden until enabled)
   { id: 't-cm1', cat: 'c-commission', name: '개별 시운전', start: '2028-06-15', dur: 40 },
   { id: 't-cm2', cat: 'c-commission', name: '연동 시운전', start: '2028-07-28', dur: 30 },
-  { id: 't-ms-comm', cat: 'c-commission', name: '◆ 상업 운전', start: '2028-09-05', dur: 0, milestone: true },
+  {
+    id: 't-ms-comm',
+    cat: 'c-commission',
+    name: '◆ 상업 운전',
+    start: '2028-09-05',
+    dur: 0,
+    milestone: true,
+  },
 ]
 
 const tasks: Task[] = TASKS.map((t) => ({
@@ -146,7 +185,15 @@ const links: Link[] = [
 ]
 
 const rainySeasons: RainySeason[] = [
-  { id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 },
+  {
+    id: 'rs-1',
+    label: '우기',
+    startMonth: 6,
+    startDay: 1,
+    endMonth: 9,
+    endDay: 30,
+    efficiency: 0.7,
+  },
 ]
 
 export function createSampleProject(): Project {

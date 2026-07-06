@@ -8,83 +8,63 @@
         "key": "concrete_gravity",
         "label": "콘크리트 중력식댐",
         "icon": "🧱",
-        "appliesTo": [
-          "new-dam"
-        ],
+        "appliesTo": ["new-dam"],
         "description": "콘크리트 자중으로 수압을 지탱하는 댐. RCCD(롤러다짐, 공기단축·경제성 우수) 또는 주상블록식으로 시공. 다목적·발전·홍수조절 신규건설의 표준형. 시설물안전법상 제1종시설물."
       },
       {
         "key": "concrete_arch",
         "label": "아치식댐",
         "icon": "🌉",
-        "appliesTo": [
-          "new-dam"
-        ],
+        "appliesTo": ["new-dam"],
         "description": "자중과 아치작용으로 수압을 양안 암반에 전달. 협곡 지형에 적합하고 콘크리트 물량이 적음. 블록분할 타설·관로냉각·수축이음 그라우팅이 일체화 거동의 핵심. 국내 신설 빈도는 낮음."
       },
       {
         "key": "fill_core_rockfill",
         "label": "중심코어형 록필댐(ECRD)",
         "icon": "⛰️",
-        "appliesTo": [
-          "new-dam"
-        ],
+        "appliesTo": ["new-dam"],
         "description": "제체 중앙의 점성토 차수코어를 필터·트랜지션존이 감싸고 외측을 사석/록존이 지지하는 존형 댐. 소양강·충주 등 대형 다목적댐에 적용. 코어 함수비 관리상 우기에 취약해 동급 CFRD보다 총공기가 긴 경향."
       },
       {
         "key": "fill_cfrd",
         "label": "표면차수벽형 석괴댐(CFRD)",
         "icon": "🪨",
-        "appliesTo": [
-          "new-dam",
-          "pumped"
-        ],
+        "appliesTo": ["new-dam", "pumped"],
         "description": "상류면 철근콘크리트 표면차수벽(Face Slab)과 플린스(Plinth)로 차수하고 제체를 쿠션·지지존(2B)·트랜지션(3A)·주사석/하류 록존(3B/3C)으로 축조하는 건식 록필댐. 코어가 없어 우기 영향이 적고 연중 시공 가능. 양수발전 상·하부댐의 표준 형식."
       },
       {
         "key": "composite_csg",
         "label": "복합댐(CSG/하드필)",
         "icon": "🧩",
-        "appliesTo": [
-          "new-dam"
-        ],
+        "appliesTo": ["new-dam"],
         "description": "상류 필존과 하류 콘크리트존(빈배합/하드필·CSG, 계단식 사면)을 트랜지션존으로 연결한 복합형. 각 형식의 장점을 살리고 극한강우 월류에 대응. 국내 신규 적용 검토·추진."
       },
       {
         "key": "weir_barrage",
         "label": "가동보/고정보",
         "icon": "🚧",
-        "appliesTo": [
-          "new-dam"
-        ],
+        "appliesTo": ["new-dam"],
         "description": "유수를 가로막아 수위를 높여 취수·수위조절하는 수리구조물. 고정보(콘크리트 고정)와 가동보(수문 자동조절). 높이 15m 미만이고 저류 유량조절 목적이 아니면 '보'로 구분."
       },
       {
         "key": "pumped_storage",
         "label": "양수발전(상·하부저수지+지하발전소)",
         "icon": "⚡",
-        "appliesTo": [
-          "pumped"
-        ],
+        "appliesTo": ["pumped"],
         "description": "고저차를 둔 상·하부 저수지 사이에서 잉여전력으로 양수, 첨두에 발전. 상·하부댐(주로 CFRD)·도수로/수압관로·지하발전소·조압수조·방수로·가변속 펌프수차로 구성. 영동·홍천·포천 등 신규건설 추진, 총공기 약 76~95개월."
       },
       {
         "key": "dam_rehab",
         "label": "기존댐 안전성강화·치수능력증대",
         "icon": "🛠️",
-        "appliesTo": [
-          "dam-rehab"
-        ],
+        "appliesTo": ["dam-rehab"],
         "description": "정밀안전진단·PMF 대응 비상여수로 신설·댐체 차수보강(그라우팅·PS앵커)·내진보강·노후 수문/취수방류설비 개량·계측 감시설비 신설. 충주·소양강 등 전국 23~24개 댐 치수능력증대사업 대상."
       },
       {
         "key": "agricultural_reservoir",
         "label": "농업용 저수지",
         "icon": "🌾",
-        "appliesTo": [
-          "new-dam",
-          "dam-rehab"
-        ],
+        "appliesTo": ["new-dam", "dam-rehab"],
         "description": "농업용수 확보용 인공 저수시설(주로 균일형 흙댐). 한국농어촌공사 관리, 국내 약 1.7만 개소. 신설 및 둑높이기(증고)·재해위험저수지 정비 등 안전성강화 사업 다수."
       }
     ],

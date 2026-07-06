@@ -12,9 +12,10 @@ export function RecalcModal() {
 
   const title = report.kind === 'reschedule' ? '재계산 결과' : '일정 정렬 결과'
   const fmt = (day: number) => toISO(dayToDate(report.startDate, day))
-  const sub = report.totalMoved > 0
-    ? `${report.totalMoved}개 공정의 시작일이 변경되었습니다.`
-    : '변경된 공정이 없습니다.'
+  const sub =
+    report.totalMoved > 0
+      ? `${report.totalMoved}개 공정의 시작일이 변경되었습니다.`
+      : '변경된 공정이 없습니다.'
 
   return (
     <Modal title={title} sub={sub} width={540} onClose={() => a().closeRecalcReport()}>
@@ -26,7 +27,9 @@ export function RecalcModal() {
         <div className="recalc-list">
           {report.changes.map((c) => (
             <div className="recalc-row" key={c.id}>
-              <span className="recalc-name" title={c.name}>{c.name.replace(/^◆\s*/, '')}</span>
+              <span className="recalc-name" title={c.name}>
+                {c.name.replace(/^◆\s*/, '')}
+              </span>
               <span className="recalc-dates">
                 <span className="recalc-from">{fmt(c.oldStart)}</span>
                 <span className="recalc-arrow">→</span>

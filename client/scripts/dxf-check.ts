@@ -7,7 +7,10 @@ import { projectToDxf } from '../src/export/dxf'
 
 let fail = 0
 const check = (cond: boolean, label: string) => {
-  if (!cond) { fail++; console.log('  ✗ ' + label) } else console.log('  ✓ ' + label)
+  if (!cond) {
+    fail++
+    console.log('  ✗ ' + label)
+  } else console.log('  ✓ ' + label)
 }
 
 const dxf = projectToDxf(createSampleProject())
@@ -25,7 +28,10 @@ check(!dxf.includes('undefined'), 'undefined 없음')
 const count = (t: string) => (dxf.match(new RegExp('^' + t + '$', 'gm')) || []).length
 const section = (dxf.match(/^SECTION$/gm) || []).length
 const endsec = (dxf.match(/^ENDSEC$/gm) || []).length
-check(section === endsec && section === 3, `SECTION/ENDSEC 균형 (${section}/${endsec}, HEADER·TABLES·ENTITIES)`)
+check(
+  section === endsec && section === 3,
+  `SECTION/ENDSEC 균형 (${section}/${endsec}, HEADER·TABLES·ENTITIES)`,
+)
 check(count('POLYLINE') === count('SEQEND'), `POLYLINE↔SEQEND 균형 (${count('POLYLINE')})`)
 check(count('LAYER') >= 17, `LAYER 정의됨 (${count('LAYER')})`)
 check(count('TEXT') > 20, `TEXT 엔티티 생성 (${count('TEXT')})`)
@@ -37,12 +43,18 @@ const colorVals = new Set<string>()
 for (let i = 0; i < content.length - 1; i++) {
   if (content[i] === '62') colorVals.add(content[i + 1])
 }
-check(colorVals.size >= 6, `색상 인덱스 다양성 (distinct 62 = ${colorVals.size}: ${[...colorVals].sort().join(',')})`)
+check(
+  colorVals.size >= 6,
+  `색상 인덱스 다양성 (distinct 62 = ${colorVals.size}: ${[...colorVals].sort().join(',')})`,
+)
 
 // every group-code line must be an integer
 let badCode = 0
 for (let i = 0; i < content.length; i += 2) {
-  if (!/^-?\d+$/.test(content[i])) { badCode++; if (badCode <= 3) console.log('   bad code @' + i + ': ' + JSON.stringify(content[i])) }
+  if (!/^-?\d+$/.test(content[i])) {
+    badCode++
+    if (badCode <= 3) console.log('   bad code @' + i + ': ' + JSON.stringify(content[i]))
+  }
 }
 check(badCode === 0, '모든 group code 위치가 정수')
 

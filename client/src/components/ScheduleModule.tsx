@@ -20,10 +20,18 @@ const num = (v: string | null, fallback: number) => {
 }
 // localStorage can throw (private mode / locked-down / opaque origins) — guard it.
 const lsNum = (key: string, fallback: number) => {
-  try { return num(localStorage.getItem(key), fallback) } catch { return fallback }
+  try {
+    return num(localStorage.getItem(key), fallback)
+  } catch {
+    return fallback
+  }
 }
 const lsSet = (key: string, value: string) => {
-  try { localStorage.setItem(key, value) } catch { /* ignore — non-persistent session */ }
+  try {
+    localStorage.setItem(key, value)
+  } catch {
+    /* ignore — non-persistent session */
+  }
 }
 
 export function ScheduleModule() {
@@ -49,13 +57,18 @@ export function ScheduleModule() {
   const activeSheet = useEditor((s) => s.project.activeSheet)
   const a = useEditor.getState
   const tabs = activeSheet
-    ? [{ id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },
-        ...(sheets ?? []).map((s) => ({ id: s.id, role: s.role, name: s.name }))]
-        .sort((x, y) => (x.role === 'plan' ? 0 : 1) - (y.role === 'plan' ? 0 : 1))
+    ? [
+        { id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },
+        ...(sheets ?? []).map((s) => ({ id: s.id, role: s.role, name: s.name })),
+      ].sort((x, y) => (x.role === 'plan' ? 0 : 1) - (y.role === 'plan' ? 0 : 1))
     : []
 
-  useEffect(() => { lsSet('hydronet:leftW', String(leftWidth)) }, [leftWidth])
-  useEffect(() => { lsSet('hydronet:rightW', String(rightWidth)) }, [rightWidth])
+  useEffect(() => {
+    lsSet('hydronet:leftW', String(leftWidth))
+  }, [leftWidth])
+  useEffect(() => {
+    lsSet('hydronet:rightW', String(rightWidth))
+  }, [rightWidth])
 
   useEffect(() => {
     const onFs = () => setPresentation(!!document.fullscreenElement)
@@ -80,33 +93,72 @@ export function ScheduleModule() {
       const s = useEditor.getState()
 
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
-        e.preventDefault(); void s.save(); return
+        e.preventDefault()
+        void s.save()
+        return
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && !e.shiftKey) {
-        e.preventDefault(); s.undo(); return
+        e.preventDefault()
+        s.undo()
+        return
       }
-      if ((e.ctrlKey || e.metaKey) && (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))) {
-        e.preventDefault(); s.redo(); return
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey))
+      ) {
+        e.preventDefault()
+        s.redo()
+        return
       }
       // 공종 다중선택 복사/붙여넣기(왼쪽 사이드바). 입력 중이 아닐 때만 가로챈다.
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'c' && !typing && s.selectedCategoryIds.length > 0) {
-        e.preventDefault(); s.copyCategories(s.selectedCategoryIds); return
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === 'c' &&
+        !typing &&
+        s.selectedCategoryIds.length > 0
+      ) {
+        e.preventDefault()
+        s.copyCategories(s.selectedCategoryIds)
+        return
       }
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'v' && !typing && s.categoryClipboard) {
-        e.preventDefault(); s.pasteCategories(); return
+      if (
+        (e.ctrlKey || e.metaKey) &&
+        e.key.toLowerCase() === 'v' &&
+        !typing &&
+        s.categoryClipboard
+      ) {
+        e.preventDefault()
+        s.pasteCategories()
+        return
       }
       if (!typing && (e.key === 'Delete' || e.key === 'Backspace')) {
-        if (s.selectedTaskId) { e.preventDefault(); s.deleteTask(s.selectedTaskId) }
-        else if (s.selectedLinkId) { e.preventDefault(); s.deleteLink(s.selectedLinkId) }
+        if (s.selectedTaskId) {
+          e.preventDefault()
+          s.deleteTask(s.selectedTaskId)
+        } else if (s.selectedLinkId) {
+          e.preventDefault()
+          s.deleteLink(s.selectedLinkId)
+        }
       }
       // 캔버스 도구: H = 화면 이동(드래그), V/Esc = 편집 복귀. 확대/축소는 (불편하던)
       // Z 모드 대신 Ctrl+휠(커서 기준)로 동작한다 — ChartCanvas onWheel.
       if (!typing && !e.ctrlKey && !e.metaKey && !e.altKey) {
         const k = e.key.toLowerCase()
-        if (k === 'h') { e.preventDefault(); s.setNavMode('pan'); return }
-        if (k === 'v') { e.preventDefault(); s.setNavMode('edit'); return }
+        if (k === 'h') {
+          e.preventDefault()
+          s.setNavMode('pan')
+          return
+        }
+        if (k === 'v') {
+          e.preventDefault()
+          s.setNavMode('edit')
+          return
+        }
       }
-      if (e.key === 'Escape') { s.cancelLinking(); s.setNavMode('edit') }
+      if (e.key === 'Escape') {
+        s.cancelLinking()
+        s.setNavMode('edit')
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -114,24 +166,40 @@ export function ScheduleModule() {
 
   return (
     <div className="app">
-      <TopBar onExport={() => setExportOpen(true)} onToggleFullscreen={toggleFullscreen} fullscreen={presentation} />
+      <TopBar
+        onExport={() => setExportOpen(true)}
+        onToggleFullscreen={toggleFullscreen}
+        fullscreen={presentation}
+      />
       <div className="app__body">
         {!presentation && <Sidebar width={leftWidth} />}
         {!presentation && <Resizer side="left" width={leftWidth} setWidth={setLeftWidth} />}
         <div className="app__center">
           {!presentation && tabs.length > 1 && (
             <div className="sheet-tabs">
-              {tabs.map((t) => (
+              {tabs.map((t) =>
                 editTab?.id === t.id ? (
                   <input
                     key={t.id}
                     autoFocus
                     value={editTab.text}
-                    style={{ font: 'inherit', padding: '5px 10px', width: 150, border: '1px solid var(--primary)', borderRadius: 7 }}
+                    style={{
+                      font: 'inherit',
+                      padding: '5px 10px',
+                      width: 150,
+                      border: '1px solid var(--primary)',
+                      borderRadius: 7,
+                    }}
                     onChange={(e) => setEditTab({ id: t.id, text: e.target.value })}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') { e.preventDefault(); commitTab() }
-                      else if (e.key === 'Escape') { e.preventDefault(); tabDone.current = true; setEditTab(null) }
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        commitTab()
+                      } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        tabDone.current = true
+                        setEditTab(null)
+                      }
                     }}
                     onBlur={commitTab}
                     onClick={(e) => e.stopPropagation()}
@@ -141,13 +209,17 @@ export function ScheduleModule() {
                     key={t.id}
                     className={`sheet-tab ${t.id === activeSheet!.id ? 'active' : ''}`}
                     onClick={() => a().switchSheet(t.id)}
-                    onDoubleClick={() => { tabDone.current = false; setEditTab({ id: t.id, text: t.name }) }}
+                    onDoubleClick={() => {
+                      tabDone.current = false
+                      setEditTab({ id: t.id, text: t.name })
+                    }}
                     title="클릭=전환 · 더블클릭=이름 수정"
                   >
-                    <span className="sheet-tab__ic">{t.role === 'plan' ? '📋' : '◆'}</span>{t.name}
+                    <span className="sheet-tab__ic">{t.role === 'plan' ? '📋' : '◆'}</span>
+                    {t.name}
                   </button>
-                )
-              ))}
+                ),
+              )}
             </div>
           )}
           {!presentation && <ViewBar />}

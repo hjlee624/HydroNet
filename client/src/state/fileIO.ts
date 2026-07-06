@@ -18,7 +18,10 @@ declare global {
   }
 }
 interface FileSystemWritableHandleLike {
-  createWritable: () => Promise<{ write: (data: string) => Promise<void>; close: () => Promise<void> }>
+  createWritable: () => Promise<{
+    write: (data: string) => Promise<void>
+    close: () => Promise<void>
+  }>
 }
 interface FileSystemFileHandleLike {
   getFile: () => Promise<{ text: () => Promise<string> }>
@@ -32,7 +35,9 @@ function safeFileName(name: string): string {
   return (base || 'HydroNet') + '.json'
 }
 
-const PICK_TYPES = [{ description: 'HydroNet 프로젝트(JSON)', accept: { 'application/json': ['.json'] } }]
+const PICK_TYPES = [
+  { description: 'HydroNet 프로젝트(JSON)', accept: { 'application/json': ['.json'] } },
+]
 
 /** 프로젝트를 사용자가 고른 경로의 .json으로 저장. 저장하면 true, 사용자가 취소하면 false. */
 export async function saveProjectToFile(project: Project): Promise<boolean> {
@@ -104,7 +109,8 @@ function pickFileTextViaInput(): Promise<string | null> {
 function parseProject(text: string): Project {
   const obj = JSON.parse(text) as unknown
   if (
-    !obj || typeof obj !== 'object' ||
+    !obj ||
+    typeof obj !== 'object' ||
     !Array.isArray((obj as Project).tasks) ||
     !Array.isArray((obj as Project).categories)
   ) {

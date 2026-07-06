@@ -24,7 +24,9 @@ export function TemplateDialog({ onClose }: { onClose: () => void }) {
           </button>
         ))}
       </div>
-      <p className="note" style={{ marginTop: 10 }}>새 도면을 만들면 현재 작업은 사라집니다. 저장하지 않은 변경이 있으면 먼저 <b>저장</b>하세요.</p>
+      <p className="note" style={{ marginTop: 10 }}>
+        새 도면을 만들면 현재 작업은 사라집니다. 저장하지 않은 변경이 있으면 먼저 <b>저장</b>하세요.
+      </p>
     </Modal>
   )
 }

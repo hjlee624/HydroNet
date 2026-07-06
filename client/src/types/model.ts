@@ -225,7 +225,11 @@ export interface ModuleRecord {
 }
 
 /** 베이스라인 스냅샷의 한 공정(계획 시작·기간 박제). */
-export interface BaselineTask { id: ID; start: number; duration: number }
+export interface BaselineTask {
+  id: ID
+  start: number
+  duration: number
+}
 
 /** 기준선(베이스라인) — 어느 시점의 계획 일정을 박제해 이후 표류(드리프트)를 잰다.
  *  사업 단위(시트 전환에도 보존). 없으면 미설정(구버전 호환). */

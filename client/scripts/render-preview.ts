@@ -55,4 +55,6 @@ const resvg = new Resvg(svg, {
   background: 'white',
 })
 writeFileSync('preview.png', resvg.render().asPng())
-console.log(`wrote preview.png (${Math.round(model.contentWidth)}×${Math.round(model.contentHeight)})`)
+console.log(
+  `wrote preview.png (${Math.round(model.contentWidth)}×${Math.round(model.contentHeight)})`,
+)

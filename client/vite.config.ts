@@ -8,7 +8,8 @@ import { viteSingleFile } from 'vite-plugin-singlefile'
 // SINGLE=1 → inline ALL JS/CSS into one self-contained dist-single/index.html;
 // scripts/build-single.ts then base64-embeds the KoPub fonts and writes the
 // final HydroNet.html (double-click to use, fully offline).
-const env = (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
+const env =
+  (globalThis as { process?: { env?: Record<string, string | undefined> } }).process?.env ?? {}
 const single = env.SINGLE === '1'
 
 export default defineConfig({

@@ -30,7 +30,7 @@ export function mmToPx(mm: number, dpi: number): number {
 /** Safety cap so giant rasters don't blow the canvas/memory limit. Raised so
  *  A4~A2 reach a true 600dpi; larger sheets still auto-clamp (with a notice). */
 const MAX_PIXEL_AREA = 2.4e8 // ~240 MP (under Chrome's 2^28 canvas-area limit)
-const MAX_DIMENSION = 16000  // widely-safe single-axis canvas limit
+const MAX_DIMENSION = 16000 // widely-safe single-axis canvas limit
 
 export interface PaperPx {
   wPx: number

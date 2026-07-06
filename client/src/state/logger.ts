@@ -30,7 +30,8 @@ async function flush(): Promise<void> {
     })
   } catch {
     // Server unavailable (e.g. standalone client). Keep a console trail.
-    for (const e of batch) console[e.level === 'info' ? 'log' : e.level](`[HydroNet] ${e.message}`, e.context ?? '')
+    for (const e of batch)
+      console[e.level === 'info' ? 'log' : e.level](`[HydroNet] ${e.message}`, e.context ?? '')
   } finally {
     flushing = false
     if (queue.length) void flush()

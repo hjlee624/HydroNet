@@ -4,10 +4,18 @@ import { create } from 'zustand'
 import type { ModuleId } from '../data/modules'
 
 function lsGet(key: string, fallback: string): string {
-  try { return (typeof localStorage !== 'undefined' && localStorage.getItem(key)) || fallback } catch { return fallback }
+  try {
+    return (typeof localStorage !== 'undefined' && localStorage.getItem(key)) || fallback
+  } catch {
+    return fallback
+  }
 }
 function lsSet(key: string, value: string): void {
-  try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value) } catch { /* ignore */ }
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value)
+  } catch {
+    /* ignore */
+  }
 }
 
 interface ShellState {
@@ -28,10 +36,14 @@ function initialModule(): ModuleId {
 export const useShell = create<ShellState>((set) => ({
   module: initialModule(),
   railOpen: lsGet('hydronet:railOpen', '1') === '1',
-  setModule: (m) => { lsSet('hydronet:module', m); set({ module: m }) },
-  toggleRail: () => set((s) => {
-    const railOpen = !s.railOpen
-    lsSet('hydronet:railOpen', railOpen ? '1' : '0')
-    return { railOpen }
-  }),
+  setModule: (m) => {
+    lsSet('hydronet:module', m)
+    set({ module: m })
+  },
+  toggleRail: () =>
+    set((s) => {
+      const railOpen = !s.railOpen
+      lsSet('hydronet:railOpen', railOpen ? '1' : '0')
+      return { railOpen }
+    }),
 }))

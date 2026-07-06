@@ -23,7 +23,11 @@ interface ContentSize {
 }
 
 /** Clone the live chart SVG as a standalone, namespaced document string. */
-function serializeSvg(svg: SVGSVGElement, content: ContentSize, opts: { background?: string }): string {
+function serializeSvg(
+  svg: SVGSVGElement,
+  content: ContentSize,
+  opts: { background?: string },
+): string {
   const clone = svg.cloneNode(true) as SVGSVGElement
   // Drop on-screen-only overlays (selection grips, link anchors, logo handles).
   clone.querySelectorAll('[data-export-hide]').forEach((el) => el.remove())
@@ -115,7 +119,9 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
   const { svg, content, paper, filename, format } = opts
   try {
     if (format === 'svg') {
-      const str = serializeSvg(svg, content, { background: opts.transparent ? undefined : colors.canvas })
+      const str = serializeSvg(svg, content, {
+        background: opts.transparent ? undefined : colors.canvas,
+      })
       triggerDownload(new Blob([str], { type: 'image/svg+xml' }), `${filename}.svg`)
       logInfo(`SVG 내보내기 완료: ${filename}.svg`)
       return { clamped: false }
@@ -136,7 +142,11 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
         canvas.toBlob(
           (blob) => {
             if (!blob) {
-              reject(new Error('캔버스를 이미지로 변환하지 못했습니다. 해상도(DPI)를 낮춰 다시 시도하세요.'))
+              reject(
+                new Error(
+                  '캔버스를 이미지로 변환하지 못했습니다. 해상도(DPI)를 낮춰 다시 시도하세요.',
+                ),
+              )
               return
             }
             triggerDownload(blob, `${filename}.${format}`)

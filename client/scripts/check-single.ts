@@ -9,8 +9,10 @@ import { JSDOM, VirtualConsole } from 'jsdom'
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..')
 // Strip the embedded font base64 (irrelevant to whether the bundle executes/mounts)
 // so jsdom isn't overwhelmed by ~19MB of CSS — we still run the real IIFE bundle.
-const html = readFileSync(resolve(REPO, 'HydroNet.html'), 'utf8')
-  .replace(/data:font\/otf;base64,[A-Za-z0-9+/=]+/g, 'data:font/otf;base64,')
+const html = readFileSync(resolve(REPO, 'HydroNet.html'), 'utf8').replace(
+  /data:font\/otf;base64,[A-Za-z0-9+/=]+/g,
+  'data:font/otf;base64,',
+)
 
 const vc = new VirtualConsole()
 const errors: string[] = []
@@ -25,14 +27,17 @@ const dom = new JSDOM(html, {
   url: 'http://localhost/',
   beforeParse(window) {
     // jsdom has no canvas; the app only needs it for raster export, not mount.
-    ;(window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext = () => null
+    ;(window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext =
+      () => null
     // Boot straight into the 공정관리(schedule) module so the chart actually renders.
     // The first-entry gate (shell.initialModule) otherwise forces the dashboard until
     // a 사업 단계 is picked, leaving no #hydronet-chart. Mirrors mount-test.ts.
     try {
       window.localStorage.setItem('hydronet:typeChosen', '1')
       window.localStorage.setItem('hydronet:module', 'schedule')
-    } catch { /* localStorage unavailable → chart assertion will surface it */ }
+    } catch {
+      /* localStorage unavailable → chart assertion will surface it */
+    }
   },
 })
 

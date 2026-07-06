@@ -37,14 +37,19 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       if (p) a().setProject(p)
     } catch (e) {
       logWarn('불러오기 실패', e)
-      if (typeof window !== 'undefined') window.alert('불러오기에 실패했습니다. 올바른 HydroNet 프로젝트(.json) 파일인지 확인하세요.')
+      if (typeof window !== 'undefined')
+        window.alert(
+          '불러오기에 실패했습니다. 올바른 HydroNet 프로젝트(.json) 파일인지 확인하세요.',
+        )
     }
   }
 
   // Local text state for the zoom field so multi-digit entry isn't clamped on
   // every keystroke; commit (apply) only on blur / Enter.
   const [zoomText, setZoomText] = useState(() => String(Math.round(zoom * 100)))
-  useEffect(() => { setZoomText(String(Math.round(zoom * 100))) }, [zoom])
+  useEffect(() => {
+    setZoomText(String(Math.round(zoom * 100)))
+  }, [zoom])
   function commitZoom() {
     const v = Number(zoomText)
     if (Number.isFinite(v) && v > 0) a().setZoom(v / 100)
@@ -54,7 +59,9 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   return (
     <header className="topbar">
       <div className="brand">
-        <span className="brand__mark">Hydro<em>Net</em></span>
+        <span className="brand__mark">
+          Hydro<em>Net</em>
+        </span>
         <span className="brand__sub">수력 마일스톤</span>
       </div>
 
@@ -67,33 +74,95 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       />
 
       <div className="topbar__actions">
-        <button className="btn btn--sm btn--ghost" title="템플릿을 골라 새 도면 시작" onClick={() => setNewOpen(true)}>＋ 새 도면</button>
-        <button className="btn btn--sm" title="작업 파일(.json)을 원하는 경로에 저장 (Ctrl+S)" onClick={() => void a().save()}>저장</button>
-        <button className="btn btn--sm btn--ghost" title="원하는 경로의 작업 파일(.json) 불러오기" onClick={() => void onLoadFromFile()}>불러오기</button>
+        <button
+          className="btn btn--sm btn--ghost"
+          title="템플릿을 골라 새 도면 시작"
+          onClick={() => setNewOpen(true)}
+        >
+          ＋ 새 도면
+        </button>
+        <button
+          className="btn btn--sm"
+          title="작업 파일(.json)을 원하는 경로에 저장 (Ctrl+S)"
+          onClick={() => void a().save()}
+        >
+          저장
+        </button>
+        <button
+          className="btn btn--sm btn--ghost"
+          title="원하는 경로의 작업 파일(.json) 불러오기"
+          onClick={() => void onLoadFromFile()}
+        >
+          불러오기
+        </button>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
-        <button className="btn btn--icon btn--sm" title="실행 취소 (Ctrl+Z)" disabled={!canUndo} onClick={() => a().undo()}>↶</button>
-        <button className="btn btn--icon btn--sm" title="다시 실행 (Ctrl+Y)" disabled={!canRedo} onClick={() => a().redo()}>↷</button>
+        <button
+          className="btn btn--icon btn--sm"
+          title="실행 취소 (Ctrl+Z)"
+          disabled={!canUndo}
+          onClick={() => a().undo()}
+        >
+          ↶
+        </button>
+        <button
+          className="btn btn--icon btn--sm"
+          title="다시 실행 (Ctrl+Y)"
+          disabled={!canRedo}
+          onClick={() => a().redo()}
+        >
+          ↷
+        </button>
       </div>
 
       <div className="topbar__spacer" />
 
       <div className="topbar__actions">
         <label className="toggle" title="선행 공정 변경 시 후행 공정 자동 이동">
-          <input type="checkbox" checked={autoCascade} onChange={(e) => a().setAutoCascade(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={autoCascade}
+            onChange={(e) => a().setAutoCascade(e.target.checked)}
+          />
           연쇄 자동
         </label>
-        {pro && <button className="btn btn--sm" title="연결을 위반하는 공정만 뒤로 정렬" onClick={() => a().cascadeNow()}>일정 정렬</button>}
-        {pro && <button className="btn btn--sm" title="모든 공정을 최조기 일정으로 재계산" onClick={() => a().rescheduleNow()}>재계산</button>}
+        {pro && (
+          <button
+            className="btn btn--sm"
+            title="연결을 위반하는 공정만 뒤로 정렬"
+            onClick={() => a().cascadeNow()}
+          >
+            일정 정렬
+          </button>
+        )}
+        {pro && (
+          <button
+            className="btn btn--sm"
+            title="모든 공정을 최조기 일정으로 재계산"
+            onClick={() => a().rescheduleNow()}
+          >
+            재계산
+          </button>
+        )}
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
 
         <label className="toggle" title="시운전 공정 포함/제외">
-          <input type="checkbox" checked={commissioning} onChange={() => a().toggleCommissioning()} />
+          <input
+            type="checkbox"
+            checked={commissioning}
+            onChange={() => a().toggleCommissioning()}
+          />
           시운전
         </label>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
 
         <div className="zoomctl" title="배율 (전체 확대/축소)">
-          <button className="btn btn--icon btn--sm" title="축소" onClick={() => a().setZoom(zoom - 0.1)}>−</button>
+          <button
+            className="btn btn--icon btn--sm"
+            title="축소"
+            onClick={() => a().setZoom(zoom - 0.1)}
+          >
+            −
+          </button>
           <input
             className="zoom-slider"
             type="range"
@@ -113,19 +182,49 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
             value={zoomText}
             onChange={(e) => setZoomText(e.target.value)}
             onBlur={commitZoom}
-            onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur() }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur()
+            }}
             aria-label="배율 입력"
           />
           <span className="zoom-pct">%</span>
-          <button className="btn btn--icon btn--sm" title="확대" onClick={() => a().setZoom(zoom + 0.1)}>＋</button>
+          <button
+            className="btn btn--icon btn--sm"
+            title="확대"
+            onClick={() => a().setZoom(zoom + 0.1)}
+          >
+            ＋
+          </button>
         </div>
 
-        <span className={`save-state ${dirty ? 'dirty' : ''}`} title={dirty ? '저장되지 않은 변경이 있습니다 — 저장 또는 Ctrl+S' : '마지막 저장 이후 변경 없음'}>{dirty ? '● 미저장' : '저장됨'}</span>
-        <button className="btn btn--sm btn--dark" title="사용 방법 · 단축키" aria-label="도움말" onClick={() => setHelpOpen(true)}>? 도움말</button>
-        <button className="btn btn--sm" title="출력 전 전체 화면 미리보기 (Esc 종료)" onClick={onToggleFullscreen}>
+        <span
+          className={`save-state ${dirty ? 'dirty' : ''}`}
+          title={
+            dirty
+              ? '저장되지 않은 변경이 있습니다 — 저장 또는 Ctrl+S'
+              : '마지막 저장 이후 변경 없음'
+          }
+        >
+          {dirty ? '● 미저장' : '저장됨'}
+        </span>
+        <button
+          className="btn btn--sm btn--dark"
+          title="사용 방법 · 단축키"
+          aria-label="도움말"
+          onClick={() => setHelpOpen(true)}
+        >
+          ? 도움말
+        </button>
+        <button
+          className="btn btn--sm"
+          title="출력 전 전체 화면 미리보기 (Esc 종료)"
+          onClick={onToggleFullscreen}
+        >
           {fullscreen ? '⤢ 종료' : '⤢ 전체 화면'}
         </button>
-        <button className="btn btn--primary" onClick={onExport}>도면 출력</button>
+        <button className="btn btn--primary" onClick={onExport}>
+          도면 출력
+        </button>
       </div>
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}

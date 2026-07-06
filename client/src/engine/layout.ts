@@ -177,7 +177,14 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   const taskCol = view.taskColumn !== false
   const rowHeight = Math.max(
     view.rowHeight,
-    Math.ceil(2 * Math.max(11.5 + 0.8 * fs('taskName'), 11 + 0.8 * fs('milestoneName'), 12 + fs('taskDuration'))),
+    Math.ceil(
+      2 *
+        Math.max(
+          11.5 + 0.8 * fs('taskName'),
+          11 + 0.8 * fs('milestoneName'),
+          12 + fs('taskDuration'),
+        ),
+    ),
   )
   const barHeight = Math.min(rowHeight * 0.34, 16)
   const headerHeight = Math.max(
@@ -193,9 +200,12 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // Append the sheet name only when it isn't already the tail of 사업명 (avoids
   // "…예정공정표 · 예정공정표" when a preset name ends with the sheet name).
   const showSheet = multiSheet && sheetName && !project.name.endsWith(sheetName)
-  const title = view.showTitle !== false && project.name
-    ? (showSheet ? `${project.name} · ${sheetName}` : project.name)
-    : ''
+  const title =
+    view.showTitle !== false && project.name
+      ? showSheet
+        ? `${project.name} · ${sheetName}`
+        : project.name
+      : ''
   const titleHeight = title ? Math.max(TITLE_BAND, Math.ceil(fs('title') * 1.5 + 12)) : 0
   const logoItems = project.branding?.logos ?? []
   const maxLogoH = logoItems.reduce((m, l) => Math.max(m, l.h), 0)
@@ -206,7 +216,9 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     .filter((c) => (project.commissioningEnabled || !c.isCommissioning) && !c.hidden)
     .sort((a, b) => a.order - b.order)
   const baseCatIds = new Set(baseCats.map((c) => c.id))
-  const tasks = project.tasks.filter((t) => baseCatIds.has(t.categoryId) && !t.hidden && matchesFilter(t, filter))
+  const tasks = project.tasks.filter(
+    (t) => baseCatIds.has(t.categoryId) && !t.hidden && matchesFilter(t, filter),
+  )
   // When a filter is active, drop lanes that have no matching activities.
   const catsWithTasks = new Set(tasks.map((t) => t.categoryId))
   const categories = filterOn ? baseCats.filter((c) => catsWithTasks.has(c.id)) : baseCats
@@ -214,19 +226,22 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // Left label column widens to fit the longest 공종/세부공종/헤더 label at the
   // current font sizes, so big text never overruns into the chart (and the
   // top-left "공종/마일스톤"·착수일 never bleed into the timeline). Defaults fit 150.
-  const catFs = fs('categoryLabel'), subFs = fs('subCategoryLabel')
+  const catFs = fs('categoryLabel'),
+    subFs = fs('subCategoryLabel')
   let labelWidth = Math.max(
     view.labelWidth,
     12 + estimateTextWidth('공종 / 마일스톤', fs('headerTitle')) + 10,
     12 + estimateTextWidth('착수 0000-00', fs('headerSub')) + 10,
   )
-  for (const c of categories) labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
+  for (const c of categories)
+    labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
   const taskFs = fs('taskName')
   for (const t of tasks) {
     const sn = (t.subName ?? '').trim()
     if (sn) labelWidth = Math.max(labelWidth, 26 + estimateTextWidth(sn, subFs) + 10)
     // 공정명을 왼쪽에 나열하면 라벨열이 가장 긴 공정명도 담아야 한다(차트 침범 방지).
-    if (taskCol && !t.isMilestone) labelWidth = Math.max(labelWidth, 30 + estimateTextWidth(t.name, taskFs) + 10)
+    if (taskCol && !t.isMilestone)
+      labelWidth = Math.max(labelWidth, 30 + estimateTextWidth(t.name, taskFs) + 10)
   }
   labelWidth = Math.ceil(labelWidth)
 
@@ -252,9 +267,11 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // When a 표시 기간 is pinned: drop activities entirely outside it, and clamp those
   // straddling an edge to the window so no bar bleeds past the axis/label column.
   const domainTasks = win
-    ? tasks.filter((t) => (t.isMilestone
-        ? t.start >= domainStartDay && t.start <= domainEndDay
-        : t.start <= domainEndDay && t.start + t.duration >= domainStartDay))
+    ? tasks.filter((t) =>
+        t.isMilestone
+          ? t.start >= domainStartDay && t.start <= domainEndDay
+          : t.start <= domainEndDay && t.start + t.duration >= domainStartDay,
+      )
     : tasks
   const clampX = win
     ? (x: number) => Math.max(labelWidth, Math.min(xOf(domainEndDay), x))
@@ -279,15 +296,19 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     let auto = 0
     const rawRowOf = new Map<string, number>()
     for (const t of catTasks) rawRowOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
-    const distinctRows = [...new Set(catTasks.map((t) => rawRowOf.get(t.id)!))].sort((a, b) => a - b)
+    const distinctRows = [...new Set(catTasks.map((t) => rawRowOf.get(t.id)!))].sort(
+      (a, b) => a - b,
+    )
     const denseOf = new Map<number, number>()
     distinctRows.forEach((r, i) => denseOf.set(r, i))
     const visualRowCount = Math.max(1, distinctRows.length)
 
     const hasNamed = catTasks.some((t) => (t.subName ?? '').trim() !== '')
     // 공정명을 왼쪽에 나열하거나(taskCol) 세부공종이 있으면, 공종명을 위한 헤더 줄을 레인 상단에.
-    const headerInset = (hasNamed || (taskCol && catTasks.length > 0))
-      ? Math.max(CATEGORY_HEADER_INSET, Math.ceil(fs('categoryLabel') * 1.4)) : 0
+    const headerInset =
+      hasNamed || (taskCol && catTasks.length > 0)
+        ? Math.max(CATEGORY_HEADER_INSET, Math.ceil(fs('categoryLabel') * 1.4))
+        : 0
 
     for (const t of catTasks) {
       const vrow = denseOf.get(rawRowOf.get(t.id)!) ?? 0
@@ -320,20 +341,31 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
       if (sn && !rowBuckets[vi]) rowBuckets[vi] = sn
     }
     const subGroups: LaidSubGroup[] = []
-    for (let i = 0; i < rowBuckets.length;) {
+    for (let i = 0; i < rowBuckets.length; ) {
       const name = rowBuckets[i]
       let j = i + 1
       while (j < rowBuckets.length && rowBuckets[j] === name) j++
       if (name !== '') {
-        subGroups.push({ name, y: laneY + headerInset + i * rowHeight, height: (j - i) * rowHeight, rows: j - i })
+        subGroups.push({
+          name,
+          y: laneY + headerInset + i * rowHeight,
+          height: (j - i) * rowHeight,
+          rows: j - i,
+        })
       }
       i = j
     }
 
     const laneHeight = headerInset + visualRowCount * rowHeight
     laidCategories.push({
-      id: cat.id, name: cat.name, color: cat.color,
-      y: laneY, height: laneHeight, subRows: visualRowCount, collapsed: false, subGroups,
+      id: cat.id,
+      name: cat.name,
+      color: cat.color,
+      y: laneY,
+      height: laneHeight,
+      subRows: visualRowCount,
+      collapsed: false,
+      subGroups,
     })
     cursorY += laneHeight
   }
@@ -349,7 +381,14 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   let rightX = contentWidth - 18
   const logos: LogoRect[] = logoItems.map((lg, i) => {
     const x = rightX - lg.w
-    const rect: LogoRect = { src: lg.src, index: i, x, y: footerTop + (footerHeight - lg.h) / 2, w: lg.w, h: lg.h }
+    const rect: LogoRect = {
+      src: lg.src,
+      index: i,
+      x,
+      y: footerTop + (footerHeight - lg.h) / 2,
+      w: lg.w,
+      h: lg.h,
+    }
     rightX = x - 14
     return rect
   })
@@ -369,7 +408,8 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     const width = (mEndDay - mStartDay) * pxPerDay
     const isYearStart = d.getMonth() === 0 || months.length === 0
     months.push({
-      x, width,
+      x,
+      width,
       label: MONTH_LABELS_KO[d.getMonth()],
       monthIndex0: d.getMonth(),
       year: d.getFullYear(),
@@ -394,7 +434,8 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // still shades a day and whole-month ranges match the original look.
   const rainyRects: RainyRect[] = []
   for (const band of project.rainySeasons) {
-    const sM = band.startMonth, eM = band.endMonth
+    const sM = band.startMonth,
+      eM = band.endMonth
     const sD = Math.min(band.startDay ?? 1, daysInMonth(2001, sM - 1))
     const eD = Math.min(band.endDay ?? daysInMonth(2001, eM - 1), daysInMonth(2001, eM - 1))
     const firstYear = startDate.getFullYear() - 1
@@ -477,8 +518,8 @@ export function fitToPaperView(
   const target = paperWmm / paperHmm
   if (!Number.isFinite(target) || target <= 0) return {}
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
-  const REF_PX = 10.5    // taskName default — the reference annotation
-  const TARGET_MM = 3.5  // legible printed height for that reference
+  const REF_PX = 10.5 // taskName default — the reference annotation
+  const TARGET_MM = 3.5 // legible printed height for that reference
 
   // The legibility fontScale changes labelWidth / rowHeight-floor / band heights,
   // which feed back into the very content size we solve against — so a single pass
@@ -499,7 +540,10 @@ export function fitToPaperView(
         contentWidthAfter = m.labelWidth + domainDays * pxPerDay
       } else {
         // Too short → taller rows so contentHeight = contentWidth / target.
-        const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
+        const totalRows = Math.max(
+          1,
+          m.categories.reduce((s, c) => s + c.subRows, 0),
+        )
         const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
         rowHeight = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
       }
@@ -523,7 +567,10 @@ export function fitToPaperView(
         const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
         pxPerDay = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
       } else {
-        const totalRows = Math.max(1, m.categories.reduce((s, c) => s + c.subRows, 0))
+        const totalRows = Math.max(
+          1,
+          m.categories.reduce((s, c) => s + c.subRows, 0),
+        )
         const fixedV = m.contentHeight - totalRows * m.rowHeight
         rowHeight = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
       }
@@ -533,8 +580,11 @@ export function fitToPaperView(
 
   // Net change vs the original view (so fitToPaper's no-op guard fires correctly).
   const out: { pxPerDay?: number; rowHeight?: number; fontScale?: number } = {}
-  if (Math.abs(view.pxPerDay - project.view.pxPerDay) > 1e-3) out.pxPerDay = Number(view.pxPerDay.toFixed(4))
-  if (Math.abs(view.rowHeight - project.view.rowHeight) > 1e-3) out.rowHeight = Math.round(view.rowHeight)
-  if (Math.abs((view.fontScale ?? 1) - (project.view.fontScale ?? 1)) > 1e-3) out.fontScale = Number((view.fontScale ?? 1).toFixed(3))
+  if (Math.abs(view.pxPerDay - project.view.pxPerDay) > 1e-3)
+    out.pxPerDay = Number(view.pxPerDay.toFixed(4))
+  if (Math.abs(view.rowHeight - project.view.rowHeight) > 1e-3)
+    out.rowHeight = Math.round(view.rowHeight)
+  if (Math.abs((view.fontScale ?? 1) - (project.view.fontScale ?? 1)) > 1e-3)
+    out.fontScale = Number((view.fontScale ?? 1).toFixed(3))
   return out
 }

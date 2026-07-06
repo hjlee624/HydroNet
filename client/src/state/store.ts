@@ -9,10 +9,28 @@
 import { create } from 'zustand'
 import { nanoid } from 'nanoid'
 import type {
-  Category, ID, Link, LinkType, LogoItem, PaperSettings, Project, RainySeason, Sheet, Task, TextRole, TextStyle, ViewSettings,
+  Category,
+  ID,
+  Link,
+  LinkType,
+  LogoItem,
+  PaperSettings,
+  Project,
+  RainySeason,
+  Sheet,
+  Task,
+  TextRole,
+  TextStyle,
+  ViewSettings,
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
-import { applyCascade, computeSchedule, linkConstrainedStart, linkLagFromPositions, reschedule } from '../engine/scheduling'
+import {
+  applyCascade,
+  computeSchedule,
+  linkConstrainedStart,
+  linkLagFromPositions,
+  reschedule,
+} from '../engine/scheduling'
 import { fitToPaperView } from '../engine/layout'
 import { paperMm } from '../engine/paper'
 import { daysInMonth, doyToMonthDay, monthDayToDoy, toISO } from '../engine/dates'
@@ -49,14 +67,23 @@ export type UiMode = 'simple' | 'pro'
 export type InspectorTab = 'project' | 'text' | 'task' | 'link'
 
 const FILTER_OFF: ViewFilter = { critical: false, milestone: false, query: '' }
-export const filterActive = (f: ViewFilter): boolean => f.critical || f.milestone || f.query.trim() !== ''
+export const filterActive = (f: ViewFilter): boolean =>
+  f.critical || f.milestone || f.query.trim() !== ''
 
 /** localStorage helpers for sticky UI prefs (guarded for non-browser test runs). */
 function lsGet(key: string, fallback: string): string {
-  try { return (typeof localStorage !== 'undefined' && localStorage.getItem(key)) || fallback } catch { return fallback }
+  try {
+    return (typeof localStorage !== 'undefined' && localStorage.getItem(key)) || fallback
+  } catch {
+    return fallback
+  }
 }
 function lsSet(key: string, value: string): void {
-  try { if (typeof localStorage !== 'undefined') localStorage.setItem(key, value) } catch { /* ignore */ }
+  try {
+    if (typeof localStorage !== 'undefined') localStorage.setItem(key, value)
+  } catch {
+    /* ignore */
+  }
 }
 
 /** One task whose start moved during a 재계산 / 일정 정렬 pass. */
@@ -142,7 +169,13 @@ export interface EditorState {
   /** 공정을 다른 줄(row)로 보낸다 — 차트 세로 드래그 + 사이드바 드롭. `anchorId` 공정의 줄에 합치거나
    *  (merge) 그 위/아래(above/below)에 새 줄을 만든다. 같은 줄의 공정들은 시작일 순으로
    *  옆으로 배치돼 한 패키지를 한 줄로 표현할 수 있다(굴착→축조→…). */
-  moveTaskToRow: (id: ID, targetCategoryId: ID, anchorId: ID | null, mode: 'merge' | 'above' | 'below', opts?: { history?: boolean }) => void
+  moveTaskToRow: (
+    id: ID,
+    targetCategoryId: ID,
+    anchorId: ID | null,
+    mode: 'merge' | 'above' | 'below',
+    opts?: { history?: boolean },
+  ) => void
   /** 실적 진척률(0–100) 설정 — 진척·실적 모듈. */
   setTaskProgress: (id: ID, progress: number) => void
 
@@ -198,7 +231,11 @@ export interface EditorState {
   setLogoSize: (index: number, w: number, h: number) => void
   moveLogo: (index: number, dir: -1 | 1) => void
   removeLogo: (index: number) => void
-  setRainySeason: (patch: Partial<Pick<RainySeason, 'startMonth' | 'startDay' | 'endMonth' | 'endDay' | 'label' | 'efficiency'>>) => void
+  setRainySeason: (
+    patch: Partial<
+      Pick<RainySeason, 'startMonth' | 'startDay' | 'endMonth' | 'endDay' | 'label' | 'efficiency'>
+    >,
+  ) => void
   clearRainySeasons: () => void
 
   // typography
@@ -268,9 +305,10 @@ function normalizeLogos(logos: unknown): LogoItem[] {
 
 /** Backfill fields that may be missing on older saved projects. */
 function normalize(project: Project): Project {
-  const palette = Array.isArray(project.palette) && project.palette.length
-    ? project.palette.slice(0, PALETTE_MAX)
-    : [...DEFAULT_PALETTE]
+  const palette =
+    Array.isArray(project.palette) && project.palette.length
+      ? project.palette.slice(0, PALETTE_MAX)
+      : [...DEFAULT_PALETTE]
   return {
     ...project,
     kind: project.kind ?? 'construction',
@@ -328,7 +366,13 @@ function buildRecalcReport(
   for (const t of after.tasks) {
     const old = before.get(t.id)
     if (old === undefined || old === t.start) continue
-    changes.push({ id: t.id, name: t.name, oldStart: old, newStart: t.start, deltaDays: t.start - old })
+    changes.push({
+      id: t.id,
+      name: t.name,
+      oldStart: old,
+      newStart: t.start,
+      deltaDays: t.start - old,
+    })
   }
   changes.sort((a, b) => Math.abs(b.deltaDays) - Math.abs(a.deltaDays))
   return { kind, changes, totalMoved: changes.length, startDate: after.startDate }
@@ -405,7 +449,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     zoom: 1,
     navMode: 'edit',
     filter: { ...FILTER_OFF },
-    colorMode: (lsGet('hydronet:colorMode', 'category') as ColorMode),
+    colorMode: lsGet('hydronet:colorMode', 'category') as ColorMode,
     // 간단/전문가 토글 제거(2026-06-22) → 항상 전체 기능 노출. 과거 'simple'이
     // localStorage에 남아 기능이 숨겨진 채 갇히지 않도록 'pro'로 고정한다.
     uiMode: 'pro' as UiMode,
@@ -416,18 +460,31 @@ export const useEditor = create<EditorState>()((set, get) => {
     past: [],
     future: [],
 
-    setProject: (p) => set({ project: withSchedule(normalize(p)).project, past: [], future: [], dirty: false }),
+    setProject: (p) =>
+      set({ project: withSchedule(normalize(p)).project, past: [], future: [], dirty: false }),
     newProject: () => {
       const blank = createSampleProject()
       blank.id = `proj-${nanoid(8)}`
       blank.name = '새 프로젝트'
       blank.tasks = []
       blank.links = []
-      set({ project: withSchedule(blank).project, past: [], future: [], dirty: true, selectedTaskId: null })
+      set({
+        project: withSchedule(blank).project,
+        past: [],
+        future: [],
+        dirty: true,
+        selectedTaskId: null,
+      })
       logInfo('새 프로젝트를 생성했습니다.')
     },
     loadSample: () => {
-      set({ project: withSchedule(createSampleProject()).project, past: [], future: [], dirty: false, selectedTaskId: null })
+      set({
+        project: withSchedule(createSampleProject()).project,
+        past: [],
+        future: [],
+        dirty: false,
+        selectedTaskId: null,
+      })
       logInfo('샘플 프로젝트를 불러왔습니다.')
     },
     switchSheet: (id) => {
@@ -438,33 +495,54 @@ export const useEditor = create<EditorState>()((set, get) => {
       // Stash the current active sheet back into the list, load the target into
       // the editable top-level fields (the active sheet always lives at top level).
       const current: Sheet = {
-        id: p.activeSheet.id, role: p.activeSheet.role, name: p.activeSheet.name,
-        categories: p.categories, tasks: p.tasks, links: p.links, rainySeasons: p.rainySeasons,
+        id: p.activeSheet.id,
+        role: p.activeSheet.role,
+        name: p.activeSheet.name,
+        categories: p.categories,
+        tasks: p.tasks,
+        links: p.links,
+        rainySeasons: p.rainySeasons,
       }
       const sheets = p.sheets.filter((s) => s.id !== id).concat(current)
       const next: Project = {
         ...p,
-        categories: clone(target.categories), tasks: clone(target.tasks),
-        links: clone(target.links), rainySeasons: clone(target.rainySeasons),
-        sheets, activeSheet: { id: target.id, role: target.role, name: target.name },
+        categories: clone(target.categories),
+        tasks: clone(target.tasks),
+        links: clone(target.links),
+        rainySeasons: clone(target.rainySeasons),
+        sheets,
+        activeSheet: { id: target.id, role: target.role, name: target.name },
       }
-      set({ project: withSchedule(next).project, past: [], future: [], selectedTaskId: null, selectedLinkId: null, selectedTextRole: null, dirty: true })
+      set({
+        project: withSchedule(next).project,
+        past: [],
+        future: [],
+        selectedTaskId: null,
+        selectedLinkId: null,
+        selectedTextRole: null,
+        dirty: true,
+      })
       logInfo(`공정표 전환: ${target.name}`)
     },
     renameSheet: (id, name) => {
       const v = name.trim()
       if (!v) return
-      commit((p) => {
-        if (p.activeSheet?.id === id) p.activeSheet = { ...p.activeSheet, name: v }
-        const s = p.sheets?.find((x) => x.id === id)
-        if (s) s.name = v
-      }, { history: false })
+      commit(
+        (p) => {
+          if (p.activeSheet?.id === id) p.activeSheet = { ...p.activeSheet, name: v }
+          const s = p.sheets?.find((x) => x.id === id)
+          if (s) s.name = v
+        },
+        { history: false },
+      )
     },
 
     addTask: (categoryId, partial) => {
       const id = `t-${nanoid(8)}`
       commit((p) => {
-        const maxEnd = p.tasks.filter((t) => t.categoryId === categoryId).reduce((m, t) => Math.max(m, t.start + t.duration), 0)
+        const maxEnd = p.tasks
+          .filter((t) => t.categoryId === categoryId)
+          .reduce((m, t) => Math.max(m, t.start + t.duration), 0)
         p.tasks.push({
           id,
           categoryId,
@@ -482,43 +560,55 @@ export const useEditor = create<EditorState>()((set, get) => {
       const affectsSchedule = 'start' in patch || 'duration' in patch
       // Live-ish edits (free-text subName, color-picker drag) pass history:false to
       // avoid flooding the undo stack with one entry per keystroke / drag step.
-      commit((p) => {
-        const t = p.tasks.find((x) => x.id === id)
-        if (t) Object.assign(t, patch)
-        // 위치(시작·기간)를 바꾸면 incoming 링크 지연을 새 위치에 맞춰 역산(위치↔지연 상호작용).
-        if (affectsSchedule) relinkIncoming(p, id)
-      }, { cascade: affectsSchedule, history: opts?.history ?? true })
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t) Object.assign(t, patch)
+          // 위치(시작·기간)를 바꾸면 incoming 링크 지연을 새 위치에 맞춰 역산(위치↔지연 상호작용).
+          if (affectsSchedule) relinkIncoming(p, id)
+        },
+        { cascade: affectsSchedule, history: opts?.history ?? true },
+      )
     },
     setTaskStartLive: (id, startDay) => {
       // No history push (gesture already snapshotted); cascade respected. 옮긴 막대의
       // incoming 링크 지연을 새 위치로 역산해 위치↔지연이 항상 일치하게 한다.
-      commit((p) => {
-        const t = p.tasks.find((x) => x.id === id)
-        if (t) t.start = Math.max(0, Math.round(startDay))
-        relinkIncoming(p, id)
-      }, { history: false, cascade: true })
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t) t.start = Math.max(0, Math.round(startDay))
+          relinkIncoming(p, id)
+        },
+        { history: false, cascade: true },
+      )
     },
     setTasksStartLive: (moves) => {
       // 다중 선택 공정을 한 제스처로 동시 수평 이동(cascade 1회). gesture 스냅샷은 호출 측.
-      commit((p) => {
-        for (const m of moves) {
-          const t = p.tasks.find((x) => x.id === m.id)
-          if (t) t.start = Math.max(0, Math.round(m.start))
-        }
-        // 모든 start 반영 후 지연 역산 — 같은 선택 안의 선후행은 갭 보존(lag 불변).
-        for (const m of moves) relinkIncoming(p, m.id)
-      }, { history: false, cascade: true })
+      commit(
+        (p) => {
+          for (const m of moves) {
+            const t = p.tasks.find((x) => x.id === m.id)
+            if (t) t.start = Math.max(0, Math.round(m.start))
+          }
+          // 모든 start 반영 후 지연 역산 — 같은 선택 안의 선후행은 갭 보존(lag 불변).
+          for (const m of moves) relinkIncoming(p, m.id)
+        },
+        { history: false, cascade: true },
+      )
     },
     setTaskSpanLive: (id, startDay, duration) => {
       // Live edge-resize of a bar (start + duration). Gesture already snapshotted.
-      commit((p) => {
-        const t = p.tasks.find((x) => x.id === id)
-        if (t && !t.isMilestone) {
-          t.start = Math.max(0, Math.round(startDay))
-          t.duration = Math.max(1, Math.round(duration))
-          relinkIncoming(p, id)
-        }
-      }, { history: false, cascade: true })
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t && !t.isMilestone) {
+            t.start = Math.max(0, Math.round(startDay))
+            t.duration = Math.max(1, Math.round(duration))
+            relinkIncoming(p, id)
+          }
+        },
+        { history: false, cascade: true },
+      )
     },
     deleteTask: (id) => {
       commit((p) => {
@@ -531,75 +621,106 @@ export const useEditor = create<EditorState>()((set, get) => {
       }))
     },
     toggleMilestone: (id) => {
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t) {
+            t.isMilestone = !t.isMilestone
+            if (t.isMilestone) t.duration = 0
+            else if (t.duration === 0) t.duration = 30
+          }
+        },
+        { cascade: true },
+      )
+    },
+    toggleDummy: (id) =>
       commit((p) => {
         const t = p.tasks.find((x) => x.id === id)
-        if (t) {
-          t.isMilestone = !t.isMilestone
-          if (t.isMilestone) t.duration = 0
-          else if (t.duration === 0) t.duration = 30
-        }
-      }, { cascade: true })
-    },
-    toggleDummy: (id) => commit((p) => {
-      const t = p.tasks.find((x) => x.id === id)
-      if (t) t.isDummy = !t.isDummy
-    }),
+        if (t) t.isDummy = !t.isDummy
+      }),
     moveTaskToRow: (id, targetCategoryId, anchorId, mode, opts) => {
-      commit((p) => {
-        const moving = p.tasks.find((t) => t.id === id)
-        if (!moving) return
-        moving.categoryId = targetCategoryId
-        // Existing rows of the target lane (excluding the moving task). An explicit
-        // Task.row wins; tasks without one fall back to a running index, matching the
-        // layout engine — so a lane never touched still reads one-task-per-row.
-        const lane = p.tasks.filter((t) => t.categoryId === targetCategoryId && t.id !== id)
-        let auto = 0
-        const rawOf = new Map<ID, number>()
-        for (const t of lane) rawOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
-        const distinct = [...new Set(lane.map((t) => rawOf.get(t.id)!))].sort((a, b) => a - b)
-        const rows: Task[][] = distinct.map((rv) => lane.filter((t) => rawOf.get(t.id) === rv))
-        const anchorRow = anchorId != null && rawOf.has(anchorId) ? distinct.indexOf(rawOf.get(anchorId)!) : -1
-        if (mode === 'merge' && anchorRow >= 0) {
-          // 같은 줄에 시간이 겹치는 공정을 합치면 막대가 포개진다 → 겹치면 합치지 말고
-          // 그 줄 바로 아래 새 줄로 보낸다.
-          const overlaps = rows[anchorRow].some((t) => t.start < moving.start + moving.duration && moving.start < t.start + t.duration)
-          if (overlaps) rows.splice(anchorRow + 1, 0, [moving])
-          else rows[anchorRow].push(moving)
-        } else if (anchorRow >= 0) rows.splice(mode === 'above' ? anchorRow : anchorRow + 1, 0, [moving])
-        else rows.push([moving]) // no usable anchor → new last row
-        // Renumber rows densely and order each row left→right by start; rewrite the
-        // lane's tasks in (row, start) order so the sidebar list mirrors the chart.
-        const newOrder: Task[] = []
-        rows.forEach((rt, i) => {
-          rt.sort((x, y) => x.start - y.start)
-          for (const t of rt) { t.row = i; newOrder.push(t) }
-        })
-        const laneSet = new Set(newOrder.map((t) => t.id))
-        let k = 0
-        p.tasks = p.tasks.map((t) => (laneSet.has(t.id) ? newOrder[k++] : t))
-      }, { history: opts?.history ?? true, cascade: false })
+      commit(
+        (p) => {
+          const moving = p.tasks.find((t) => t.id === id)
+          if (!moving) return
+          moving.categoryId = targetCategoryId
+          // Existing rows of the target lane (excluding the moving task). An explicit
+          // Task.row wins; tasks without one fall back to a running index, matching the
+          // layout engine — so a lane never touched still reads one-task-per-row.
+          const lane = p.tasks.filter((t) => t.categoryId === targetCategoryId && t.id !== id)
+          let auto = 0
+          const rawOf = new Map<ID, number>()
+          for (const t of lane) rawOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
+          const distinct = [...new Set(lane.map((t) => rawOf.get(t.id)!))].sort((a, b) => a - b)
+          const rows: Task[][] = distinct.map((rv) => lane.filter((t) => rawOf.get(t.id) === rv))
+          const anchorRow =
+            anchorId != null && rawOf.has(anchorId) ? distinct.indexOf(rawOf.get(anchorId)!) : -1
+          if (mode === 'merge' && anchorRow >= 0) {
+            // 같은 줄에 시간이 겹치는 공정을 합치면 막대가 포개진다 → 겹치면 합치지 말고
+            // 그 줄 바로 아래 새 줄로 보낸다.
+            const overlaps = rows[anchorRow].some(
+              (t) =>
+                t.start < moving.start + moving.duration && moving.start < t.start + t.duration,
+            )
+            if (overlaps) rows.splice(anchorRow + 1, 0, [moving])
+            else rows[anchorRow].push(moving)
+          } else if (anchorRow >= 0)
+            rows.splice(mode === 'above' ? anchorRow : anchorRow + 1, 0, [moving])
+          else rows.push([moving]) // no usable anchor → new last row
+          // Renumber rows densely and order each row left→right by start; rewrite the
+          // lane's tasks in (row, start) order so the sidebar list mirrors the chart.
+          const newOrder: Task[] = []
+          rows.forEach((rt, i) => {
+            rt.sort((x, y) => x.start - y.start)
+            for (const t of rt) {
+              t.row = i
+              newOrder.push(t)
+            }
+          })
+          const laneSet = new Set(newOrder.map((t) => t.id))
+          let k = 0
+          p.tasks = p.tasks.map((t) => (laneSet.has(t.id) ? newOrder[k++] : t))
+        },
+        { history: opts?.history ?? true, cascade: false },
+      )
       set({ selectedTaskId: id, selectedLinkId: null })
     },
-    setTaskProgress: (id, progress) => commit((p) => {
-      const t = p.tasks.find((x) => x.id === id)
-      if (t) t.progress = Math.max(0, Math.min(100, Math.round(progress)))
-    }, { history: false }),
+    setTaskProgress: (id, progress) =>
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t) t.progress = Math.max(0, Math.min(100, Math.round(progress)))
+        },
+        { history: false },
+      ),
 
     addModuleRecord: (moduleId, values = {}) => {
       const id = `m-${nanoid(8)}`
-      commit((p) => {
-        if (!p.modules) p.modules = {}
-        p.modules[moduleId] = [...(p.modules[moduleId] ?? []), { id, values }]
-      }, { history: false })
+      commit(
+        (p) => {
+          if (!p.modules) p.modules = {}
+          p.modules[moduleId] = [...(p.modules[moduleId] ?? []), { id, values }]
+        },
+        { history: false },
+      )
       return id
     },
-    updateModuleRecord: (moduleId, id, values) => commit((p) => {
-      const r = p.modules?.[moduleId]?.find((x) => x.id === id)
-      if (r) r.values = { ...r.values, ...values }
-    }, { history: false }),
-    deleteModuleRecord: (moduleId, id) => commit((p) => {
-      if (p.modules?.[moduleId]) p.modules[moduleId] = p.modules[moduleId].filter((x) => x.id !== id)
-    }, { history: false }),
+    updateModuleRecord: (moduleId, id, values) =>
+      commit(
+        (p) => {
+          const r = p.modules?.[moduleId]?.find((x) => x.id === id)
+          if (r) r.values = { ...r.values, ...values }
+        },
+        { history: false },
+      ),
+    deleteModuleRecord: (moduleId, id) =>
+      commit(
+        (p) => {
+          if (p.modules?.[moduleId])
+            p.modules[moduleId] = p.modules[moduleId].filter((x) => x.id !== id)
+        },
+        { history: false },
+      ),
 
     captureBaseline: () => {
       commit((p) => {
@@ -623,7 +744,9 @@ export const useEditor = create<EditorState>()((set, get) => {
       logInfo('현재 일정을 기준선(베이스라인)으로 저장했습니다.')
     },
     clearBaseline: () => {
-      commit((p) => { delete p.baseline })
+      commit((p) => {
+        delete p.baseline
+      })
       logInfo('기준선을 해제했습니다.')
     },
 
@@ -642,10 +765,11 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ selectedCategoryId: id, selectedCategoryIds: [id] })
       return id
     },
-    updateCategory: (id, patch) => commit((p) => {
-      const c = p.categories.find((x) => x.id === id)
-      if (c) Object.assign(c, patch)
-    }),
+    updateCategory: (id, patch) =>
+      commit((p) => {
+        const c = p.categories.find((x) => x.id === id)
+        if (c) Object.assign(c, patch)
+      }),
     deleteCategory: (id) => {
       commit((p) => {
         p.categories = p.categories.filter((c) => c.id !== id)
@@ -656,21 +780,33 @@ export const useEditor = create<EditorState>()((set, get) => {
       // 삭제된 공종 id가 다중선택에 잔존하지 않도록 정리(deleteTask/deleteLink와 동일 위생).
       set((s) => {
         const ids = s.selectedCategoryIds.filter((x) => x !== id)
-        return { selectedCategoryIds: ids, selectedCategoryId: s.selectedCategoryId === id ? (ids[ids.length - 1] ?? null) : s.selectedCategoryId }
+        return {
+          selectedCategoryIds: ids,
+          selectedCategoryId:
+            s.selectedCategoryId === id ? (ids[ids.length - 1] ?? null) : s.selectedCategoryId,
+        }
       })
     },
-    toggleCollapse: (id) => commit((p) => {
-      const c = p.categories.find((x) => x.id === id)
-      if (c) c.collapsed = !c.collapsed
-    }, { history: false }),
-    moveCategory: (id, dir) => commit((p) => {
-      const sorted = [...p.categories].sort((a, b) => a.order - b.order)
-      const idx = sorted.findIndex((c) => c.id === id)
-      const swap = idx + dir
-      if (idx < 0 || swap < 0 || swap >= sorted.length) return
-      const a = sorted[idx], b = sorted[swap]
-      const ao = a.order; a.order = b.order; b.order = ao
-    }),
+    toggleCollapse: (id) =>
+      commit(
+        (p) => {
+          const c = p.categories.find((x) => x.id === id)
+          if (c) c.collapsed = !c.collapsed
+        },
+        { history: false },
+      ),
+    moveCategory: (id, dir) =>
+      commit((p) => {
+        const sorted = [...p.categories].sort((a, b) => a.order - b.order)
+        const idx = sorted.findIndex((c) => c.id === id)
+        const swap = idx + dir
+        if (idx < 0 || swap < 0 || swap >= sorted.length) return
+        const a = sorted[idx],
+          b = sorted[swap]
+        const ao = a.order
+        a.order = b.order
+        b.order = ao
+      }),
     reorderCategory: (id, beforeId) => {
       if (beforeId === id) return // 자기 자신 앞으로 = 무동작
       commit((p) => {
@@ -684,13 +820,18 @@ export const useEditor = create<EditorState>()((set, get) => {
           if (bi >= 0) insertAt = bi
         }
         without.splice(insertAt, 0, moving)
-        without.forEach((c, i) => { c.order = i }) // order를 0..n-1로 정규화
+        without.forEach((c, i) => {
+          c.order = i
+        }) // order를 0..n-1로 정규화
       })
       set({ selectedCategoryId: id, selectedCategoryIds: [id] })
     },
     reorderCategories: (ids, beforeId) => {
       const idset = new Set(ids)
-      if (idset.size <= 1) { get().reorderCategory(ids[0], beforeId); return }
+      if (idset.size <= 1) {
+        get().reorderCategory(ids[0], beforeId)
+        return
+      }
       commit((p) => {
         const sorted = [...p.categories].sort((a, b) => a.order - b.order)
         const moving = sorted.filter((c) => idset.has(c.id)) // 상대순서 유지
@@ -698,7 +839,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         // beforeId가 선택집합 멤버여도, 표시 순서상 그 위치 이후의 첫 '비선택' 공종을
         // 앵커로 삼아 사용자가 가리킨 위치에 그룹을 삽입한다(맨 끝 점프 방지).
         let anchorIdx = sorted.length
-        if (beforeId) { const si = sorted.findIndex((c) => c.id === beforeId); if (si >= 0) anchorIdx = si }
+        if (beforeId) {
+          const si = sorted.findIndex((c) => c.id === beforeId)
+          if (si >= 0) anchorIdx = si
+        }
         const anchorId = sorted.slice(anchorIdx).find((c) => !idset.has(c.id))?.id ?? null
         const without = sorted.filter((c) => !idset.has(c.id))
         let insertAt = without.length // 기본 = 맨 끝
@@ -707,32 +851,47 @@ export const useEditor = create<EditorState>()((set, get) => {
           if (bi >= 0) insertAt = bi
         }
         without.splice(insertAt, 0, ...moving)
-        without.forEach((c, i) => { c.order = i })
+        without.forEach((c, i) => {
+          c.order = i
+        })
       })
       set({ selectedCategoryIds: ids, selectedCategoryId: ids[ids.length - 1] ?? null })
     },
 
-    toggleCategoryVisible: (id) => commit((p) => {
-      const c = p.categories.find((x) => x.id === id)
-      if (!c) return
-      c.hidden = !c.hidden
-      // Turning a lane ON also reveals its activities, so a 공종 switched back on
-      // (e.g. after 전체 OFF) never renders as an empty lane. The 공종 switch thus
-      // acts as the master for its own tasks.
-      if (!c.hidden) for (const t of p.tasks) if (t.categoryId === id) t.hidden = false
-    }, { history: false }),
-    toggleTaskVisible: (id) => commit((p) => {
-      const t = p.tasks.find((x) => x.id === id)
-      if (t) t.hidden = !t.hidden
-    }, { history: false }),
-    setAllVisible: (visible) => commit((p) => {
-      const hidden = !visible
-      for (const c of p.categories) c.hidden = hidden
-      for (const t of p.tasks) t.hidden = hidden
-    }, { history: false }),
+    toggleCategoryVisible: (id) =>
+      commit(
+        (p) => {
+          const c = p.categories.find((x) => x.id === id)
+          if (!c) return
+          c.hidden = !c.hidden
+          // Turning a lane ON also reveals its activities, so a 공종 switched back on
+          // (e.g. after 전체 OFF) never renders as an empty lane. The 공종 switch thus
+          // acts as the master for its own tasks.
+          if (!c.hidden) for (const t of p.tasks) if (t.categoryId === id) t.hidden = false
+        },
+        { history: false },
+      ),
+    toggleTaskVisible: (id) =>
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t) t.hidden = !t.hidden
+        },
+        { history: false },
+      ),
+    setAllVisible: (visible) =>
+      commit(
+        (p) => {
+          const hidden = !visible
+          for (const c of p.categories) c.hidden = hidden
+          for (const t of p.tasks) t.hidden = hidden
+        },
+        { history: false },
+      ),
 
     startLinking: (fromId) => set({ linking: { fromId, pointer: null }, selectedTaskId: fromId }),
-    updateLinkingPointer: (x, y) => set((s) => (s.linking ? { linking: { ...s.linking, pointer: { x, y } } } : {})),
+    updateLinkingPointer: (x, y) =>
+      set((s) => (s.linking ? { linking: { ...s.linking, pointer: { x, y } } } : {})),
     completeLinking: (toId, type = 'FS') => {
       const linking = get().linking
       if (linking && linking.fromId !== toId) get().addLink(linking.fromId, toId, type)
@@ -741,132 +900,239 @@ export const useEditor = create<EditorState>()((set, get) => {
     cancelLinking: () => set({ linking: null }),
     addLink: (from, to, type = 'FS', lag = 0) => {
       const exists = get().project.links.some((l) => l.from === from && l.to === to)
-      if (exists) { logWarn('이미 동일한 연결이 존재합니다.'); return }
+      if (exists) {
+        logWarn('이미 동일한 연결이 존재합니다.')
+        return
+      }
       const id = `l-${nanoid(8)}`
-      commit((p) => {
-        const successor = p.tasks.find(t => t.id === to)
-        const predecessor = p.tasks.find(t => t.id === from)
-        if (successor && predecessor) {
-          // 이 링크를 포함해서 후행 공정이 있어야 할 이론적 시작일 계산
-          const existingIncoming = p.links.filter(l => l.to === to)
-          const tempLinks = [...existingIncoming, { id, from, to, type, lag: 0 }]
-          const theoreticalStart = linkConstrainedStart(p.tasks, tempLinks, to)
+      commit(
+        (p) => {
+          const successor = p.tasks.find((t) => t.id === to)
+          const predecessor = p.tasks.find((t) => t.id === from)
+          if (successor && predecessor) {
+            // 이 링크를 포함해서 후행 공정이 있어야 할 이론적 시작일 계산
+            const existingIncoming = p.links.filter((l) => l.to === to)
+            const tempLinks = [...existingIncoming, { id, from, to, type, lag: 0 }]
+            const theoreticalStart = linkConstrainedStart(p.tasks, tempLinks, to)
 
-          // 후행 공정의 현재 시작일이 이론적 시작일보다 늦은 경우,
-          // 그 차이만큼을 lag로 자동 설정 (공정 막대는 그대로 유지)
-          if (theoreticalStart != null && successor.start > theoreticalStart) {
-            lag = successor.start - theoreticalStart
+            // 후행 공정의 현재 시작일이 이론적 시작일보다 늦은 경우,
+            // 그 차이만큼을 lag로 자동 설정 (공정 막대는 그대로 유지)
+            if (theoreticalStart != null && successor.start > theoreticalStart) {
+              lag = successor.start - theoreticalStart
+            }
           }
-        }
-        p.links.push({ id, from, to, type, lag })
-        // snapSuccessor 호출 제거: 후행 공정 위치를 그대로 유지
-      }, { cascade: true })
+          p.links.push({ id, from, to, type, lag })
+          // snapSuccessor 호출 제거: 후행 공정 위치를 그대로 유지
+        },
+        { cascade: true },
+      )
       set({ selectedLinkId: id })
     },
     updateLink: (id, patch) => {
       // lag/type 변경은 후행 공정 위치를 양방향으로 다시 맞춘다(스냅). style 등
       // 비-일정 변경은 일정·재계산을 건드리지 않는다.
       const moves = 'lag' in patch || 'type' in patch
-      commit((p) => {
-        const l = p.links.find((x) => x.id === id)
-        if (!l) return
-        Object.assign(l, patch)
-        if (moves) snapSuccessor(p, l.to)
-      }, { cascade: moves })
+      commit(
+        (p) => {
+          const l = p.links.find((x) => x.id === id)
+          if (!l) return
+          Object.assign(l, patch)
+          if (moves) snapSuccessor(p, l.to)
+        },
+        { cascade: moves },
+      )
     },
     deleteLink: (id) => {
-      commit((p) => { p.links = p.links.filter((l) => l.id !== id) })
+      commit((p) => {
+        p.links = p.links.filter((l) => l.id !== id)
+      })
       set((s) => ({ selectedLinkId: s.selectedLinkId === id ? null : s.selectedLinkId }))
     },
 
-    setPaper: (patch) => commit((p) => { p.paper = { ...p.paper, ...patch } }, { history: false }),
-    setView: (patch) => commit((p) => { p.view = { ...p.view, ...patch } }, { history: false }),
+    setPaper: (patch) =>
+      commit(
+        (p) => {
+          p.paper = { ...p.paper, ...patch }
+        },
+        { history: false },
+      ),
+    setView: (patch) =>
+      commit(
+        (p) => {
+          p.view = { ...p.view, ...patch }
+        },
+        { history: false },
+      ),
     fitToPaper: () => {
       const p = get().project
       const { w, h } = paperMm(p.paper.size, p.paper.orientation)
       const patch = fitToPaperView(p, w, h)
-      if (patch.pxPerDay === undefined && patch.rowHeight === undefined && patch.fontScale === undefined) {
+      if (
+        patch.pxPerDay === undefined &&
+        patch.rowHeight === undefined &&
+        patch.fontScale === undefined
+      ) {
         logInfo('이미 용지 비율·글자 크기에 맞춰져 있습니다.')
         return
       }
-      commit((d) => { d.view = { ...d.view, ...patch } }, { history: false })
+      commit(
+        (d) => {
+          d.view = { ...d.view, ...patch }
+        },
+        { history: false },
+      )
       logInfo('현재 용지 규격에 맞춰 여백 없이 채우고 글자 크기를 조정했습니다.')
     },
     // history:false — 이름/시작일은 자유텍스트 입력(키 입력마다 undo 누적 방지, subName/색
     // 편집과 동일 정책). startDate는 day-offset 기준이라 CPM에 영향 없음.
-    setProjectMeta: (patch) => commit((p) => { Object.assign(p, patch) }, { history: false }),
-    toggleCommissioning: () => commit((p) => { p.commissioningEnabled = !p.commissioningEnabled }),
-    toggleTitle: () => commit((p) => { p.view.showTitle = p.view.showTitle === false }, { history: false }),
-    toggleMirrorPlan: () => commit((p) => { p.view = { ...p.view, mirrorPlan: !p.view.mirrorPlan } }, { history: false }),
-    toggleMirrorHidden: (id) => commit((p) => {
-      const cur = new Set(p.view.mirrorHidden ?? [])
-      if (cur.has(id)) cur.delete(id); else cur.add(id)
-      p.view = { ...p.view, mirrorHidden: [...cur] }
-    }, { history: false }),
-    addLogo: (src, w = 168, h = 60) => commit((p) => {
-      if (!p.branding) p.branding = { logos: [] }
-      p.branding.logos.push({ src, w, h })
-    }),
-    setLogoSize: (index, w, h) => commit((p) => {
-      const lg = p.branding?.logos?.[index]
-      if (lg) { lg.w = Math.max(32, Math.round(w)); lg.h = Math.max(16, Math.round(h)) }
-    }, { history: false }),
-    moveLogo: (index, dir) => commit((p) => {
-      const arr = p.branding?.logos
-      if (!arr) return
-      const j = index + dir
-      if (j < 0 || j >= arr.length) return
-      const tmp = arr[index]; arr[index] = arr[j]; arr[j] = tmp
-    }),
-    removeLogo: (index) => commit((p) => {
-      if (p.branding?.logos) p.branding.logos.splice(index, 1)
-    }),
-    setRainySeason: (patch) => commit((p) => {
-      const base: RainySeason = p.rainySeasons[0]
-        ?? { id: 'rs-1', label: '우기', startMonth: 6, startDay: 1, endMonth: 9, endDay: 30, efficiency: 0.7 }
-      const next = { ...base, ...patch }
-      // Keep the window non-wrapping (start on/before end by day-of-year): whichever
-      // edge the patch moved is clamped against the other, so it can never invert
-      // or collapse into a full-year band. Days are capped to the month length.
-      next.startDay = Math.min(next.startDay, daysInMonth(2001, next.startMonth - 1))
-      next.endDay = Math.min(next.endDay, daysInMonth(2001, next.endMonth - 1))
-      const sDoy = monthDayToDoy(next.startMonth, next.startDay)
-      const eDoy = monthDayToDoy(next.endMonth, next.endDay)
-      if (sDoy > eDoy) {
-        if ('startMonth' in patch || 'startDay' in patch) {
-          const c = doyToMonthDay(eDoy); next.startMonth = c.month; next.startDay = c.day
-        } else {
-          const c = doyToMonthDay(sDoy); next.endMonth = c.month; next.endDay = c.day
-        }
-      }
-      p.rainySeasons = [next]
-    }, { history: false }),
-    clearRainySeasons: () => commit((p) => { p.rainySeasons = [] }, { history: false }),
+    setProjectMeta: (patch) =>
+      commit(
+        (p) => {
+          Object.assign(p, patch)
+        },
+        { history: false },
+      ),
+    toggleCommissioning: () =>
+      commit((p) => {
+        p.commissioningEnabled = !p.commissioningEnabled
+      }),
+    toggleTitle: () =>
+      commit(
+        (p) => {
+          p.view.showTitle = p.view.showTitle === false
+        },
+        { history: false },
+      ),
+    toggleMirrorPlan: () =>
+      commit(
+        (p) => {
+          p.view = { ...p.view, mirrorPlan: !p.view.mirrorPlan }
+        },
+        { history: false },
+      ),
+    toggleMirrorHidden: (id) =>
+      commit(
+        (p) => {
+          const cur = new Set(p.view.mirrorHidden ?? [])
+          if (cur.has(id)) cur.delete(id)
+          else cur.add(id)
+          p.view = { ...p.view, mirrorHidden: [...cur] }
+        },
+        { history: false },
+      ),
+    addLogo: (src, w = 168, h = 60) =>
+      commit((p) => {
+        if (!p.branding) p.branding = { logos: [] }
+        p.branding.logos.push({ src, w, h })
+      }),
+    setLogoSize: (index, w, h) =>
+      commit(
+        (p) => {
+          const lg = p.branding?.logos?.[index]
+          if (lg) {
+            lg.w = Math.max(32, Math.round(w))
+            lg.h = Math.max(16, Math.round(h))
+          }
+        },
+        { history: false },
+      ),
+    moveLogo: (index, dir) =>
+      commit((p) => {
+        const arr = p.branding?.logos
+        if (!arr) return
+        const j = index + dir
+        if (j < 0 || j >= arr.length) return
+        const tmp = arr[index]
+        arr[index] = arr[j]
+        arr[j] = tmp
+      }),
+    removeLogo: (index) =>
+      commit((p) => {
+        if (p.branding?.logos) p.branding.logos.splice(index, 1)
+      }),
+    setRainySeason: (patch) =>
+      commit(
+        (p) => {
+          const base: RainySeason = p.rainySeasons[0] ?? {
+            id: 'rs-1',
+            label: '우기',
+            startMonth: 6,
+            startDay: 1,
+            endMonth: 9,
+            endDay: 30,
+            efficiency: 0.7,
+          }
+          const next = { ...base, ...patch }
+          // Keep the window non-wrapping (start on/before end by day-of-year): whichever
+          // edge the patch moved is clamped against the other, so it can never invert
+          // or collapse into a full-year band. Days are capped to the month length.
+          next.startDay = Math.min(next.startDay, daysInMonth(2001, next.startMonth - 1))
+          next.endDay = Math.min(next.endDay, daysInMonth(2001, next.endMonth - 1))
+          const sDoy = monthDayToDoy(next.startMonth, next.startDay)
+          const eDoy = monthDayToDoy(next.endMonth, next.endDay)
+          if (sDoy > eDoy) {
+            if ('startMonth' in patch || 'startDay' in patch) {
+              const c = doyToMonthDay(eDoy)
+              next.startMonth = c.month
+              next.startDay = c.day
+            } else {
+              const c = doyToMonthDay(sDoy)
+              next.endMonth = c.month
+              next.endDay = c.day
+            }
+          }
+          p.rainySeasons = [next]
+        },
+        { history: false },
+      ),
+    clearRainySeasons: () =>
+      commit(
+        (p) => {
+          p.rainySeasons = []
+        },
+        { history: false },
+      ),
 
-    setTextStyle: (role, patch) => commit((p) => {
-      const next = { ...(p.view.textStyles ?? {}) }
-      next[role] = { ...(next[role] ?? {}), ...patch }
-      p.view = { ...p.view, textStyles: next }
-    }, { history: false }),
-    resetTextStyle: (role) => commit((p) => {
-      if (!p.view.textStyles) return
-      const next = { ...p.view.textStyles }
-      delete next[role]
-      p.view = { ...p.view, textStyles: next }
-    }, { history: false }),
+    setTextStyle: (role, patch) =>
+      commit(
+        (p) => {
+          const next = { ...(p.view.textStyles ?? {}) }
+          next[role] = { ...(next[role] ?? {}), ...patch }
+          p.view = { ...p.view, textStyles: next }
+        },
+        { history: false },
+      ),
+    resetTextStyle: (role) =>
+      commit(
+        (p) => {
+          if (!p.view.textStyles) return
+          const next = { ...p.view.textStyles }
+          delete next[role]
+          p.view = { ...p.view, textStyles: next }
+        },
+        { history: false },
+      ),
 
-    addPaletteColor: (color) => commit((p) => {
-      const c = (color || '').trim()
-      if (!c) return
-      const cur = p.palette ?? []
-      if (cur.some((x) => x.toLowerCase() === c.toLowerCase())) return
-      if (cur.length >= PALETTE_MAX) return // never exceed 10
-      p.palette = [...cur, c]
-    }, { history: false }),
-    removePaletteColor: (index) => commit((p) => {
-      if (!p.palette) return
-      p.palette = p.palette.filter((_, i) => i !== index)
-    }, { history: false }),
+    addPaletteColor: (color) =>
+      commit(
+        (p) => {
+          const c = (color || '').trim()
+          if (!c) return
+          const cur = p.palette ?? []
+          if (cur.some((x) => x.toLowerCase() === c.toLowerCase())) return
+          if (cur.length >= PALETTE_MAX) return // never exceed 10
+          p.palette = [...cur, c]
+        },
+        { history: false },
+      ),
+    removePaletteColor: (index) =>
+      commit(
+        (p) => {
+          if (!p.palette) return
+          p.palette = p.palette.filter((_, i) => i !== index)
+        },
+        { history: false },
+      ),
 
     recompute: () => set((s) => ({ project: withSchedule(s.project).project })),
     cascadeNow: () => {
@@ -890,16 +1156,45 @@ export const useEditor = create<EditorState>()((set, get) => {
     setAutoCascade: (v) => set({ autoCascade: v }),
     closeRecalcReport: () => set({ recalcReport: null }),
 
-    selectTask: (id) => set({ selectedTaskId: id, selectedTaskIds: id ? [id] : [], selectedLinkId: null, selectedTextRole: null, ...(id ? { inspectorTab: 'task' as InspectorTab } : {}) }),
-    toggleTaskSelection: (id) => set((s) => {
-      const has = s.selectedTaskIds.includes(id)
-      const ids = has ? s.selectedTaskIds.filter((x) => x !== id) : [...s.selectedTaskIds, id]
-      return { selectedTaskIds: ids, selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null, inspectorTab: (ids.length ? 'task' : s.inspectorTab) as InspectorTab }
-    }),
-    selectTasks: (ids) => set({ selectedTaskIds: [...ids], selectedTaskId: ids.length ? ids[ids.length - 1] : null, selectedLinkId: null, selectedTextRole: null, ...(ids.length ? { inspectorTab: 'task' as InspectorTab } : {}) }),
-    selectLink: (id) => set({ selectedLinkId: id, selectedTaskId: null, selectedTaskIds: [], selectedTextRole: null, ...(id ? { inspectorTab: 'link' as InspectorTab } : {}) }),
+    selectTask: (id) =>
+      set({
+        selectedTaskId: id,
+        selectedTaskIds: id ? [id] : [],
+        selectedLinkId: null,
+        selectedTextRole: null,
+        ...(id ? { inspectorTab: 'task' as InspectorTab } : {}),
+      }),
+    toggleTaskSelection: (id) =>
+      set((s) => {
+        const has = s.selectedTaskIds.includes(id)
+        const ids = has ? s.selectedTaskIds.filter((x) => x !== id) : [...s.selectedTaskIds, id]
+        return {
+          selectedTaskIds: ids,
+          selectedTaskId: ids.length ? ids[ids.length - 1] : null,
+          selectedLinkId: null,
+          selectedTextRole: null,
+          inspectorTab: (ids.length ? 'task' : s.inspectorTab) as InspectorTab,
+        }
+      }),
+    selectTasks: (ids) =>
+      set({
+        selectedTaskIds: [...ids],
+        selectedTaskId: ids.length ? ids[ids.length - 1] : null,
+        selectedLinkId: null,
+        selectedTextRole: null,
+        ...(ids.length ? { inspectorTab: 'task' as InspectorTab } : {}),
+      }),
+    selectLink: (id) =>
+      set({
+        selectedLinkId: id,
+        selectedTaskId: null,
+        selectedTaskIds: [],
+        selectedTextRole: null,
+        ...(id ? { inspectorTab: 'link' as InspectorTab } : {}),
+      }),
     selectCategory: (id) => set({ selectedCategoryId: id, selectedCategoryIds: id ? [id] : [] }),
-    selectCategories: (ids, anchor) => set({ selectedCategoryIds: ids, selectedCategoryId: anchor }),
+    selectCategories: (ids, anchor) =>
+      set({ selectedCategoryIds: ids, selectedCategoryId: anchor }),
     copyCategories: (ids) => {
       const p = get().project
       const idset = new Set(ids)
@@ -908,7 +1203,13 @@ export const useEditor = create<EditorState>()((set, get) => {
       const tasks = p.tasks.filter((t) => idset.has(t.categoryId))
       const taskIds = new Set(tasks.map((t) => t.id))
       const links = p.links.filter((l) => taskIds.has(l.from) && taskIds.has(l.to))
-      set({ categoryClipboard: { categories: clone(categories), tasks: clone(tasks), links: clone(links) } })
+      set({
+        categoryClipboard: {
+          categories: clone(categories),
+          tasks: clone(tasks),
+          links: clone(links),
+        },
+      })
       logInfo(`공종 ${categories.length}개를 복사했습니다.`)
     },
     pasteCategories: () => {
@@ -923,7 +1224,8 @@ export const useEditor = create<EditorState>()((set, get) => {
         const newCats: Category[] = []
         for (const c of clip.categories) {
           const nid = `c-${nanoid(8)}`
-          catMap.set(c.id, nid); newIds.push(nid)
+          catMap.set(c.id, nid)
+          newIds.push(nid)
           newCats.push({ ...clone(c), id: nid, order: 0 }) // order는 아래에서 일괄 재부여
         }
         for (const t of clip.tasks) {
@@ -934,7 +1236,8 @@ export const useEditor = create<EditorState>()((set, get) => {
           p.tasks.push({ ...clone(t), id: nid, categoryId: cat })
         }
         for (const l of clip.links) {
-          const from = taskMap.get(l.from), to = taskMap.get(l.to)
+          const from = taskMap.get(l.from),
+            to = taskMap.get(l.to)
           if (from && to) p.links.push({ ...clone(l), id: `l-${nanoid(8)}`, from, to })
         }
         // 선택된 공종 바로 뒤에 삽입한 뒤 order를 0..n-1로 재부여.
@@ -945,33 +1248,59 @@ export const useEditor = create<EditorState>()((set, get) => {
           if (ai >= 0) insertAt = ai + 1
         }
         sorted.splice(insertAt, 0, ...newCats)
-        sorted.forEach((c, i) => { c.order = i })
+        sorted.forEach((c, i) => {
+          c.order = i
+        })
         p.categories = sorted
       })
       set({ selectedCategoryIds: newIds, selectedCategoryId: newIds[newIds.length - 1] ?? null })
       logInfo(`공종 ${clip.categories.length}개를 붙여넣었습니다.`)
     },
-    selectTextRole: (role) => set({ selectedTextRole: role, selectedTaskId: null, selectedTaskIds: [], selectedLinkId: null, ...(role ? { inspectorTab: 'text' as InspectorTab } : {}) }),
+    selectTextRole: (role) =>
+      set({
+        selectedTextRole: role,
+        selectedTaskId: null,
+        selectedTaskIds: [],
+        selectedLinkId: null,
+        ...(role ? { inspectorTab: 'text' as InspectorTab } : {}),
+      }),
     setInspectorTab: (tab) => set({ inspectorTab: tab }),
     setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
     setNavMode: (m) => set({ navMode: m }),
     setFilter: (patch) => set((s) => ({ filter: { ...s.filter, ...patch } })),
     clearFilter: () => set({ filter: { ...FILTER_OFF } }),
-    setColorMode: (m) => { lsSet('hydronet:colorMode', m); set({ colorMode: m }) },
-    setUiMode: (m) => { lsSet('hydronet:uiMode', m); set({ uiMode: m }) },
+    setColorMode: (m) => {
+      lsSet('hydronet:colorMode', m)
+      set({ colorMode: m })
+    },
+    setUiMode: (m) => {
+      lsSet('hydronet:uiMode', m)
+      set({ uiMode: m })
+    },
 
-    beginGesture: () => set((s) => ({ past: [...s.past, clone(s.project)].slice(-HISTORY_LIMIT), future: [] })),
+    beginGesture: () =>
+      set((s) => ({ past: [...s.past, clone(s.project)].slice(-HISTORY_LIMIT), future: [] })),
     undo: () => {
       const { past, project, future } = get()
       if (!past.length) return
       const prev = past[past.length - 1]
-      set({ project: withSchedule(prev).project, past: past.slice(0, -1), future: [project, ...future].slice(0, HISTORY_LIMIT), dirty: true })
+      set({
+        project: withSchedule(prev).project,
+        past: past.slice(0, -1),
+        future: [project, ...future].slice(0, HISTORY_LIMIT),
+        dirty: true,
+      })
     },
     redo: () => {
       const { past, project, future } = get()
       if (!future.length) return
       const next = future[0]
-      set({ project: withSchedule(next).project, past: [...past, project].slice(-HISTORY_LIMIT), future: future.slice(1), dirty: true })
+      set({
+        project: withSchedule(next).project,
+        past: [...past, project].slice(-HISTORY_LIMIT),
+        future: future.slice(1),
+        dirty: true,
+      })
     },
 
     // 사용자가 명시적으로 "저장"을 누르거나 Ctrl+S 했을 때만 동작 — 사용자가 고른

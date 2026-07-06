@@ -78,11 +78,15 @@ function linkEarliestStart(pred: Task, succ: Task, link: Link): number {
   const pes = pred.es ?? pred.start
   const pef = pred.ef ?? pred.start + pred.duration
   switch (link.type) {
-    case 'SS': return pes + link.lag
-    case 'FF': return pef + link.lag - succ.duration
-    case 'SF': return pes + link.lag - succ.duration
+    case 'SS':
+      return pes + link.lag
+    case 'FF':
+      return pef + link.lag - succ.duration
+    case 'SF':
+      return pes + link.lag - succ.duration
     case 'FS':
-    default: return pef + link.lag
+    default:
+      return pef + link.lag
   }
 }
 
@@ -91,11 +95,15 @@ function linkLatestFinish(succ: Task, pred: Task, link: Link): number {
   const sls = succ.ls ?? succ.start
   const slf = succ.lf ?? succ.start + succ.duration
   switch (link.type) {
-    case 'SS': return sls - link.lag + pred.duration
-    case 'FF': return slf - link.lag
-    case 'SF': return slf - link.lag + pred.duration
+    case 'SS':
+      return sls - link.lag + pred.duration
+    case 'FF':
+      return slf - link.lag
+    case 'SF':
+      return slf - link.lag + pred.duration
     case 'FS':
-    default: return sls - link.lag
+    default:
+      return sls - link.lag
   }
 }
 
@@ -243,8 +251,8 @@ export function linkConstrainedStart(tasks: Task[], links: Link[], toId: ID): nu
  * so `linkConstrainedStart` with this lag reproduces `succ.start` exactly.
  */
 export function linkLagFromPositions(pred: Task, succ: Task, type: Link['type']): number {
-  const predRef = (type === 'SS' || type === 'SF') ? pred.start : pred.start + pred.duration
-  const succRef = (type === 'FF' || type === 'SF') ? succ.start + succ.duration : succ.start
+  const predRef = type === 'SS' || type === 'SF' ? pred.start : pred.start + pred.duration
+  const succRef = type === 'FF' || type === 'SF' ? succ.start + succ.duration : succ.start
   return Math.round(succRef - predRef)
 }
 

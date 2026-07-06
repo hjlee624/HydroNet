@@ -20,10 +20,20 @@ export function ModuleRail() {
   return (
     <nav className={`rail ${railOpen ? '' : 'rail--mini'}`}>
       <div className="rail__brand">
-        {railOpen
-          ? <span className="rail__mark">Hydro<em>Net</em></span>
-          : <span className="rail__mark rail__mark--mini">H<em>N</em></span>}
-        <button className="rail__toggle" title={railOpen ? '레일 접기' : '레일 펴기'} onClick={() => a().toggleRail()}>
+        {railOpen ? (
+          <span className="rail__mark">
+            Hydro<em>Net</em>
+          </span>
+        ) : (
+          <span className="rail__mark rail__mark--mini">
+            H<em>N</em>
+          </span>
+        )}
+        <button
+          className="rail__toggle"
+          title={railOpen ? '레일 접기' : '레일 펴기'}
+          onClick={() => a().toggleRail()}
+        >
           {railOpen ? '«' : '»'}
         </button>
       </div>

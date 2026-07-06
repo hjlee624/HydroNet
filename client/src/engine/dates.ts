@@ -65,9 +65,7 @@ export function doyToMonthDay(doy: number): { month: number; day: number } {
   return { month: d.getMonth() + 1, day: d.getDate() }
 }
 
-export const MONTH_LABELS_KO = [
-  '1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12',
-]
+export const MONTH_LABELS_KO = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10', '11', '12']
 
 /** Returns true if a given 0-based month index falls inside a recurring band. */
 export function monthInRange(monthIndex0: number, startMonth1: number, endMonth1: number): boolean {

@@ -107,18 +107,18 @@ export const DEFAULT_PALETTE: string[] = [...lanePalette, '#E12D1B', '#2E7D6B']
 // has overridden it via project.view.textStyles. Sizes are in chart units.
 
 export const TEXT_ROLE_DEFAULTS: Record<TextRole, Required<TextStyle>> = {
-  title:            { fontSize: 20,   fontFamily: KOPUB_BOLD,   color: colors.ink },
-  categoryLabel:    { fontSize: 12,   fontFamily: KOPUB_BOLD,   color: colors.charcoal },
-  subCategoryLabel: { fontSize: 11,   fontFamily: KOPUB_MEDIUM, color: colors.slate },
-  headerTitle:      { fontSize: 14,   fontFamily: KOPUB_BOLD,   color: colors.charcoal },
-  headerSub:        { fontSize: 12,   fontFamily: KOPUB_MEDIUM, color: colors.steel },
-  taskName:         { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: colors.charcoal },
-  taskDuration:     { fontSize: 9,    fontFamily: KOPUB_MEDIUM, color: colors.steel },
-  milestoneName:    { fontSize: 13,   fontFamily: KOPUB_MEDIUM, color: colors.ink },
-  milestoneDate:    { fontSize: 9,    fontFamily: KOPUB_MEDIUM, color: colors.steel },
-  axisYear:         { fontSize: 13,   fontFamily: KOPUB_MEDIUM, color: colors.ink },
-  axisMonth:        { fontSize: 10,   fontFamily: KOPUB_MEDIUM, color: colors.slate },
-  rainyLabel:       { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: '#46566e' },
+  title: { fontSize: 20, fontFamily: KOPUB_BOLD, color: colors.ink },
+  categoryLabel: { fontSize: 12, fontFamily: KOPUB_BOLD, color: colors.charcoal },
+  subCategoryLabel: { fontSize: 11, fontFamily: KOPUB_MEDIUM, color: colors.slate },
+  headerTitle: { fontSize: 14, fontFamily: KOPUB_BOLD, color: colors.charcoal },
+  headerSub: { fontSize: 12, fontFamily: KOPUB_MEDIUM, color: colors.steel },
+  taskName: { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: colors.charcoal },
+  taskDuration: { fontSize: 9, fontFamily: KOPUB_MEDIUM, color: colors.steel },
+  milestoneName: { fontSize: 13, fontFamily: KOPUB_MEDIUM, color: colors.ink },
+  milestoneDate: { fontSize: 9, fontFamily: KOPUB_MEDIUM, color: colors.steel },
+  axisYear: { fontSize: 13, fontFamily: KOPUB_MEDIUM, color: colors.ink },
+  axisMonth: { fontSize: 10, fontFamily: KOPUB_MEDIUM, color: colors.slate },
+  rainyLabel: { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: '#46566e' },
 }
 
 /** Human-friendly Korean labels for the text-style inspector. */

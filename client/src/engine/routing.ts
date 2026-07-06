@@ -30,7 +30,11 @@ export interface RoutedLink {
 const STUB = 12
 const CORNER = 5
 
-interface Anchor { x: number; y: number; dir: 1 | -1 } // dir: +1 exits/enters to the right
+interface Anchor {
+  x: number
+  y: number
+  dir: 1 | -1
+} // dir: +1 exits/enters to the right
 
 function sourceAnchor(lt: LaidTask, type: Link['type']): Anchor {
   const fromStart = type === 'SS' || type === 'SF'
@@ -98,9 +102,15 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
 
     let pts: Array<[number, number]>
     if (forwardSameRow) {
-      pts = [[src.x, src.y], [dst.x, dstY]]
+      pts = [
+        [src.x, src.y],
+        [dst.x, dstY],
+      ]
     } else {
-      pts = [[src.x, src.y], [sx, src.y]]
+      pts = [
+        [src.x, src.y],
+        [sx, src.y],
+      ]
       if (src.dir === 1 && dst.dir === -1 && dx > sx) {
         // Standard downstream FS: route through a vertical mid-line.
         const midX = (sx + dx) / 2

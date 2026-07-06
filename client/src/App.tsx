@@ -22,13 +22,21 @@ export default function App() {
 
 function renderModule(module: ModuleId) {
   switch (module) {
-    case 'schedule': return <ScheduleModule />
-    case 'dashboard': return <Dashboard />
-    case 'progress': return <ProgressModule />
-    case 'report': return <ReportModule />
+    case 'schedule':
+      return <ScheduleModule />
+    case 'dashboard':
+      return <Dashboard />
+    case 'progress':
+      return <ProgressModule />
+    case 'report':
+      return <ReportModule />
     default:
       // 기록형 모듈(스키마 보유)은 제네릭 표 모듈로, 그 외엔 자리표시로.
       // key={module}: 기록형 모듈 전환 시 강제 remount(향후 로컬 state 누수 회귀 차단).
-      return MODULE_MAP[module]?.fields ? <RecordModule key={module} id={module} /> : <ModulePlaceholder id={module} />
+      return MODULE_MAP[module]?.fields ? (
+        <RecordModule key={module} id={module} />
+      ) : (
+        <ModulePlaceholder id={module} />
+      )
   }
 }

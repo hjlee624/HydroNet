@@ -23,8 +23,11 @@ const FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
 function download(content: string, filename: string, mime: string) {
   const url = URL.createObjectURL(new Blob([content], { type: mime }))
   const a = document.createElement('a')
-  a.href = url; a.download = filename
-  document.body.appendChild(a); a.click(); a.remove()
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
   setTimeout(() => URL.revokeObjectURL(url), 4000)
 }
 
@@ -44,7 +47,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   // the dropdown value, the size note and the actual export all agree even if a
   // higher DPI was chosen earlier in pro mode (the persisted value is untouched).
   const effectiveDpi = pro ? project.paper.dpi : Math.min(project.paper.dpi, 300)
-  const paperEff = effectiveDpi === project.paper.dpi ? project.paper : { ...project.paper, dpi: effectiveDpi }
+  const paperEff =
+    effectiveDpi === project.paper.dpi ? project.paper : { ...project.paper, dpi: effectiveDpi }
   const px = paperPx(paperEff)
 
   // How far the drawing's aspect ratio is from the sheet's — i.e. how much margin
@@ -63,7 +67,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
     // DXF is built purely from the data model (no SVG/raster needed).
     if (format === 'dxf') {
-      setBusy(true); setMsg(null)
+      setBusy(true)
+      setMsg(null)
       try {
         download(projectToDxf(project), `${filename}.dxf`, 'application/dxf')
         logInfo(`DXF 내보내기 완료: ${filename}.dxf`)
@@ -87,16 +92,29 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     a().selectTask(null)
     if (restoreFilter) a().clearFilter()
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
-    setBusy(true); setMsg(null)
+    setBusy(true)
+    setMsg(null)
     try {
       const svg = document.getElementById('hydronet-chart') as SVGSVGElement | null
-      if (!svg) { setMsg('차트를 찾을 수 없습니다.'); return }
+      if (!svg) {
+        setMsg('차트를 찾을 수 없습니다.')
+        return
+      }
       const width = Number(svg.getAttribute('width')) || svg.clientWidth
       const height = Number(svg.getAttribute('height')) || svg.clientHeight
-      const r = await exportChart({ svg, content: { width, height }, paper: paperEff, filename, format, transparent })
-      setMsg(r.clamped
-        ? `완료 — 용량 보호를 위해 ${px.effectiveDpi}dpi로 자동 조정되었습니다.`
-        : '내보내기를 완료했습니다.')
+      const r = await exportChart({
+        svg,
+        content: { width, height },
+        paper: paperEff,
+        filename,
+        format,
+        transparent,
+      })
+      setMsg(
+        r.clamped
+          ? `완료 — 용량 보호를 위해 ${px.effectiveDpi}dpi로 자동 조정되었습니다.`
+          : '내보내기를 완료했습니다.',
+      )
     } catch (e) {
       logError('내보내기 실패', e)
       setMsg('내보내기에 실패했습니다. error.log를 확인하세요.')
@@ -108,8 +126,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
   const footer = (close: () => void) => (
     <>
-      <button className="btn" onClick={close}>닫기</button>
-      <button className="btn btn--primary" disabled={busy} onClick={run}>{busy ? '처리 중…' : '내보내기'}</button>
+      <button className="btn" onClick={close}>
+        닫기
+      </button>
+      <button className="btn btn--primary" disabled={busy} onClick={run}>
+        {busy ? '처리 중…' : '내보내기'}
+      </button>
     </>
   )
 
@@ -125,7 +147,15 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <label>형식</label>
         <div className="seg">
           {formats.map((f) => (
-            <button key={f.id} className={format === f.id ? 'active' : ''} onClick={() => { setFormat(f.id); setMsg(null) }} title={f.hint}>
+            <button
+              key={f.id}
+              className={format === f.id ? 'active' : ''}
+              onClick={() => {
+                setFormat(f.id)
+                setMsg(null)
+              }}
+              title={f.hint}
+            >
               {f.label}
             </button>
           ))}
@@ -138,51 +168,95 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           <div className="field-row">
             <div className="field">
               <label>용지</label>
-              <select className="select" value={project.paper.size} onChange={(e) => a().setPaper({ size: e.target.value as PaperSize })}>
-                {PAPER_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+              <select
+                className="select"
+                value={project.paper.size}
+                onChange={(e) => a().setPaper({ size: e.target.value as PaperSize })}
+              >
+                {PAPER_SIZES.map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
               </select>
             </div>
             <div className="field">
               <label>방향</label>
-              <select className="select" value={project.paper.orientation} onChange={(e) => a().setPaper({ orientation: e.target.value as 'landscape' | 'portrait' })}>
+              <select
+                className="select"
+                value={project.paper.orientation}
+                onChange={(e) =>
+                  a().setPaper({ orientation: e.target.value as 'landscape' | 'portrait' })
+                }
+              >
                 <option value="landscape">가로</option>
                 <option value="portrait">세로</option>
               </select>
             </div>
             <div className="field" style={{ maxWidth: 96 }}>
               <label>DPI</label>
-              <select className="select" value={effectiveDpi} onChange={(e) => a().setPaper({ dpi: Number(e.target.value) })}>
-                {dpiOptions.map((d) => <option key={d} value={d}>{d}</option>)}
+              <select
+                className="select"
+                value={effectiveDpi}
+                onChange={(e) => a().setPaper({ dpi: Number(e.target.value) })}
+              >
+                {dpiOptions.map((d) => (
+                  <option key={d} value={d}>
+                    {d}
+                  </option>
+                ))}
               </select>
             </div>
           </div>
           <p className="note">
-            출력 크기 ≈ <strong>{px.wPx.toLocaleString()} × {px.hPx.toLocaleString()} px</strong> ({px.effectiveDpi}dpi)
+            출력 크기 ≈{' '}
+            <strong>
+              {px.wPx.toLocaleString()} × {px.hPx.toLocaleString()} px
+            </strong>{' '}
+            ({px.effectiveDpi}dpi)
             {px.clamped && ' · 용량 보호로 자동 축소됨'}
           </p>
-          {fitInfo && (fitInfo.fitted ? (
-            <p className="note" style={{ color: 'var(--primary-deep)' }}>✓ 도면이 용지 비율에 맞아 여백 없이 꽉 차게 출력됩니다.</p>
-          ) : (
-            <div className="field" style={{ marginTop: 2 }}>
-              <button className="btn btn--sm" onClick={() => { a().fitToPaper(); setMsg('용지 비율에 맞춰 배율을 조정했습니다 — 여백 없이 출력됩니다.') }}>
-                ⤢ 여백 없이 시트에 맞추기
-              </button>
-              <p className="note">
-                현재 도면 비율이 용지와 약 <strong>{fitInfo.offPct}%</strong> 달라 여백이 생깁니다. 누르면 배율(시간축·행 높이)을 조정해 꽉 채웁니다 — 글자·막대 왜곡 없음.
+          {fitInfo &&
+            (fitInfo.fitted ? (
+              <p className="note" style={{ color: 'var(--primary-deep)' }}>
+                ✓ 도면이 용지 비율에 맞아 여백 없이 꽉 차게 출력됩니다.
               </p>
-            </div>
-          ))}
+            ) : (
+              <div className="field" style={{ marginTop: 2 }}>
+                <button
+                  className="btn btn--sm"
+                  onClick={() => {
+                    a().fitToPaper()
+                    setMsg('용지 비율에 맞춰 배율을 조정했습니다 — 여백 없이 출력됩니다.')
+                  }}
+                >
+                  ⤢ 여백 없이 시트에 맞추기
+                </button>
+                <p className="note">
+                  현재 도면 비율이 용지와 약 <strong>{fitInfo.offPct}%</strong> 달라 여백이
+                  생깁니다. 누르면 배율(시간축·행 높이)을 조정해 꽉 채웁니다 — 글자·막대 왜곡 없음.
+                </p>
+              </div>
+            ))}
         </>
       )}
 
       {format === 'png' && (
         <label className="toggle" style={{ marginTop: 4 }}>
-          <input type="checkbox" checked={transparent} onChange={(e) => setTransparent(e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={transparent}
+            onChange={(e) => setTransparent(e.target.checked)}
+          />
           배경 투명
         </label>
       )}
 
-      {msg && <p className="note" style={{ color: 'var(--primary-deep)' }}>{msg}</p>}
+      {msg && (
+        <p className="note" style={{ color: 'var(--primary-deep)' }}>
+          {msg}
+        </p>
+      )}
     </Modal>
   )
 }

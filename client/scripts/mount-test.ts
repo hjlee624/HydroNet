@@ -25,11 +25,14 @@ g.Node = w.Node
 g.getComputedStyle = w.getComputedStyle
 g.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0)
 g.cancelAnimationFrame = (id: number) => clearTimeout(id)
-g.fetch = async () => ({ ok: true, status: 200, json: async () => [], text: async () => '' }) as unknown as Response
+g.fetch = async () =>
+  ({ ok: true, status: 200, json: async () => [], text: async () => '' }) as unknown as Response
 
 const errors: string[] = []
 const origError = console.error
-console.error = (...a: unknown[]) => { errors.push(a.map(String).join(' ')) }
+console.error = (...a: unknown[]) => {
+  errors.push(a.map(String).join(' '))
+}
 
 async function main() {
   const { createElement } = await import('react')
@@ -42,11 +45,16 @@ async function main() {
 
   console.error = origError
   const html = document.getElementById('root')!.innerHTML
-  const loopErr = errors.find((e) => /Maximum update depth|getSnapshot should be cached|too many re-renders/i.test(e))
+  const loopErr = errors.find((e) =>
+    /Maximum update depth|getSnapshot should be cached|too many re-renders/i.test(e),
+  )
 
   let fail = 0
   const check = (cond: boolean, label: string) => {
-    if (!cond) { fail++; console.log('  ✗ ' + label) } else console.log('  ✓ ' + label)
+    if (!cond) {
+      fail++
+      console.log('  ✗ ' + label)
+    } else console.log('  ✓ ' + label)
   }
 
   console.log(`#root innerHTML length = ${html.length}`)
@@ -72,4 +80,8 @@ async function main() {
   process.exit(fail === 0 ? 0 : 1)
 }
 
-main().catch((e) => { console.error = origError; console.log('THREW:', e?.message || e); process.exit(1) })
+main().catch((e) => {
+  console.error = origError
+  console.log('THREW:', e?.message || e)
+  process.exit(1)
+})

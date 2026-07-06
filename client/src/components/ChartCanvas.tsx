@@ -19,8 +19,20 @@ import { Modal } from './Modal'
 
 type Drag =
   | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
-  | { kind: 'moveGroup'; base: Array<{ id: string; start: number }>; grabDay: number; started: boolean }
-  | { kind: 'resize'; taskId: string; edge: 'start' | 'end'; startDay: number; endDay: number; started: boolean }
+  | {
+      kind: 'moveGroup'
+      base: Array<{ id: string; start: number }>
+      grabDay: number
+      started: boolean
+    }
+  | {
+      kind: 'resize'
+      taskId: string
+      edge: 'start' | 'end'
+      startDay: number
+      endDay: number
+      started: boolean
+    }
   | { kind: 'logo'; index: number; rightEdge: number; ratio: number; started: boolean }
   | { kind: 'link'; fromId: string; fromEdge: 'start' | 'end' }
   | { kind: 'rainy'; seasonId: string; edge: 'start' | 'end'; started: boolean }
@@ -42,7 +54,13 @@ export function ChartCanvas() {
   const paperRef = useRef<HTMLDivElement>(null)
   const dragRef = useRef<Drag>(null)
   const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
-  const zoomAnchor = useRef<{ cX: number; cY: number; clientX: number; clientY: number; z: number } | null>(null)
+  const zoomAnchor = useRef<{
+    cX: number
+    cY: number
+    clientX: number
+    clientY: number
+    z: number
+  } | null>(null)
   const renameDone = useRef(false)
   const durDone = useRef(false)
   // Edge auto-scroll while dragging a bar/link past the visible area, plus the last
@@ -62,7 +80,9 @@ export function ChartCanvas() {
   // (above/below) or a highlighted band for merging onto an existing row.
   const [reorderHint, setReorderHint] = useState<{ lineY: number; merge: boolean } | null>(null)
   // Rubber-band (marquee) rectangle in content coords while drag-selecting bars.
-  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null)
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  )
   const marqueeRef = useRef<{ x0: number; y0: number } | null>(null)
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
@@ -109,18 +129,58 @@ export function ChartCanvas() {
       if (!byRow.has(lt.subRow)) byRow.set(lt.subRow, { anchorId: lt.task.id, cy: lt.cy })
     }
     const rows = [...byRow.values()].sort((a, b) => a.cy - b.cy)
-    if (!rows.length) return { catId: cat.id, anchorId: null as string | null, mode: 'below' as const, lineY: cat.y + cat.height / 2, merge: false }
+    if (!rows.length)
+      return {
+        catId: cat.id,
+        anchorId: null as string | null,
+        mode: 'below' as const,
+        lineY: cat.y + cat.height / 2,
+        merge: false,
+      }
     for (const r of rows) {
       const top = r.cy - rh / 2
       const frac = (contentY - top) / rh
       if (frac < 0 || frac >= 1) continue
-      if (frac < 0.28) return { catId: cat.id, anchorId: r.anchorId, mode: 'above' as const, lineY: top, merge: false }
-      if (frac > 0.72) return { catId: cat.id, anchorId: r.anchorId, mode: 'below' as const, lineY: top + rh, merge: false }
-      return { catId: cat.id, anchorId: r.anchorId, mode: 'merge' as const, lineY: r.cy, merge: true }
+      if (frac < 0.28)
+        return {
+          catId: cat.id,
+          anchorId: r.anchorId,
+          mode: 'above' as const,
+          lineY: top,
+          merge: false,
+        }
+      if (frac > 0.72)
+        return {
+          catId: cat.id,
+          anchorId: r.anchorId,
+          mode: 'below' as const,
+          lineY: top + rh,
+          merge: false,
+        }
+      return {
+        catId: cat.id,
+        anchorId: r.anchorId,
+        mode: 'merge' as const,
+        lineY: r.cy,
+        merge: true,
+      }
     }
-    if (contentY < rows[0].cy) return { catId: cat.id, anchorId: rows[0].anchorId, mode: 'above' as const, lineY: rows[0].cy - rh / 2, merge: false }
+    if (contentY < rows[0].cy)
+      return {
+        catId: cat.id,
+        anchorId: rows[0].anchorId,
+        mode: 'above' as const,
+        lineY: rows[0].cy - rh / 2,
+        merge: false,
+      }
     const last = rows[rows.length - 1]
-    return { catId: cat.id, anchorId: last.anchorId, mode: 'below' as const, lineY: last.cy + rh / 2, merge: false }
+    return {
+      catId: cat.id,
+      anchorId: last.anchorId,
+      mode: 'below' as const,
+      lineY: last.cy + rh / 2,
+      merge: false,
+    }
   }
 
   // ── Zoom-to-cursor: after a wheel-driven zoom commits, shift scroll so the
@@ -129,11 +189,12 @@ export function ChartCanvas() {
     const a = zoomAnchor.current
     if (!a) return
     zoomAnchor.current = null
-    const wrap = wrapRef.current, paper = paperRef.current
+    const wrap = wrapRef.current,
+      paper = paperRef.current
     if (!wrap || !paper) return
     const r = paper.getBoundingClientRect()
-    wrap.scrollLeft += (r.left + a.cX * a.z) - a.clientX
-    wrap.scrollTop += (r.top + a.cY * a.z) - a.clientY
+    wrap.scrollLeft += r.left + a.cX * a.z - a.clientX
+    wrap.scrollTop += r.top + a.cY * a.z - a.clientY
   }, [zoom])
 
   // Native (non-passive) wheel listener so we can preventDefault while zooming.
@@ -178,7 +239,8 @@ export function ChartCanvas() {
     window.addEventListener('pointerup', onPanUp)
   }
   function onPanMove(e: PointerEvent) {
-    const p = panRef.current, wrap = wrapRef.current
+    const p = panRef.current,
+      wrap = wrapRef.current
     if (!p || !wrap) return
     wrap.scrollLeft = p.sl - (e.clientX - p.x)
     wrap.scrollTop = p.st - (e.clientY - p.y)
@@ -206,7 +268,12 @@ export function ChartCanvas() {
   }
   function marqueeRect(s: { x0: number; y0: number }, clientX: number, clientY: number) {
     const { x, y } = toContent(clientX, clientY)
-    return { x: Math.min(s.x0, x), y: Math.min(s.y0, y), w: Math.abs(x - s.x0), h: Math.abs(y - s.y0) }
+    return {
+      x: Math.min(s.x0, x),
+      y: Math.min(s.y0, y),
+      w: Math.abs(x - s.x0),
+      h: Math.abs(y - s.y0),
+    }
   }
   function onMarqueeMove(e: PointerEvent) {
     const s = marqueeRef.current
@@ -223,7 +290,7 @@ export function ChartCanvas() {
     setMarquee(null)
     if (!started || !movedRef.current) return // a plain click → background click clears
     const r = marqueeRect(started, e.clientX, e.clientY)
-    const hit = (lt: typeof model.tasks[number]) => {
+    const hit = (lt: (typeof model.tasks)[number]) => {
       const bx = lt.isMilestone ? lt.cx - 8 : lt.x
       const bw = lt.isMilestone ? 16 : lt.w
       const by = lt.isMilestone ? lt.cy - 8 : lt.y
@@ -245,18 +312,28 @@ export function ChartCanvas() {
     if (!task) return
     movedRef.current = false
     // Ctrl/⌘+클릭 = 다중 선택 토글(드래그 시작 안 함).
-    if (e.ctrlKey || e.metaKey) { store.toggleTaskSelection(id); return }
+    if (e.ctrlKey || e.metaKey) {
+      store.toggleTaskSelection(id)
+      return
+    }
     const sel = store.selectedTaskIds
     const { x } = toContent(e.clientX, e.clientY)
     if (sel.length > 1 && sel.includes(id)) {
       // 다중 선택된 막대 중 하나를 잡고 드래그 → 선택 전체를 수평으로 함께 이동.
-      const base = project.tasks.filter((t) => sel.includes(t.id)).map((t) => ({ id: t.id, start: t.start }))
+      const base = project.tasks
+        .filter((t) => sel.includes(t.id))
+        .map((t) => ({ id: t.id, start: t.start }))
       dragRef.current = { kind: 'moveGroup', base, grabDay: model.dayOf(x), started: false }
     } else {
       store.selectTask(id)
       // History is captured lazily on the first real move, so a plain click that
       // merely selects a bar does not push an empty undo step.
-      dragRef.current = { kind: 'move', taskId: id, grabOffsetDays: model.dayOf(x) - task.start, started: false }
+      dragRef.current = {
+        kind: 'move',
+        taskId: id,
+        grabOffsetDays: model.dayOf(x) - task.start,
+        started: false,
+      }
     }
     lastClient.current = { x: e.clientX, y: e.clientY }
     startAutoScroll()
@@ -273,8 +350,12 @@ export function ChartCanvas() {
     if (!task) return
     store.selectTask(id)
     dragRef.current = {
-      kind: 'resize', taskId: id, edge,
-      startDay: task.start, endDay: task.start + task.duration, started: false,
+      kind: 'resize',
+      taskId: id,
+      edge,
+      startDay: task.start,
+      endDay: task.start + task.duration,
+      started: false,
     }
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
@@ -287,7 +368,13 @@ export function ChartCanvas() {
     const lg = model.logos.find((l) => l.index === index)
     if (!lg) return
     // Right edge stays anchored; dragging the bottom-left grip scales the box.
-    dragRef.current = { kind: 'logo', index, rightEdge: lg.x + lg.w, ratio: lg.h / lg.w, started: false }
+    dragRef.current = {
+      kind: 'logo',
+      index,
+      rightEdge: lg.x + lg.w,
+      ratio: lg.h / lg.w,
+      started: false,
+    }
     window.addEventListener('pointermove', onWindowMove)
     window.addEventListener('pointerup', onWindowUp)
   }
@@ -329,22 +416,36 @@ export function ChartCanvas() {
     if (!drag) return
     const { x, y } = toContent(clientX, clientY)
     if (drag.kind === 'move') {
-      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
       movedRef.current = true
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
       // Vertical component → preview which row the bar would join / create (skip
       // when a filter is active: lanes/rows are a subset and the math is ambiguous).
       if (filterActive(useEditor.getState().filter)) setReorderHint(null)
-      else { const t = computeRowTarget(drag.taskId, y); setReorderHint(t ? { lineY: t.lineY, merge: t.merge } : null) }
+      else {
+        const t = computeRowTarget(drag.taskId, y)
+        setReorderHint(t ? { lineY: t.lineY, merge: t.merge } : null)
+      }
     } else if (drag.kind === 'moveGroup') {
       // 다중 선택 막대 수평 동시 이동 — 세로(줄 재배치)는 건드리지 않는다.
-      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
       movedRef.current = true
       const delta = model.dayOf(x) - drag.grabDay
-      useEditor.getState().setTasksStartLive(drag.base.map((b) => ({ id: b.id, start: b.start + delta })))
+      useEditor
+        .getState()
+        .setTasksStartLive(drag.base.map((b) => ({ id: b.id, start: b.start + delta })))
     } else if (drag.kind === 'resize') {
-      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
       movedRef.current = true
       const day = model.dayOf(x)
       if (drag.edge === 'end') {
@@ -354,11 +455,17 @@ export function ChartCanvas() {
         useEditor.getState().setTaskSpanLive(drag.taskId, s, drag.endDay - s)
       }
     } else if (drag.kind === 'logo') {
-      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
       const newW = Math.max(40, Math.min(900, drag.rightEdge - x))
       useEditor.getState().setLogoSize(drag.index, newW, newW * drag.ratio)
     } else if (drag.kind === 'rainy') {
-      if (!drag.started) { drag.started = true; useEditor.getState().beginGesture() }
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
       const date = dayToDate(project.startDate, Math.round(model.dayOf(x)))
       const m = date.getMonth() + 1
       const d = Math.min(date.getDate(), daysInMonth(2001, m - 1)) // non-leap day model
@@ -393,23 +500,33 @@ export function ChartCanvas() {
   // ── Edge auto-scroll: while dragging a bar or pulling a link, scroll the canvas
   //    when the pointer nears (or passes) an edge so off-screen 공종 become reachable.
   function stopAutoScroll() {
-    if (autoScrollRef.current != null) { cancelAnimationFrame(autoScrollRef.current); autoScrollRef.current = null }
+    if (autoScrollRef.current != null) {
+      cancelAnimationFrame(autoScrollRef.current)
+      autoScrollRef.current = null
+    }
   }
   function startAutoScroll() {
     if (autoScrollRef.current != null) return
-    const EDGE = 52, MAX = 20
+    const EDGE = 52,
+      MAX = 20
     const ramp = (over: number) => Math.max(0, Math.min(MAX, Math.ceil((over / EDGE) * MAX)))
     const tick = () => {
-      const wrap = wrapRef.current, lp = lastClient.current
-      if (!wrap || !lp || !dragRef.current) { autoScrollRef.current = null; return }
+      const wrap = wrapRef.current,
+        lp = lastClient.current
+      if (!wrap || !lp || !dragRef.current) {
+        autoScrollRef.current = null
+        return
+      }
       const r = wrap.getBoundingClientRect()
-      let dx = 0, dy = 0
+      let dx = 0,
+        dy = 0
       if (lp.y < r.top + EDGE) dy = -ramp(r.top + EDGE - lp.y)
       else if (lp.y > r.bottom - EDGE) dy = ramp(lp.y - (r.bottom - EDGE))
       if (lp.x < r.left + EDGE) dx = -ramp(r.left + EDGE - lp.x)
       else if (lp.x > r.right - EDGE) dx = ramp(lp.x - (r.right - EDGE))
       if (dx || dy) {
-        const sl = wrap.scrollLeft, st = wrap.scrollTop
+        const sl = wrap.scrollLeft,
+          st = wrap.scrollTop
         wrap.scrollLeft = sl + dx
         wrap.scrollTop = st + dy
         if (wrap.scrollLeft !== sl || wrap.scrollTop !== st) applyAtPointer(lp.x, lp.y)
@@ -437,10 +554,17 @@ export function ChartCanvas() {
       const target = computeRowTarget(drag.taskId, y)
       // A near-horizontal drag within the task's own row is a pure schedule move —
       // don't restack rows.
-      const tinyVertical = !!dragged && target?.catId === dragged.categoryId && Math.abs(y - dragged.cy) < model.rowHeight * 0.5
+      const tinyVertical =
+        !!dragged &&
+        target?.catId === dragged.categoryId &&
+        Math.abs(y - dragged.cy) < model.rowHeight * 0.5
       // 미러(예정 연동) 공종 레인으로는 옮길 수 없다 — 실제 공종(현재 시트)만 드롭 대상.
       if (target && !tinyVertical && project.categories.some((c) => c.id === target.catId)) {
-        useEditor.getState().moveTaskToRow(drag.taskId, target.catId, target.anchorId, target.mode, { history: false })
+        useEditor
+          .getState()
+          .moveTaskToRow(drag.taskId, target.catId, target.anchorId, target.mode, {
+            history: false,
+          })
       }
     }
     if (drag.kind === 'link') {
@@ -457,7 +581,8 @@ export function ChartCanvas() {
           const { x } = toContent(e.clientX, e.clientY)
           toEdge = Math.abs(x - targetLt.startX) <= Math.abs(x - targetLt.endX) ? 'start' : 'end'
         }
-        const type = `${drag.fromEdge === 'end' ? 'F' : 'S'}${toEdge === 'end' ? 'F' : 'S'}` as LinkType
+        const type =
+          `${drag.fromEdge === 'end' ? 'F' : 'S'}${toEdge === 'end' ? 'F' : 'S'}` as LinkType
         store.completeLinking(toId, type)
       } else store.cancelLinking()
     }
@@ -513,18 +638,28 @@ export function ChartCanvas() {
     durDone.current = true
     const v = editingDur.text.trim()
     const store = useEditor.getState()
-    if (/^\d+$/.test(v)) store.updateTask(editingDur.id, { duration: Math.max(1, Number(v)), durationLabel: '' })
+    if (/^\d+$/.test(v))
+      store.updateTask(editingDur.id, { duration: Math.max(1, Number(v)), durationLabel: '' })
     else store.updateTask(editingDur.id, { durationLabel: v }) // 빈 값이면 자동(${duration}일)로 복귀
     setEditingDur(null)
   }
 
-  const navClass = navMode === 'zoom' ? ' nav-zoom' : navMode === 'pan' ? ` nav-pan${panning ? ' panning' : ''}` : ''
+  const navClass =
+    navMode === 'zoom'
+      ? ' nav-zoom'
+      : navMode === 'pan'
+        ? ` nav-pan${panning ? ' panning' : ''}`
+        : ''
 
   return (
     <div className="canvas-host">
       {navMode !== 'edit' && (
         <div className="nav-mode-badge" data-export-hide="1">
-          <span>{navMode === 'zoom' ? '🔍 줌 모드 · 스크롤로 확대/축소' : '✋ 이동 모드 · 드래그로 화면 이동'}</span>
+          <span>
+            {navMode === 'zoom'
+              ? '🔍 줌 모드 · 스크롤로 확대/축소'
+              : '✋ 이동 모드 · 드래그로 화면 이동'}
+          </span>
           <span className="nav-mode-esc">Esc 해제</span>
         </div>
       )}
@@ -534,15 +669,25 @@ export function ChartCanvas() {
         onPointerDown={onWrapPointerDown}
         onClick={() => {
           if (useEditor.getState().navMode !== 'edit') return
-          if (movedRef.current) { movedRef.current = false; return }
+          if (movedRef.current) {
+            movedRef.current = false
+            return
+          }
           useEditor.getState().selectTask(null)
         }}
       >
-        <div className="paper-scale" style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}>
+        <div
+          className="paper-scale"
+          style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}
+        >
           <div
             ref={paperRef}
             className="paper"
-            style={{ width: model.contentWidth, height: model.contentHeight, transform: `scale(${zoom})` }}
+            style={{
+              width: model.contentWidth,
+              height: model.contentHeight,
+              transform: `scale(${zoom})`,
+            }}
             onPointerDown={onPaperPointerDown}
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={onPaperDoubleClick}
@@ -566,20 +711,35 @@ export function ChartCanvas() {
               onLogoResizePointerDown={onLogoResizePointerDown}
               onTaskClick={(e, id) => {
                 if (useEditor.getState().navMode !== 'edit') return
-                if (e.ctrlKey || e.metaKey) return        // pointerdown handled the multi-select toggle
-                if (movedRef.current) { movedRef.current = false; return } // a drag just ended → keep selection
+                if (e.ctrlKey || e.metaKey) return // pointerdown handled the multi-select toggle
+                if (movedRef.current) {
+                  movedRef.current = false
+                  return
+                } // a drag just ended → keep selection
                 useEditor.getState().selectTask(id)
               }}
               onTaskDoubleClick={onTaskDoubleClick}
-              onTaskContextMenu={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().toggleDummy(id) }}
+              onTaskContextMenu={(_, id) => {
+                if (useEditor.getState().navMode === 'edit') useEditor.getState().toggleDummy(id)
+              }}
               onDurationDoubleClick={onDurationDoubleClick}
-              onLinkClick={(_, id) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id) }}
-              onTextClick={(role) => { if (useEditor.getState().navMode === 'edit') useEditor.getState().selectTextRole(role) }}
-              onTimelineClick={() => { if (useEditor.getState().navMode === 'edit') setPeriodOpen(true) }}
+              onLinkClick={(_, id) => {
+                if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id)
+              }}
+              onTextClick={(role) => {
+                if (useEditor.getState().navMode === 'edit')
+                  useEditor.getState().selectTextRole(role)
+              }}
+              onTimelineClick={() => {
+                if (useEditor.getState().navMode === 'edit') setPeriodOpen(true)
+              }}
               onRainyResizePointerDown={onRainyResizePointerDown}
               onBackgroundClick={() => {
                 if (useEditor.getState().navMode !== 'edit') return
-                if (movedRef.current) { movedRef.current = false; return } // marquee/drag just ran → keep selection
+                if (movedRef.current) {
+                  movedRef.current = false
+                  return
+                } // marquee/drag just ran → keep selection
                 useEditor.getState().selectTask(null)
               }}
             />
@@ -590,12 +750,18 @@ export function ChartCanvas() {
                 value={editing.name}
                 style={{
                   left: editLt.x,
-                  top: (editLt.isMilestone ? editLt.cy - 24 : editLt.y - 19),
+                  top: editLt.isMilestone ? editLt.cy - 24 : editLt.y - 19,
                 }}
                 onChange={(e) => setEditing({ id: editing.id, name: e.target.value })}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitRename() }
-                  else if (e.key === 'Escape') { e.preventDefault(); renameDone.current = true; setEditing(null) }
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitRename()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    renameDone.current = true
+                    setEditing(null)
+                  }
                 }}
                 onBlur={commitRename}
                 onClick={(e) => e.stopPropagation()}
@@ -610,34 +776,54 @@ export function ChartCanvas() {
                 style={{ left: editDurLt.x, top: editDurLt.y + editDurLt.h + 2 }}
                 onChange={(e) => setEditingDur({ id: editingDur.id, text: e.target.value })}
                 onKeyDown={(e) => {
-                  if (e.key === 'Enter') { e.preventDefault(); commitDuration() }
-                  else if (e.key === 'Escape') { e.preventDefault(); durDone.current = true; setEditingDur(null) }
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitDuration()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    durDone.current = true
+                    setEditingDur(null)
+                  }
                 }}
                 onBlur={commitDuration}
                 onClick={(e) => e.stopPropagation()}
                 onDoubleClick={(e) => e.stopPropagation()}
               />
             )}
-            {reorderHint && (reorderHint.merge ? (
-              <div
-                data-export-hide="1"
-                style={{
-                  position: 'absolute', top: reorderHint.lineY - model.rowHeight / 2, height: model.rowHeight,
-                  left: model.labelWidth, width: Math.max(0, model.contentWidth - model.labelWidth),
-                  background: 'rgba(250,81,17,0.12)', border: '1.5px solid var(--primary)', borderRadius: 4,
-                  pointerEvents: 'none', zIndex: 5,
-                }}
-              />
-            ) : (
-              <div
-                className="reorder-line"
-                data-export-hide="1"
-                style={{ top: reorderHint.lineY, left: model.labelWidth, width: Math.max(0, model.contentWidth - model.labelWidth) }}
-              />
-            ))}
+            {reorderHint &&
+              (reorderHint.merge ? (
+                <div
+                  data-export-hide="1"
+                  style={{
+                    position: 'absolute',
+                    top: reorderHint.lineY - model.rowHeight / 2,
+                    height: model.rowHeight,
+                    left: model.labelWidth,
+                    width: Math.max(0, model.contentWidth - model.labelWidth),
+                    background: 'rgba(250,81,17,0.12)',
+                    border: '1.5px solid var(--primary)',
+                    borderRadius: 4,
+                    pointerEvents: 'none',
+                    zIndex: 5,
+                  }}
+                />
+              ) : (
+                <div
+                  className="reorder-line"
+                  data-export-hide="1"
+                  style={{
+                    top: reorderHint.lineY,
+                    left: model.labelWidth,
+                    width: Math.max(0, model.contentWidth - model.labelWidth),
+                  }}
+                />
+              ))}
             {marquee && (marquee.w > 1 || marquee.h > 1) && (
-              <div className="marquee" data-export-hide="1"
-                style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }} />
+              <div
+                className="marquee"
+                data-export-hide="1"
+                style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+              />
             )}
           </div>
         </div>
@@ -654,14 +840,19 @@ function DisplayPeriodDialog({ model, onClose }: { model: LayoutModel; onClose: 
   const a = useEditor.getState
   const ym = (day: number) => toISO(dayToDate(project.startDate, day)).slice(0, 7) // YYYY-MM
   const curStart = project.view.displayStart?.slice(0, 7) ?? ym(model.domainStartDay)
-  const curEnd = project.view.displayEnd?.slice(0, 7) ?? ym(Math.max(model.domainStartDay, model.domainEndDay - 1))
+  const curEnd =
+    project.view.displayEnd?.slice(0, 7) ??
+    ym(Math.max(model.domainStartDay, model.domainEndDay - 1))
   const [start, setStart] = useState(curStart)
   const [end, setEnd] = useState(curEnd)
   const active = !!(project.view.displayStart && project.view.displayEnd)
 
   function apply() {
     if (!start || !end) return
-    if (end < start) { if (typeof window !== 'undefined') window.alert('종료 월이 시작 월보다 빠릅니다.'); return }
+    if (end < start) {
+      if (typeof window !== 'undefined') window.alert('종료 월이 시작 월보다 빠릅니다.')
+      return
+    }
     a().setView({ displayStart: `${start}-01`, displayEnd: `${end}-01` })
     onClose()
   }
@@ -678,23 +869,48 @@ function DisplayPeriodDialog({ model, onClose }: { model: LayoutModel; onClose: 
       onClose={onClose}
       footer={(close) => (
         <div style={{ display: 'flex', gap: 8, width: '100%' }}>
-          <button className="btn btn--sm" style={{ flex: 1 }} onClick={reset} disabled={!active} title="데이터 범위(착수~준공)로 되돌리기">자동으로 초기화</button>
-          <button className="btn btn--sm" onClick={close}>취소</button>
-          <button className="btn btn--primary btn--sm" onClick={apply}>적용</button>
+          <button
+            className="btn btn--sm"
+            style={{ flex: 1 }}
+            onClick={reset}
+            disabled={!active}
+            title="데이터 범위(착수~준공)로 되돌리기"
+          >
+            자동으로 초기화
+          </button>
+          <button className="btn btn--sm" onClick={close}>
+            취소
+          </button>
+          <button className="btn btn--primary btn--sm" onClick={apply}>
+            적용
+          </button>
         </div>
       )}
     >
       <div className="field-row">
         <div className="field">
           <label>시작 (연-월)</label>
-          <input className="input" type="month" value={start} onChange={(e) => setStart(e.target.value)} />
+          <input
+            className="input"
+            type="month"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
         </div>
         <div className="field">
           <label>종료 (연-월)</label>
-          <input className="input" type="month" value={end} onChange={(e) => setEnd(e.target.value)} />
+          <input
+            className="input"
+            type="month"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
         </div>
       </div>
-      <p className="note">지정한 구간만 표시됩니다 — 데이터가 더 길어도 그 구간만, 짧아도 빈 기간을 포함합니다. ‘자동으로 초기화’ 하면 데이터 범위로 돌아갑니다.</p>
+      <p className="note">
+        지정한 구간만 표시됩니다 — 데이터가 더 길어도 그 구간만, 짧아도 빈 기간을 포함합니다.
+        ‘자동으로 초기화’ 하면 데이터 범위로 돌아갑니다.
+      </p>
     </Modal>
   )
 }

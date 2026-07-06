@@ -30,7 +30,10 @@ export function Modal({ title, sub, width = 460, onClose, children, footer }: Mo
 
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') { e.stopPropagation(); requestClose() }
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        requestClose()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
@@ -46,16 +49,26 @@ export function Modal({ title, sub, width = 460, onClose, children, footer }: Mo
         role="dialog"
         aria-modal="true"
       >
-        <button className="modal__x" title="닫기 (Esc)" aria-label="닫기" onClick={requestClose}>×</button>
+        <button className="modal__x" title="닫기 (Esc)" aria-label="닫기" onClick={requestClose}>
+          ×
+        </button>
         <div className="modal__header">
           <h2 className="modal__title">{title}</h2>
           {sub && <div className="modal__sub">{sub}</div>}
         </div>
         <div className="modal__body">{children}</div>
         <div className="modal__footer">
-          {footer !== undefined
-            ? (typeof footer === 'function' ? footer(requestClose) : footer)
-            : <button className="btn" onClick={requestClose}>닫기</button>}
+          {footer !== undefined ? (
+            typeof footer === 'function' ? (
+              footer(requestClose)
+            ) : (
+              footer
+            )
+          ) : (
+            <button className="btn" onClick={requestClose}>
+              닫기
+            </button>
+          )}
         </div>
       </div>
     </div>
