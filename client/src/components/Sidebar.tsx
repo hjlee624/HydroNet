@@ -316,21 +316,15 @@ function CategoryNode({
     if (v && v !== editSub.oldSub) a().renameSubName(cat.id, editSub.oldSub, v)
     setEditSub(null)
   }
-  // 공정을 세부공종(subName)별로 묶어 WBS 3단계(공종 > 세부공종 > 공정)로 나열한다. 등장 순서를
-  // 보존하고, 세부공종이 없는 공정은 맨 앞의 이름 없는 그룹('')에 직속으로 둔다.
+  // 공정을 세부공종(subName)별로 묶어 WBS 3단계(공종 > 세부공종 > 공정)로 나열한다. 차트 layout과
+  // 동일하게 **연속 런(run)** 으로 묶는다 — 배열 순서에서 subName이 바뀔 때마다 새 그룹. 그래야
+  // 특정 공정 위치에 삽입/감싼 세부공종이 그 자리에 나타난다(전역 병합이면 맨 아래로 몰림).
   const subGroups: { sub: string; items: typeof tasks }[] = []
-  {
-    const gi = new Map<string, number>()
-    for (const t of tasks) {
-      const s = (t.subName ?? '').trim()
-      let idx = gi.get(s)
-      if (idx === undefined) {
-        idx = subGroups.length
-        gi.set(s, idx)
-        subGroups.push({ sub: s, items: [] })
-      }
-      subGroups[idx].items.push(t)
-    }
+  for (const t of tasks) {
+    const s = (t.subName ?? '').trim()
+    const last = subGroups[subGroups.length - 1]
+    if (last && last.sub === s) last.items.push(t)
+    else subGroups.push({ sub: s, items: [t] })
   }
   // 한 공정 줄(드래그 재배치·인라인 편집·표시토글). idx = 전체 tasks 배열 내 위치(드롭 기준).
   const renderTaskRow = (t: (typeof tasks)[number], idx: number) => (
@@ -402,41 +396,53 @@ function CategoryNode({
       <span className="dur">{t.isMilestone ? 'MS' : `${t.duration}일`}</span>
     </div>
   )
-  // 행별 ➕ 삽입 메뉴 — 기준 공정 바로 아래에 공정/세부공종/마일스톤을 끼워 넣는다.
-  const insertMenu = (afterId: string) => (
-    <div className="cat__insertmenu">
-      <button
-        className="btn btn--sm btn--ghost"
-        onClick={() => {
-          a().addTask(cat.id, undefined, { afterId })
-          setInsertAt(null)
-        }}
-      >
-        ＋공정
-      </button>
-      <button
-        className="btn btn--sm btn--ghost"
-        onClick={() => {
-          const base = '새 세부공종'
-          a().addTask(cat.id, { subName: base }, { afterId })
-          subDone.current = false
-          setEditSub({ oldSub: base, text: base })
-          setInsertAt(null)
-        }}
-      >
-        ＋세부공종
-      </button>
-      <button
-        className="btn btn--sm btn--ghost"
-        onClick={() => {
-          a().addTask(cat.id, { name: '◆ 마일스톤', isMilestone: true, duration: 0 }, { afterId })
-          setInsertAt(null)
-        }}
-      >
-        ＋마일스톤
-      </button>
-    </div>
-  )
+  // 행별 ➕ 삽입 메뉴 — 기준 공정 바로 아래에 끼워 넣는다.
+  //  · ＋공정/＋마일스톤: 기준 공정의 세부공종을 **상속**해 같은 그룹에 붙는다(없으면 직속).
+  //  · ＋세부공종: 기준 공정 자체를 새 세부공종으로 **감싼다**(그 공정에 세부공종을 부여) —
+  //    연속-런 그룹핑이라 그 자리에서 바로 세부공종으로 묶여 보인다(맨 아래로 안 감).
+  const insertMenu = (afterId: string) => {
+    const anchor = tasks.find((t) => t.id === afterId)
+    const anchorSub = (anchor?.subName ?? '').trim()
+    return (
+      <div className="cat__insertmenu">
+        <button
+          className="btn btn--sm btn--ghost"
+          onClick={() => {
+            a().addTask(cat.id, anchorSub ? { subName: anchorSub } : undefined, { afterId })
+            setInsertAt(null)
+          }}
+        >
+          ＋공정
+        </button>
+        <button
+          className="btn btn--sm btn--ghost"
+          title="이 공정을 새 세부공종으로 묶습니다"
+          onClick={() => {
+            const base = '새 세부공종'
+            a().updateTask(afterId, { subName: base })
+            subDone.current = false
+            setEditSub({ oldSub: base, text: base })
+            setInsertAt(null)
+          }}
+        >
+          ＋세부공종
+        </button>
+        <button
+          className="btn btn--sm btn--ghost"
+          onClick={() => {
+            a().addTask(
+              cat.id,
+              { name: '◆ 마일스톤', isMilestone: true, duration: 0, ...(anchorSub ? { subName: anchorSub } : {}) },
+              { afterId },
+            )
+            setInsertAt(null)
+          }}
+        >
+          ＋마일스톤
+        </button>
+      </div>
+    )
+  }
   // 공종 선택: 일반=단일, Ctrl/⌘=토글 누적, Shift=기준(anchor)부터 범위. 복붙(Ctrl+C/V)
   // 대상이 된다.
   function onRowClick(e: RMouseEvent) {
