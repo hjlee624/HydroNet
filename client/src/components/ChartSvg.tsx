@@ -450,7 +450,7 @@ function ChartSvgBase({
                   <text
                     key={`sg-${i}`}
                     x={26}
-                    y={sg.y + sg.height / 2 + 4}
+                    y={sg.y + roleAttrs('subCategoryLabel').fontSize + 2}
                     {...roleAttrs('subCategoryLabel')}
                   >
                     {sg.name}
@@ -459,6 +459,22 @@ function ChartSvgBase({
             </g>
           )
         })}
+        {/* 공정명을 좌측 라벨열에 공종(세부공종) 하위로 나열 — WBS 트리(막대에도 이름은 표기됨).
+            세부공종이 있으면 한 단 더 들여 세부공종 밑으로 붙는다. 마일스톤은 다이아 라벨로 충분. */}
+        {taskCol &&
+          model.tasks.map((lt) =>
+            lt.isMilestone ? null : (
+              <text
+                key={`tl-${lt.task.id}`}
+                x={(lt.task.subName ?? '').trim() ? 40 : 30}
+                y={lt.cy + 3.5}
+                {...roleAttrs('taskName')}
+                {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
+              >
+                {lt.task.name.replace(/^◆\s*/, '')}
+              </text>
+            ),
+          )}
       </g>
 
       {/* auto DUMMY fill — faded lane-colour band in the gaps between consecutive
@@ -687,7 +703,11 @@ function ChartSvgBase({
                       }
                 }
               >
-                {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
+                {t.durationLabel && t.durationLabel.trim()
+                  ? t.durationLabel
+                  : `${toISO(dayToDate(project.startDate, t.start)).slice(2)} ~ ${toISO(
+                      dayToDate(project.startDate, t.start + t.duration),
+                    ).slice(2)}`}
               </text>
               {/* resize grips (drag to change duration) + link anchor (drag to connect) —
                   primary single selection only (다중선택 그룹 이동 중엔 숨김 · 미러 제외). */}

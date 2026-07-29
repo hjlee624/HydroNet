@@ -583,8 +583,8 @@ console.log('')
   )
 }
 
-// 16. 좌측 WBS 라벨열(view.taskColumn) — 공종명을 레인 상단 헤더로 올려 도면이 높아지되,
-//     공정명은 항상 막대 위에 표기하므로 라벨열을 공정명 폭까지 넓히지 않는다(좌측=WBS 전용).
+// 16. 좌측 WBS 라벨열(view.taskColumn) — 공종명을 레인 상단 헤더로 올려 도면이 높아지고,
+//     공종 > 세부공종 > 공정 트리를 좌측에 나열하므로 긴 공정명·세부공종명은 라벨열을 넓힌다.
 console.log('')
 {
   const dd: any = makeProject('detailed-design', 'rockfill-cfrd') // 예정공정표(세부공종 없음)
@@ -616,9 +616,9 @@ console.log('')
       }),
     })
   }
-  check(inject('name').labelWidth === on.labelWidth, '긴 공정명이 라벨열 폭을 바꾸지 않음(공정명은 막대 위)')
-  // 세부공종(WBS)은 좌측에 표기하므로 길어지면 라벨열을 넓힌다.
-  check(inject('subName').labelWidth > on.labelWidth, '긴 세부공종명은 라벨열을 넓힌다(WBS는 좌측 표기)')
+  // 공정·세부공종 모두 좌측 WBS 트리에 표기 → 길어지면 라벨열을 넓힌다.
+  check(inject('name').labelWidth > on.labelWidth, '긴 공정명이 라벨열을 넓힌다(공정은 좌측 WBS에 표기)')
+  check(inject('subName').labelWidth > on.labelWidth, '긴 세부공종명이 라벨열을 넓힌다(WBS는 좌측 표기)')
 }
 
 // 17. 연결 유형별 라우팅 끝점 — 막대 앞/뒤 양쪽에서 연결(FS/SS/FF/SF) 시 출발·도착 끝점이

@@ -235,11 +235,14 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   )
   for (const c of categories)
     labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
-  // 좌측 라벨열은 WBS(공종·세부공종)만 담는다. 공정명은 항상 막대 위에 표기하므로
-  // 라벨열을 공정명 폭까지 넓히지 않는다(공정명은 좌측에 나열하지 않음).
+  // 좌측 라벨열은 WBS 트리(공종 > 세부공종 > 공정)를 담는다. 세부공종은 26, 공정은 그 하위로
+  // 한 단 더 들여(세부공종 있으면 40, 없으면 30) 나열하므로 가장 긴 라벨까지 폭을 확보한다.
+  const taskFs = fs('taskName')
   for (const t of tasks) {
     const sn = (t.subName ?? '').trim()
     if (sn) labelWidth = Math.max(labelWidth, 26 + estimateTextWidth(sn, subFs) + 10)
+    if (taskCol && !t.isMilestone)
+      labelWidth = Math.max(labelWidth, (sn ? 40 : 30) + estimateTextWidth(t.name, taskFs) + 10)
   }
   labelWidth = Math.ceil(labelWidth)
 
