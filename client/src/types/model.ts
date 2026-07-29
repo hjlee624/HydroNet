@@ -71,8 +71,13 @@ export interface Task {
   color?: string
   labelPosition?: LabelPosition
   note?: string
-  /** Optional 세부공종 (sub-work) grouping label, shown on the left label column. */
+  /** Optional 세부공종 (sub-work) grouping label. **레거시** — 이제 세부공정은 parentId로
+   *  상위 공정에 연결한다. 저장 파일 호환을 위해 남겨두며, 로드 시 normalize가 parentId로 이관한다. */
   subName?: string
+  /** 세부공정의 **상위 공정 task id**. 이 값이 있으면 이 task는 그 상위 공정의 세부공정이다 —
+   *  이름/순서가 바뀌어도 상위 공정에 안정적으로 고정된다. 상위 공정(자식이 있는 공정)은 차트에서
+   *  자기 막대를 숨기고, 세부공정들이 상위 공정 한 줄에 이어 붙는다. */
+  parentId?: ID
   /** 막대 아래 공기(기간) 표시 텍스트의 사용자 지정 override. 비어있으면 `${duration}일`로
    *  자동 계산. 더블클릭 편집 시 순수 숫자는 duration 자체를 바꾸고, 그 외 문자열은 이 라벨로
    *  저장된다(예: "약 2개월", "120일"). */

@@ -202,13 +202,10 @@ function CategoryNode({
   // mirroring the chart's inline rename.
   const [editName, setEditName] = useState<string | null>(null)
   const [editTask, setEditTask] = useState<{ id: string; text: string } | null>(null)
-  // 세부공종(WBS 2단계) 헤더 인라인 이름변경 상태(oldSub = 편집 대상 그룹의 현재 이름).
-  const [editSub, setEditSub] = useState<{ oldSub: string; text: string } | null>(null)
-  // 행별 ➕ 삽입 메뉴가 열린 공정 id(그 행 바로 아래에 공정/세부공종/마일스톤 삽입).
+  // 행별 ➕ 삽입 메뉴가 열린 공정 id(그 행 바로 아래에 공정/세부공정/마일스톤 삽입).
   const [insertAt, setInsertAt] = useState<string | null>(null)
   const nameDone = useRef(false)
   const taskDone = useRef(false)
-  const subDone = useRef(false)
   // While a filter is active the lane list is a SUBSET, so an insertion position
   // computed from it is ambiguous against the full array (where do the hidden
   // neighbours go?). Disable drag-reorder while filtered, exactly as the chart
@@ -309,47 +306,36 @@ function CategoryNode({
     if (v) a().updateTask(editTask.id, { name: v })
     setEditTask(null)
   }
-  function commitSub() {
-    if (!editSub || subDone.current) return
-    subDone.current = true
-    const v = editSub.text.trim()
-    if (v && v !== editSub.oldSub) a().renameSubName(cat.id, editSub.oldSub, v)
-    setEditSub(null)
-  }
-  // 새 세부공정의 시작일·공기. 상위 공정은 세부공정이 생기면 자기 막대가 숨겨지므로(차트) —
+  // 새 세부공정의 시작일·공기. 상위 공정은 세부공정이 생기면 차트에서 막대가 숨겨지므로 —
   //  · 첫 세부공정: 상위 공정의 시작·공기를 그대로 이어받아 그 막대를 자연스레 대체한다.
   //  · 이후 세부공정: 이미 붙은 세부공정들 **끝**에 이어 붙인다(공기 30 기본).
-  function subInit(parentName: string): { start: number; duration: number } {
-    const subs = tasks.filter((t) => (t.subName ?? '').trim() === parentName)
+  function subInit(parentId: string): { start: number; duration: number } {
+    const subs = tasks.filter((t) => t.parentId === parentId)
     if (subs.length)
       return { start: subs.reduce((m, t) => Math.max(m, t.start + t.duration), 0), duration: 30 }
-    const parent = tasks.find((t) => t.name === parentName && !(t.subName ?? '').trim())
+    const parent = tasks.find((t) => t.id === parentId)
     return parent ? { start: parent.start, duration: parent.duration } : { start: 0, duration: 30 }
   }
-  // 오펀 컨테이너(공정) 삭제 — 그 묶음의 세부공정 전부 삭제.
-  function deleteSub(subName: string, items: typeof tasks) {
-    if (
-      typeof window !== 'undefined' &&
-      !window.confirm(`‘${subName}’ 공정과 세부공정 ${items.length}개를 삭제할까요?`)
-    )
-      return
-    for (const t of items) a().deleteTask(t.id)
-  }
-  // 공정을 세부공종(subName)별로 묶어 WBS 3단계(공종 > 세부공종 > 공정)로 나열한다. 차트 layout과
-  // 동일하게 **연속 런(run)** 으로 묶는다 — 배열 순서에서 subName이 바뀔 때마다 새 그룹. 그래야
-  // 특정 공정 위치에 삽입/감싼 세부공종이 그 자리에 나타난다(전역 병합이면 맨 아래로 몰림).
-  const subGroups: { sub: string; items: typeof tasks }[] = []
+  // WBS 트리: 공종 > 공정 > 세부공정. 세부공정은 parentId로 상위 공정에 **고정**된다 — 배열 순서나
+  // 다른 공정 이동과 무관하게 항상 자기 상위 공정 아래에 붙는다. 렌더 순서 = 상위 공정(배열 순서)마다
+  // 그 바로 아래에 자식(parentId=상위 id)들을(배열 순서) 들여쓰기로.
+  const childrenOf = new Map<string, typeof tasks>()
   for (const t of tasks) {
-    const s = (t.subName ?? '').trim()
-    const last = subGroups[subGroups.length - 1]
-    if (last && last.sub === s) last.items.push(t)
-    else subGroups.push({ sub: s, items: [t] })
+    if (!t.parentId) continue
+    const arr = childrenOf.get(t.parentId)
+    if (arr) arr.push(t)
+    else childrenOf.set(t.parentId, [t])
   }
-  // 세부공정 = subName이 상위 공정 이름인 task. 상위 공정(같은 이름 평면 task)이 있으면 그 공정
-  // 아래 자식으로(헤더 없이), 없으면(오펀=facility 묶음) 컨테이너 헤더로 렌더한다.
-  const parentNames = new Set(
-    tasks.filter((t) => !(t.subName ?? '').trim() && !t.isMilestone).map((t) => t.name),
-  )
+  const renderList: Array<{ task: (typeof tasks)[number]; child: boolean }> = []
+  for (const t of tasks) {
+    if (t.parentId) continue // 자식은 상위 공정 아래에서 렌더
+    renderList.push({ task: t, child: false })
+    for (const c of childrenOf.get(t.id) ?? []) renderList.push({ task: c, child: true })
+  }
+  // 방어: 상위 공정이 사라진 고아 세부공정(있으면)도 최상위로 노출해 사라지지 않게 한다.
+  for (const t of tasks)
+    if (t.parentId && !tasks.some((x) => x.id === t.parentId))
+      renderList.push({ task: t, child: false })
   // 한 공정 줄(드래그 재배치·인라인 편집·표시토글). idx = 전체 tasks 배열 내 위치(드롭 기준).
   // child=true면 세부공정(부모 공정 아래 한 단 더 들여쓰기).
   const renderTaskRow = (t: (typeof tasks)[number], idx: number, child = false) => (
@@ -444,13 +430,16 @@ function CategoryNode({
   //    연속-런 그룹핑이라 그 자리에서 바로 세부공종으로 묶여 보인다(맨 아래로 안 감).
   const insertMenu = (afterId: string) => {
     const anchor = tasks.find((t) => t.id === afterId)
-    const anchorSub = (anchor?.subName ?? '').trim()
+    // 기준 공정의 상위 id(anchor가 세부공정이면 그 상위, 평면이면 anchor 자신)를 상속해 같은 상위 밑에.
+    const parentId = anchor?.parentId ?? anchor?.id ?? ''
     return (
       <div className="cat__insertmenu">
         <button
           className="btn btn--sm btn--ghost"
           onClick={() => {
-            a().addTask(cat.id, anchorSub ? { subName: anchorSub } : undefined, { afterId })
+            a().addTask(cat.id, anchor?.parentId ? { parentId: anchor.parentId } : undefined, {
+              afterId,
+            })
             setInsertAt(null)
           }}
         >
@@ -460,13 +449,11 @@ function CategoryNode({
           className="btn btn--sm btn--ghost"
           title="이 공정의 하위에 세부공정을 추가합니다"
           onClick={() => {
-            // 세부공정 = subName이 상위 공정 이름인 task. 상위 공정(anchor가 평면이면 그 이름, 이미
-            // 세부공정이면 그 상위 anchorSub)의 **줄 끝**에 이어 붙인다 — 상위 공정 막대는 그대로
-            // (평면 task 유지 → 삭제 가능), 세부공정만 그 줄에 계속 이어진다(겹치지 않음).
-            const parentName = anchorSub || anchor?.name || ''
+            // 세부공정은 parentId로 상위 공정에 **고정**된다. 상위 공정 줄 끝에 이어 붙이고, 첫
+            // 세부공정이면 상위 공정 시작·공기를 이어받아 그 막대(차트에서 숨김)를 대체한다.
             const nid = a().addTask(
               cat.id,
-              { name: '새 세부공정', subName: parentName, ...subInit(parentName) },
+              { name: '새 세부공정', parentId, ...subInit(parentId) },
               { afterId },
             )
             taskDone.current = false
@@ -481,7 +468,12 @@ function CategoryNode({
           onClick={() => {
             a().addTask(
               cat.id,
-              { name: '◆ 마일스톤', isMilestone: true, duration: 0, ...(anchorSub ? { subName: anchorSub } : {}) },
+              {
+                name: '◆ 마일스톤',
+                isMilestone: true,
+                duration: 0,
+                ...(anchor?.parentId ? { parentId: anchor.parentId } : {}),
+              },
               { afterId },
             )
             setInsertAt(null)
@@ -631,86 +623,13 @@ function CategoryNode({
       </div>
       {!cat.collapsed && (
         <div className="cat__tasks">
-          {/* WBS 3단계: 공종 > 공정 > 세부공정. 세부공정이 있는 공정(subName 묶음)은 '공정' 헤더로
-              표시하고 그 아래 세부공정을 들여쓴다. 세부공정은 마일스톤에서 상위 공정 한 줄에 이어
-              붙는다(요구2). 세부공정이 없는 공정은 직속 한 줄. */}
-          {subGroups.map((g) => (
-            <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
-              {/* 상위 공정(같은 이름 평면 task)이 있으면 그 공정 아래 자식으로 붙어 헤더가 없다.
-                  상위가 없는 오펀 묶음(facility 등)만 '공정' 컨테이너 헤더로 표시한다. */}
-              {g.sub !== '' && !parentNames.has(g.sub) && (
-                <div
-                  className="cat__prochead"
-                  title="공정(세부공정 묶음) — 더블클릭: 이름 수정 · ＋세부공정 추가 · ✕ 삭제"
-                >
-                  <span className="cat__proc-ic">▬</span>
-                  {editSub?.oldSub === g.sub ? (
-                    <input
-                      className="cat__edit"
-                      autoFocus
-                      style={{ flex: 1 }}
-                      value={editSub.text}
-                      onChange={(e) => setEditSub({ oldSub: g.sub, text: e.target.value })}
-                      onClick={(e) => e.stopPropagation()}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault()
-                          commitSub()
-                        } else if (e.key === 'Escape') {
-                          e.preventDefault()
-                          subDone.current = true
-                          setEditSub(null)
-                        }
-                      }}
-                      onBlur={commitSub}
-                    />
-                  ) : (
-                    <span
-                      className="cat__subname"
-                      style={{
-                        flex: 1,
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                      }}
-                      onDoubleClick={(e) => {
-                        e.stopPropagation()
-                        subDone.current = false
-                        setEditSub({ oldSub: g.sub, text: g.sub })
-                      }}
-                    >
-                      {g.sub}
-                    </span>
-                  )}
-                  <button
-                    className="btn btn--sm btn--ghost"
-                    title="이 공정에 세부공정 추가"
-                    onClick={() =>
-                      a().addTask(cat.id, {
-                        name: '새 세부공정',
-                        subName: g.sub,
-                        ...subInit(g.sub),
-                      })
-                    }
-                  >
-                    ＋세부공정
-                  </button>
-                  <button
-                    className="icon-btn icon-btn--danger"
-                    title="이 공정(세부공정 포함) 삭제"
-                    onClick={() => deleteSub(g.sub, g.items)}
-                  >
-                    ✕
-                  </button>
-                </div>
-              )}
-              {g.items.map((t) => (
-                <Fragment key={t.id}>
-                  {renderTaskRow(t, tasks.indexOf(t), g.sub !== '')}
-                  {insertAt === t.id && insertMenu(t.id)}
-                </Fragment>
-              ))}
-            </div>
+          {/* WBS 트리: 공종 > 공정 > 세부공정. 세부공정(child)은 parentId로 상위 공정에 고정돼,
+              배열 순서·다른 공정 이동과 무관하게 항상 상위 공정 바로 아래에 들여쓰기로 붙는다. */}
+          {renderList.map(({ task: t, child }) => (
+            <Fragment key={t.id}>
+              {renderTaskRow(t, tasks.indexOf(t), child)}
+              {insertAt === t.id && insertMenu(t.id)}
+            </Fragment>
           ))}
           {/* 예정공정표 연동 공정(표시 전용) — 같은 이름 공종 아래로 함께 표시. */}
           {mirrorRows.map((m) => (

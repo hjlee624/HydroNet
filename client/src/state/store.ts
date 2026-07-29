@@ -348,6 +348,61 @@ function normalizeLogos(logos: unknown): LogoItem[] {
 }
 
 /** Backfill fields that may be missing on older saved projects. */
+// 레거시 subName(이름 기반 세부공종 라벨) → 안정적인 parentId(상위 공정 task id) 이관.
+// subName S: 같은 공종에 이름 S인 (부모 후보) 평면 공정이 있으면 그 공정을 상위로, 없으면 상위
+// 공정 task를 새로 만들어 세부공정을 그 아래에 붙인다. 이름/순서가 바뀌어도 안 흔들린다.
+export function migrateSubNameToParentId(tasks: Task[]): Task[] {
+  if (!tasks.some((t) => (t.subName ?? '').trim() && !t.parentId)) return tasks
+  const out = tasks.map((t) => ({ ...t }))
+  const created: Task[] = []
+  const byCat = new Map<ID, Task[]>()
+  for (const t of out) {
+    const arr = byCat.get(t.categoryId)
+    if (arr) arr.push(t)
+    else byCat.set(t.categoryId, [t])
+  }
+  for (const [catId, arr] of byCat) {
+    const subs = [...new Set(arr.map((t) => (t.subName ?? '').trim()).filter((s) => s !== ''))]
+    for (const s of subs) {
+      const children = arr.filter((t) => (t.subName ?? '').trim() === s)
+      let parent = arr.find((t) => t.name === s && !(t.subName ?? '').trim() && !t.parentId)
+      if (!parent) {
+        const start = Math.min(...children.map((c) => c.start))
+        const end = Math.max(...children.map((c) => c.start + c.duration))
+        parent = {
+          id: `t-${nanoid(8)}`,
+          categoryId: catId,
+          name: s,
+          start,
+          duration: Math.max(1, end - start),
+          isMilestone: false,
+        }
+        created.push(parent)
+      }
+      for (const c of children) {
+        c.parentId = parent.id
+        c.subName = undefined
+      }
+    }
+  }
+  if (!created.length) return out
+  // 새로 만든 상위 공정을 첫 자식 앞에 끼워 배열 순서를 자연스럽게 유지(렌더는 parentId 기준이라
+  // 순서와 무관하지만 저장 파일이 읽기 좋게).
+  const result: Task[] = []
+  const inserted = new Set<ID>()
+  for (const t of out) {
+    if (t.parentId) {
+      const p = created.find((c) => c.id === t.parentId)
+      if (p && !inserted.has(p.id)) {
+        inserted.add(p.id)
+        result.push(p)
+      }
+    }
+    result.push(t)
+  }
+  return result
+}
+
 function normalize(project: Project): Project {
   const palette =
     Array.isArray(project.palette) && project.palette.length
@@ -356,6 +411,7 @@ function normalize(project: Project): Project {
   return {
     ...project,
     kind: project.kind ?? 'construction',
+    tasks: migrateSubNameToParentId(project.tasks ?? []),
     branding: { logos: normalizeLogos(project.branding?.logos) },
     rainySeasons: (project.rainySeasons ?? []).map((r) => ({
       ...r,
@@ -526,7 +582,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     loadSample: () => {
       set({
-        project: withSchedule(createSampleProject()).project,
+        project: withSchedule(normalize(createSampleProject())).project,
         past: [],
         future: [],
         dirty: false,
@@ -677,13 +733,9 @@ export const useEditor = create<EditorState>()((set, get) => {
     deleteTask: (id) => {
       const removed = new Set<ID>([id])
       commit((p) => {
-        const t = p.tasks.find((x) => x.id === id)
-        // 상위 공정을 지우면 그 아래 세부공정(subName=이 공정 이름, 같은 공종)도 함께 지운다 —
-        // 안 그러면 상위만 사라지고 세부공정이 오펀 묶음으로 남아 '안 지워진 것처럼' 보인다.
-        if (t)
-          for (const c of p.tasks)
-            if (c.categoryId === t.categoryId && (c.subName ?? '').trim() === t.name)
-              removed.add(c.id)
+        // 상위 공정을 지우면 그 아래 세부공정(parentId=이 공정 id)도 함께 지운다 — 안 그러면
+        // 상위만 사라지고 세부공정이 부모 없는 채로 남는다. id 기준이라 이름 충돌과 무관.
+        for (const c of p.tasks) if (c.parentId === id) removed.add(c.id)
         p.tasks = p.tasks.filter((x) => !removed.has(x.id))
         p.links = p.links.filter((l) => !removed.has(l.from) && !removed.has(l.to))
       })

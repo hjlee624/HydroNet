@@ -1476,7 +1476,7 @@ textarea {
   margin-left: 14px;
 }
 /* 세부공정(공정의 하위) — 부모 공정보다 한 단 더 들여쓰고 좌측 트리 라인 표시. */
-.cat__subgroup .cat__task--child {
+.cat__task--child {
   margin-left: 26px;
   border-left: 1px solid var(--hairline);
   padding-left: 12px;

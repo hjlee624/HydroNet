@@ -289,33 +289,25 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     // a lane out in full (visibility is controlled by `hidden`, not `collapsed`).
     const laneY = cursorY
 
-    // Group tasks into visual rows (요구2). 세부공정(subName=상위 공정 이름)은 **상위 공정 줄에 이어**
-    // 붙는다 — 상위 공정(같은 이름 평면 task)이 있으면 그 줄에 패킹하고, 없으면(오펀=facility 묶음)
-    // 자기 subName 줄에. subName 없는 공정은 명시 row(한 줄 패키지) 또는 자기 줄. 2패스로 상위를
-    // 먼저 배정한 뒤 세부공정을 그 줄에 얹는다.
+    // Group tasks into visual rows (요구2). 세부공정(parentId 있음)은 **상위 공정 줄에 이어** 붙는다.
+    // 2패스: ① 상위/일반 공정(parentId 없음)에 줄 배정(명시 row=한 줄 패키지, 없으면 자기 줄) →
+    // ② 세부공정을 상위 공정(parentId)의 줄에 얹는다. id로 연결하므로 이름/순서와 무관하게 안정적.
     let auto = 0
     const rawRowOf = new Map<string, number>()
     const groupRow = new Map<string, number>()
-    const flatRow = new Map<string, number>() // 평면 공정 이름 → 줄(세부공정 상위 매칭용)
+    const taskRow = new Map<string, number>() // task id → 줄(세부공정 상위 매칭용)
     for (const t of catTasks) {
-      if ((t.subName ?? '').trim()) continue
+      if (t.parentId) continue
       const key = typeof t.row === 'number' ? `row:${t.row}` : `id:${t.id}`
       if (!groupRow.has(key)) groupRow.set(key, auto++)
       const r = groupRow.get(key)!
       rawRowOf.set(t.id, r)
-      if (!flatRow.has(t.name)) flatRow.set(t.name, r)
+      taskRow.set(t.id, r)
     }
     for (const t of catTasks) {
-      const s = (t.subName ?? '').trim()
-      if (!s) continue
-      let r: number
-      if (flatRow.has(s)) r = flatRow.get(s)!
-      else {
-        const key = `sub:${s}`
-        if (!groupRow.has(key)) groupRow.set(key, auto++)
-        r = groupRow.get(key)!
-      }
-      rawRowOf.set(t.id, r)
+      if (!t.parentId) continue
+      const pr = taskRow.get(t.parentId)
+      rawRowOf.set(t.id, pr ?? auto++)
     }
     const distinctRows = [...new Set(catTasks.map((t) => rawRowOf.get(t.id)!))].sort(
       (a, b) => a - b,

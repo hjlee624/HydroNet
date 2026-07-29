@@ -7,6 +7,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { writeFileSync } from 'node:fs'
 import { Resvg } from '@resvg/resvg-js'
 import { createSampleProject } from '../src/data/sampleProject'
+import { migrateSubNameToParentId } from '../src/state/store'
 import { computeSchedule } from '../src/engine/scheduling'
 import { computeLayout } from '../src/engine/layout'
 import { routeLinks } from '../src/engine/routing'
@@ -14,6 +15,7 @@ import { ChartSvg } from '../src/components/ChartSvg'
 
 const noop = () => {}
 const project = createSampleProject()
+project.tasks = migrateSubNameToParentId(project.tasks) // 앱과 동일하게 subName→parentId 이관
 const sched = computeSchedule(project.tasks, project.links)
 // HN_FONTSCALE lets us eyeball that bigger fonts grow their boxes (no clipping).
 const fontScale = Number(process.env.HN_FONTSCALE) || 1

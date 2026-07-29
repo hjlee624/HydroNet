@@ -106,9 +106,10 @@ function ChartSvgBase({
   // DUMMY opacity: "투명도 60%" → 60% transparent → 0.4 opaque.
   const DUMMY_OPACITY = 0.4
 
-  // 세부공정이 달린 상위 공정 이름들(사용 중인 subName). 이런 상위 공정은 막대가 없다(숨김).
-  const usedSubNames = new Set(
-    model.tasks.map((lt) => (lt.task.subName ?? '').trim()).filter((s) => s !== ''),
+  // 자식(세부공정)을 가진 상위 공정 id 집합. 이런 상위 공정은 막대를 그리지 않고(세부공정 막대만
+  // 그 줄에 표시) 이름은 좌측 라벨로만 남긴다. parentId로 판정하므로 이름 충돌과 무관.
+  const childParentIds = new Set(
+    model.tasks.map((lt) => lt.task.parentId).filter((p): p is string => !!p),
   )
   // DUMMY 채움: 같은 줄의 두 막대 **사이를 사용자가 화살표(링크)로 연결한 경우에만** 그 빈 구간을
   // 공종색 옅게 채운다(요구). 링크 없이 그냥 인접하거나 세부공정을 추가한 것만으로는 더미를
@@ -124,7 +125,7 @@ function ChartSvgBase({
     for (const lt of model.tasks) {
       if (lt.isMilestone) continue
       // 숨겨진 상위 공정(세부공정 보유)은 막대가 없으니 더미 계산에서 제외한다.
-      if (!(lt.task.subName ?? '').trim() && usedSubNames.has(lt.task.name)) continue
+      if (childParentIds.has(lt.task.id)) continue
       const key = `${lt.categoryId}#${lt.subRow}`
       const arr = byRow.get(key)
       if (arr) arr.push(lt)
@@ -154,13 +155,6 @@ function ChartSvgBase({
   // 좌측 라벨열은 WBS(공종·세부공종)만 표기하고, 공정명은 **항상 막대 위**에 띄운다.
   // taskCol(기본 ON)은 공종명을 레인 상단 헤더로 올릴지(WBS 정렬)만 결정한다.
   const taskCol = project.view.taskColumn !== false
-  // 세부공정의 subName이 어떤 평면 공정(부모) 이름과 같으면, 좌측 세부공종 라벨은 생략한다 —
-  // 그 줄의 부모 공정명이 이미 좌측에 표기되기 때문(중복 방지). 부모가 없는 오펀 묶음만 라벨 표시.
-  const parentTaskNames = new Set(
-    model.tasks
-      .filter((lt) => !(lt.task.subName ?? '').trim() && !lt.isMilestone)
-      .map((lt) => lt.task.name),
-  )
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -464,31 +458,15 @@ function ChartSvgBase({
               <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
                 {c.name}
               </text>
-              {/* 세부공정 묶음(subName=상위 공정) 라벨. 부모 평면 공정이 있으면 그 공정명이 이미
-                  좌측에 있으므로 라벨 생략(중복 방지). 부모 없는 오펀 묶음만 좌측에 컨테이너명 표시.
-                  세부공정 각각은 좌측에 나열하지 않고 그 한 줄에 막대로만 이어 붙는다(요구2). */}
-              {hasSubs &&
-                c.subGroups.map((sg, i) =>
-                  parentTaskNames.has(sg.name) ? null : (
-                    <text
-                      key={`sg-${i}`}
-                      x={26}
-                      y={sg.y + roleAttrs('subCategoryLabel').fontSize + 2}
-                      {...roleAttrs('subCategoryLabel')}
-                    >
-                      {sg.name}
-                    </text>
-                  ),
-                )}
             </g>
           )
         })}
-        {/* 좌측 라벨열 = 공종 > 공정. 세부공정(subName 있음)은 좌측에 나열하지 않고 막대에만 이름을
-            표기하며, 상위 공정 한 줄에 이어 붙는다(요구2). 컨테이너(subName) 이름은 위 세부공종
-            라벨로 표시된다. 여기선 세부공정이 없는 flat 공정만 좌측에 이름을 건다. 마일스톤 제외. */}
+        {/* 좌측 라벨열 = 공종 > 공정. 세부공정(parentId 있음)은 좌측에 나열하지 않고 상위 공정 한 줄에
+            막대로만 이어 붙는다(요구2). 상위 공정(세부공정 보유)은 막대는 숨겨도 여기 좌측 이름은
+            남긴다 — 그 줄의 대표 이름이 된다. 마일스톤 제외. */}
         {taskCol &&
           model.tasks.map((lt) =>
-            lt.isMilestone || (lt.task.subName ?? '').trim() ? null : (
+            lt.isMilestone || lt.task.parentId ? null : (
               <text
                 key={`tl-${lt.task.id}`}
                 x={30}
@@ -579,7 +557,7 @@ function ChartSvgBase({
           const t = lt.task
           // 세부공정이 달린 상위 공정은 자기 막대를 그리지 않는다 — 세부공정 막대만 그 줄에 이어
           // 붙고, 상위 공정명은 좌측 라벨로만 표시된다(check.png). 마일스톤은 제외.
-          if (!lt.isMilestone && !(t.subName ?? '').trim() && usedSubNames.has(t.name)) return null
+          if (!lt.isMilestone && childParentIds.has(t.id)) return null
           // 미러(예정공정표 연동) 공정은 표시 전용 — 포인터/CP 강조/선택/data-task-id 없이
           // 옅게(점선·반투명) 그려, 마일스톤 출력에는 포함되되 마일스톤에선 편집할 수 없다.
           const mirror = !!t.__mirror
