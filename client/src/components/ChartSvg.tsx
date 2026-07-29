@@ -703,11 +703,7 @@ function ChartSvgBase({
                       }
                 }
               >
-                {t.durationLabel && t.durationLabel.trim()
-                  ? t.durationLabel
-                  : `${toISO(dayToDate(project.startDate, t.start)).slice(2)} ~ ${toISO(
-                      dayToDate(project.startDate, t.start + t.duration),
-                    ).slice(2)}`}
+                {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
               {/* resize grips (drag to change duration) + link anchor (drag to connect) —
                   primary single selection only (다중선택 그룹 이동 중엔 숨김 · 미러 제외). */}
