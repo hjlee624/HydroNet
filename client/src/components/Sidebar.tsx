@@ -326,11 +326,18 @@ function CategoryNode({
     if (last && last.sub === s) last.items.push(t)
     else subGroups.push({ sub: s, items: [t] })
   }
+  // 계층 = 공종 > 공정(막대 task) > 세부공정. 세부공정 = subName이 **부모 공정의 이름**인 task로,
+  // 부모 공정 바로 아래 들여쓰기로 붙는다. 부모(평면 공정)의 이름 집합을 만들어, subName이 이에
+  // 속하면 '세부공정'(자식·헤더 없음), 아니면 옛 세부공종 그룹(오펀=헤더 표시, 구데이터 호환).
+  const parentNames = new Set(
+    tasks.filter((t) => !(t.subName ?? '').trim() && !t.isMilestone).map((t) => t.name),
+  )
   // 한 공정 줄(드래그 재배치·인라인 편집·표시토글). idx = 전체 tasks 배열 내 위치(드롭 기준).
-  const renderTaskRow = (t: (typeof tasks)[number], idx: number) => (
+  // child=true면 세부공정(부모 공정 아래 한 단 더 들여쓰기).
+  const renderTaskRow = (t: (typeof tasks)[number], idx: number, child = false) => (
     <div
       key={t.id}
-      className={`cat__task ${t.id === selectedTaskId ? 'selected' : ''} ${t.critical ? 'crit' : ''} ${t.hidden ? 'is-hidden' : ''} ${dropAt?.taskId === t.id ? (dropAt.pos === 'before' ? 'drop-before' : 'drop-after') : ''}`}
+      className={`cat__task ${child ? 'cat__task--child' : ''} ${t.id === selectedTaskId ? 'selected' : ''} ${t.critical ? 'crit' : ''} ${t.hidden ? 'is-hidden' : ''} ${dropAt?.taskId === t.id ? (dropAt.pos === 'before' ? 'drop-before' : 'drop-after') : ''}`}
       draggable={!filtered && editTask?.id !== t.id}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/hn-task', t.id)
@@ -416,16 +423,18 @@ function CategoryNode({
         </button>
         <button
           className="btn btn--sm btn--ghost"
-          title="이 공정을 새 세부공종으로 묶습니다"
+          title="이 공정의 하위에 세부공정을 추가합니다"
           onClick={() => {
-            const base = '새 세부공종'
-            a().updateTask(afterId, { subName: base })
-            subDone.current = false
-            setEditSub({ oldSub: base, text: base })
+            // 세부공정 = subName이 부모 공정의 이름인 task. anchor가 이미 세부공정이면 그 부모
+            // (anchorSub) 밑에 형제로, 평면 공정이면 그 공정(anchor.name) 밑에 자식으로 붙는다.
+            const parentName = anchorSub || anchor?.name || ''
+            const nid = a().addTask(cat.id, { name: '새 세부공정', subName: parentName }, { afterId })
+            taskDone.current = false
+            setEditTask({ id: nid, text: '새 세부공정' })
             setInsertAt(null)
           }}
         >
-          ＋세부공종
+          ＋세부공정
         </button>
         <button
           className="btn btn--sm btn--ghost"
@@ -582,14 +591,18 @@ function CategoryNode({
       </div>
       {!cat.collapsed && (
         <div className="cat__tasks">
-          {/* WBS 3단계: 세부공종 그룹 헤더 + 그 하위 공정들. 세부공종 없는 공정은 직속으로. */}
-          {subGroups.map((g) => (
-            <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
-              {g.sub !== '' && (
-                <div
-                  className="cat__subhead"
-                  title="세부공종(WBS 2단계) — 더블클릭: 이름 수정 · ＋공정: 하위 공정 추가"
-                >
+          {/* WBS 3단계: 공종 > 공정 > 세부공정. 세부공정(subName=부모 공정 이름)은 부모 공정 바로
+              아래 들여쓰기로 붙고 헤더가 없다. subName이 부모 공정 이름이 아니면(오펀=구데이터
+              중간 그룹) 헤더를 표시한다(가물막이 예시 호환). 세부공정 없는 공정은 직속. */}
+          {subGroups.map((g) => {
+            const isChildGroup = g.sub !== '' && parentNames.has(g.sub)
+            return (
+              <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
+                {g.sub !== '' && !isChildGroup && (
+                  <div
+                    className="cat__subhead"
+                    title="세부공종(중간 그룹) — 더블클릭: 이름 수정 · ＋공정: 하위 공정 추가"
+                  >
                   <span className="cat__subtwig">┗</span>
                   {editSub?.oldSub === g.sub ? (
                     <input
@@ -638,14 +651,15 @@ function CategoryNode({
                   </button>
                 </div>
               )}
-              {g.items.map((t) => (
-                <Fragment key={t.id}>
-                  {renderTaskRow(t, tasks.indexOf(t))}
-                  {insertAt === t.id && insertMenu(t.id)}
-                </Fragment>
-              ))}
-            </div>
-          ))}
+                {g.items.map((t) => (
+                  <Fragment key={t.id}>
+                    {renderTaskRow(t, tasks.indexOf(t), g.sub !== '')}
+                    {insertAt === t.id && insertMenu(t.id)}
+                  </Fragment>
+                ))}
+              </div>
+            )
+          })}
           {/* 예정공정표 연동 공정(표시 전용) — 같은 이름 공종 아래로 함께 표시. */}
           {mirrorRows.map((m) => (
             <MirrorRowView key={`mir-${m.id}`} row={m} />
@@ -653,18 +667,6 @@ function CategoryNode({
           <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
             <button className="btn btn--sm btn--ghost" onClick={() => a().addTask(cat.id)}>
               ＋ 공정
-            </button>
-            <button
-              className="btn btn--sm btn--ghost"
-              title="세부공종(WBS 2단계)을 추가합니다 — 새 공정이 그 아래로 들어갑니다"
-              onClick={() => {
-                const base = '새 세부공종'
-                a().addTask(cat.id, { subName: base })
-                subDone.current = false
-                setEditSub({ oldSub: base, text: base })
-              }}
-            >
-              ＋ 세부공종
             </button>
             <button
               className="btn btn--sm btn--ghost"

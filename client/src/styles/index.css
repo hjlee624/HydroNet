@@ -1472,6 +1472,13 @@ textarea {
 .cat__subgroup .cat__task {
   margin-left: 14px;
 }
+/* 세부공정(공정의 하위) — 부모 공정보다 한 단 더 들여쓰고 좌측 트리 라인 표시. */
+.cat__subgroup .cat__task--child {
+  margin-left: 26px;
+  border-left: 1px solid var(--hairline);
+  padding-left: 12px;
+  border-radius: 0 6px 6px 0;
+}
 
 /* 행별 ➕ 삽입 — 평소 숨김, 행 hover 시 표시. 클릭하면 아래에 삽입 메뉴가 열린다. */
 .cat__insert {
