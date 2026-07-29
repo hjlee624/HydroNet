@@ -675,13 +675,21 @@ export const useEditor = create<EditorState>()((set, get) => {
       )
     },
     deleteTask: (id) => {
+      const removed = new Set<ID>([id])
       commit((p) => {
-        p.tasks = p.tasks.filter((t) => t.id !== id)
-        p.links = p.links.filter((l) => l.from !== id && l.to !== id)
+        const t = p.tasks.find((x) => x.id === id)
+        // 상위 공정을 지우면 그 아래 세부공정(subName=이 공정 이름, 같은 공종)도 함께 지운다 —
+        // 안 그러면 상위만 사라지고 세부공정이 오펀 묶음으로 남아 '안 지워진 것처럼' 보인다.
+        if (t)
+          for (const c of p.tasks)
+            if (c.categoryId === t.categoryId && (c.subName ?? '').trim() === t.name)
+              removed.add(c.id)
+        p.tasks = p.tasks.filter((x) => !removed.has(x.id))
+        p.links = p.links.filter((l) => !removed.has(l.from) && !removed.has(l.to))
       })
       set((s) => ({
-        selectedTaskId: s.selectedTaskId === id ? null : s.selectedTaskId,
-        selectedTaskIds: s.selectedTaskIds.filter((x) => x !== id),
+        selectedTaskId: s.selectedTaskId && removed.has(s.selectedTaskId) ? null : s.selectedTaskId,
+        selectedTaskIds: s.selectedTaskIds.filter((x) => !removed.has(x)),
       }))
     },
     toggleMilestone: (id) => {
