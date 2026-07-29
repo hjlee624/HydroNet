@@ -81,7 +81,6 @@ function ChartSvgBase({
   onTaskClick,
   onTaskDoubleClick,
   onTaskContextMenu,
-  onDurationDoubleClick,
   onLinkClick,
   onTextClick,
   onTimelineClick,
@@ -142,11 +141,6 @@ function ChartSvgBase({
   // 좌측 라벨열은 WBS(공종·세부공종)만 표기하고, 공정명은 **항상 막대 위**에 띄운다.
   // taskCol(기본 ON)은 공종명을 레인 상단 헤더로 올릴지(WBS 정렬)만 결정한다.
   const taskCol = project.view.taskColumn !== false
-  // 세부공정(subName=부모 공정 이름) — 부모 공정 이름 집합. subName이 여기 속하면 중간 세부공종
-  // 라벨을 그리지 않고(중복 방지) 세부공정은 부모 공정 아래 한 단 더 들여쓴 공정명으로만 표기한다.
-  const parentTaskNames = new Set(
-    model.tasks.filter((lt) => !(lt.task.subName ?? '').trim() && !lt.isMilestone).map((lt) => lt.task.name),
-  )
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -450,32 +444,31 @@ function ChartSvgBase({
               <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
                 {c.name}
               </text>
+              {/* 세부공정 묶음(subName=상위 공정) 라벨 = 좌측열에 그 공정명을 표시. 세부공정 각각은
+                  좌측에 나열하지 않고 이 한 줄에 막대로만 이어 붙는다(요구2). */}
               {hasSubs &&
-                c.subGroups.map((sg, i) =>
-                  // 세부공정(부모 공정 이름과 동일한 subName)은 중간 라벨을 생략 — 부모 공정 아래
-                  // 들여쓴 공정명으로만 보이게. 오펀 세부공종(부모 없음)은 기존대로 라벨 표시.
-                  parentTaskNames.has(sg.name) ? null : (
-                    <text
-                      key={`sg-${i}`}
-                      x={26}
-                      y={sg.y + roleAttrs('subCategoryLabel').fontSize + 2}
-                      {...roleAttrs('subCategoryLabel')}
-                    >
-                      {sg.name}
-                    </text>
-                  ),
-                )}
+                c.subGroups.map((sg, i) => (
+                  <text
+                    key={`sg-${i}`}
+                    x={26}
+                    y={sg.y + roleAttrs('subCategoryLabel').fontSize + 2}
+                    {...roleAttrs('subCategoryLabel')}
+                  >
+                    {sg.name}
+                  </text>
+                ))}
             </g>
           )
         })}
-        {/* 공정명을 좌측 라벨열에 공종(세부공종) 하위로 나열 — WBS 트리(막대에도 이름은 표기됨).
-            세부공종이 있으면 한 단 더 들여 세부공종 밑으로 붙는다. 마일스톤은 다이아 라벨로 충분. */}
+        {/* 좌측 라벨열 = 공종 > 공정. 세부공정(subName 있음)은 좌측에 나열하지 않고 막대에만 이름을
+            표기하며, 상위 공정 한 줄에 이어 붙는다(요구2). 컨테이너(subName) 이름은 위 세부공종
+            라벨로 표시된다. 여기선 세부공정이 없는 flat 공정만 좌측에 이름을 건다. 마일스톤 제외. */}
         {taskCol &&
           model.tasks.map((lt) =>
-            lt.isMilestone ? null : (
+            lt.isMilestone || (lt.task.subName ?? '').trim() ? null : (
               <text
                 key={`tl-${lt.task.id}`}
-                x={(lt.task.subName ?? '').trim() ? 40 : 30}
+                x={30}
                 y={lt.cy + 3.5}
                 {...roleAttrs('taskName')}
                 {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
@@ -666,12 +659,14 @@ function ChartSvgBase({
               }}
               style={mirror ? { opacity: 0.6 } : undefined}
             >
-              {/* 공정명은 항상 막대 위에 표기(좌측 라벨열은 WBS=공종·세부공종 전용). */}
+              {/* 공정명은 항상 막대 위에 표기. 막대 선택을 방해하지 않도록 클릭 통과(pointer-events
+                  none) — 칸이 좁아도 막대가 잘 잡힌다. 텍스트 편집은 우측 인스펙터/사이드바에서. */}
               <text
                 x={lt.x}
                 y={lt.y - 3.5}
                 {...roleAttrs('taskName')}
                 {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
+                style={{ ...roleAttrs('taskName').style, pointerEvents: 'none' }}
               >
                 {t.name}
               </text>
@@ -703,14 +698,7 @@ function ChartSvgBase({
                 x={lt.x}
                 y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
                 {...roleAttrs('taskDuration')}
-                onDoubleClick={
-                  mirror
-                    ? undefined
-                    : (e) => {
-                        e.stopPropagation()
-                        onDurationDoubleClick(t.id)
-                      }
-                }
+                style={{ ...roleAttrs('taskDuration').style, pointerEvents: 'none' }}
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>

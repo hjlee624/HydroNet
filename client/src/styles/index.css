@@ -1447,26 +1447,29 @@ textarea {
   cursor: grabbing;
 }
 
-/* WBS 3단계 — 세부공종(2단계) 그룹 헤더와 그 하위 공정 들여쓰기 */
-.cat__subhead {
+/* WBS 3단계 — 세부공정을 묶는 '공정' 헤더와 그 하위 세부공정 들여쓰기. 공정 행처럼 보이게(굵게). */
+.cat__prochead {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 3px 8px 3px 0;
-  font-size: 11.5px;
+  padding: 4px 8px;
+  font-size: 12px;
   font-weight: 600;
-  color: var(--stone);
+  color: var(--ink);
+  border-radius: 6px;
 }
-.cat__subtwig {
-  color: var(--stone);
-  opacity: 0.6;
-  font-size: 11px;
+.cat__prochead:hover {
+  background: var(--cream-soft);
 }
-.cat__subhead .btn {
+.cat__proc-ic {
+  color: var(--stone);
+  font-size: 10px;
+}
+.cat__prochead .btn {
   opacity: 0.5;
   transition: opacity 0.12s;
 }
-.cat__subhead:hover .btn {
+.cat__prochead:hover .btn {
   opacity: 1;
 }
 .cat__subgroup .cat__task {

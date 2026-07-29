@@ -326,12 +326,6 @@ function CategoryNode({
     if (last && last.sub === s) last.items.push(t)
     else subGroups.push({ sub: s, items: [t] })
   }
-  // 계층 = 공종 > 공정(막대 task) > 세부공정. 세부공정 = subName이 **부모 공정의 이름**인 task로,
-  // 부모 공정 바로 아래 들여쓰기로 붙는다. 부모(평면 공정)의 이름 집합을 만들어, subName이 이에
-  // 속하면 '세부공정'(자식·헤더 없음), 아니면 옛 세부공종 그룹(오펀=헤더 표시, 구데이터 호환).
-  const parentNames = new Set(
-    tasks.filter((t) => !(t.subName ?? '').trim() && !t.isMilestone).map((t) => t.name),
-  )
   // 한 공정 줄(드래그 재배치·인라인 편집·표시토글). idx = 전체 tasks 배열 내 위치(드롭 기준).
   // child=true면 세부공정(부모 공정 아래 한 단 더 들여쓰기).
   const renderTaskRow = (t: (typeof tasks)[number], idx: number, child = false) => (
@@ -425,9 +419,11 @@ function CategoryNode({
           className="btn btn--sm btn--ghost"
           title="이 공정의 하위에 세부공정을 추가합니다"
           onClick={() => {
-            // 세부공정 = subName이 부모 공정의 이름인 task. anchor가 이미 세부공정이면 그 부모
-            // (anchorSub) 밑에 형제로, 평면 공정이면 그 공정(anchor.name) 밑에 자식으로 붙는다.
+            // 세부공정 = subName이 상위 공정 이름인 task로, 마일스톤에서 상위 공정 한 줄에 이어 붙는다.
+            // anchor가 이미 세부공정이면 같은 상위(anchorSub) 밑 형제로, 평면 공정이면 그 공정을
+            // 컨테이너로 전환(subName=자기 이름)해 세부공정과 한 줄에 묶는다.
             const parentName = anchorSub || anchor?.name || ''
+            if (!anchorSub && anchor) a().updateTask(anchor.id, { subName: parentName })
             const nid = a().addTask(cat.id, { name: '새 세부공정', subName: parentName }, { afterId })
             taskDone.current = false
             setEditTask({ id: nid, text: '새 세부공정' })
@@ -591,19 +587,17 @@ function CategoryNode({
       </div>
       {!cat.collapsed && (
         <div className="cat__tasks">
-          {/* WBS 3단계: 공종 > 공정 > 세부공정. 세부공정(subName=부모 공정 이름)은 부모 공정 바로
-              아래 들여쓰기로 붙고 헤더가 없다. subName이 부모 공정 이름이 아니면(오펀=구데이터
-              중간 그룹) 헤더를 표시한다(가물막이 예시 호환). 세부공정 없는 공정은 직속. */}
-          {subGroups.map((g) => {
-            const isChildGroup = g.sub !== '' && parentNames.has(g.sub)
-            return (
-              <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
-                {g.sub !== '' && !isChildGroup && (
-                  <div
-                    className="cat__subhead"
-                    title="세부공종(중간 그룹) — 더블클릭: 이름 수정 · ＋공정: 하위 공정 추가"
-                  >
-                  <span className="cat__subtwig">┗</span>
+          {/* WBS 3단계: 공종 > 공정 > 세부공정. 세부공정이 있는 공정(subName 묶음)은 '공정' 헤더로
+              표시하고 그 아래 세부공정을 들여쓴다. 세부공정은 마일스톤에서 상위 공정 한 줄에 이어
+              붙는다(요구2). 세부공정이 없는 공정은 직속 한 줄. */}
+          {subGroups.map((g) => (
+            <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
+              {g.sub !== '' && (
+                <div
+                  className="cat__prochead"
+                  title="공정(세부공정 묶음) — 더블클릭: 이름 수정 · ＋세부공정: 하위 세부공정 추가"
+                >
+                  <span className="cat__proc-ic">▬</span>
                   {editSub?.oldSub === g.sub ? (
                     <input
                       className="cat__edit"
@@ -644,22 +638,21 @@ function CategoryNode({
                   )}
                   <button
                     className="btn btn--sm btn--ghost"
-                    title="이 세부공종 아래에 공정 추가"
-                    onClick={() => a().addTask(cat.id, { subName: g.sub })}
+                    title="이 공정에 세부공정 추가"
+                    onClick={() => a().addTask(cat.id, { name: '새 세부공정', subName: g.sub })}
                   >
-                    ＋공정
+                    ＋세부공정
                   </button>
                 </div>
               )}
-                {g.items.map((t) => (
-                  <Fragment key={t.id}>
-                    {renderTaskRow(t, tasks.indexOf(t), g.sub !== '')}
-                    {insertAt === t.id && insertMenu(t.id)}
-                  </Fragment>
-                ))}
-              </div>
-            )
-          })}
+              {g.items.map((t) => (
+                <Fragment key={t.id}>
+                  {renderTaskRow(t, tasks.indexOf(t), g.sub !== '')}
+                  {insertAt === t.id && insertMenu(t.id)}
+                </Fragment>
+              ))}
+            </div>
+          ))}
           {/* 예정공정표 연동 공정(표시 전용) — 같은 이름 공종 아래로 함께 표시. */}
           {mirrorRows.map((m) => (
             <MirrorRowView key={`mir-${m.id}`} row={m} />

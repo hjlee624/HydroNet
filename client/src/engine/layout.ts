@@ -289,14 +289,22 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     // a lane out in full (visibility is controlled by `hidden`, not `collapsed`).
     const laneY = cursorY
 
-    // Group tasks into visual rows. An explicit Task.row places a task on that
-    // shared line (so a 패키지 like 상부댐 can run 굴착→축조→페이스슬라브→충수 as
-    // adjacent bars on ONE row); a task without a row falls back to a running
-    // index, so an untouched lane stays one-task-per-row exactly as before.
-    // Distinct row values are collapsed to dense visual indices (gaps removed).
+    // Group tasks into visual rows (요구2). 세부공정(같은 subName=상위 공정)은 **한 줄**에 이어
+    // 붙는다(굴착→축조→페이스슬라브→충수). subName이 없는 공정은 명시 row(한 줄 패키지)로 묶거나,
+    // 둘 다 없으면 자기 줄. 그룹 키가 다르면 서로 다른 줄이라 충돌이 없고, 첫 등장 순서대로 배치된다.
     let auto = 0
     const rawRowOf = new Map<string, number>()
-    for (const t of catTasks) rawRowOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
+    const groupRow = new Map<string, number>()
+    for (const t of catTasks) {
+      const s = (t.subName ?? '').trim()
+      const key = s
+        ? `sub:${s}`
+        : typeof t.row === 'number'
+          ? `row:${t.row}`
+          : `id:${t.id}`
+      if (!groupRow.has(key)) groupRow.set(key, auto++)
+      rawRowOf.set(t.id, groupRow.get(key)!)
+    }
     const distinctRows = [...new Set(catTasks.map((t) => rawRowOf.get(t.id)!))].sort(
       (a, b) => a - b,
     )
