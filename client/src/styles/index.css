@@ -1509,6 +1509,27 @@ textarea {
   gap: 6px;
   padding: 3px 8px 5px 22px;
 }
+/* 행별 ✕ 삭제 — 평소 숨김, 행 hover 시 표시. 세부공정 있으면 함께 삭제(확인 후). */
+.cat__del {
+  border: none;
+  background: transparent;
+  color: var(--stone);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cat__task:hover .cat__del {
+  opacity: 0.55;
+}
+.cat__del:hover {
+  opacity: 1;
+  background: var(--cream);
+  color: var(--danger, #c0392b);
+}
 
 /* Insertion line when dragging a 공정 to a new position within/across 공종. */
 .cat__task.drop-before {

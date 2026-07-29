@@ -148,6 +148,11 @@ function ChartSvgBase({
       .filter((lt) => !(lt.task.subName ?? '').trim() && !lt.isMilestone)
       .map((lt) => lt.task.name),
   )
+  // 실제로 세부공정이 달린 상위 공정 이름들(사용 중인 subName 집합). 이런 상위 공정은 자기 막대를
+  // 그리지 않고(세부공정 막대만 그 줄에 표시) 이름은 좌측 라벨로만 남긴다(check.png 요구).
+  const usedSubNames = new Set(
+    model.tasks.map((lt) => (lt.task.subName ?? '').trim()).filter((s) => s !== ''),
+  )
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -564,6 +569,9 @@ function ChartSvgBase({
       <g>
         {model.tasks.map((lt) => {
           const t = lt.task
+          // 세부공정이 달린 상위 공정은 자기 막대를 그리지 않는다 — 세부공정 막대만 그 줄에 이어
+          // 붙고, 상위 공정명은 좌측 라벨로만 표시된다(check.png). 마일스톤은 제외.
+          if (!lt.isMilestone && !(t.subName ?? '').trim() && usedSubNames.has(t.name)) return null
           // 미러(예정공정표 연동) 공정은 표시 전용 — 포인터/CP 강조/선택/data-task-id 없이
           // 옅게(점선·반투명) 그려, 마일스톤 출력에는 포함되되 마일스톤에선 편집할 수 없다.
           const mirror = !!t.__mirror

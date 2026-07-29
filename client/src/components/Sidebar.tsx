@@ -316,15 +316,15 @@ function CategoryNode({
     if (v && v !== editSub.oldSub) a().renameSubName(cat.id, editSub.oldSub, v)
     setEditSub(null)
   }
-  // 세부공정을 상위 공정 줄 **끝**(그 줄의 마지막 막대 종료)에 이어 붙이기 위한 시작일. 줄에는 상위
-  // 공정(같은 이름 평면 task)과 이미 붙은 세부공정(subName=상위)이 함께 있다.
-  function rowEndFor(parentName: string): number {
-    return tasks.reduce((m, t) => {
-      const onRow =
-        (t.subName ?? '').trim() === parentName ||
-        (t.name === parentName && !(t.subName ?? '').trim())
-      return onRow ? Math.max(m, t.start + t.duration) : m
-    }, 0)
+  // 새 세부공정의 시작일·공기. 상위 공정은 세부공정이 생기면 자기 막대가 숨겨지므로(차트) —
+  //  · 첫 세부공정: 상위 공정의 시작·공기를 그대로 이어받아 그 막대를 자연스레 대체한다.
+  //  · 이후 세부공정: 이미 붙은 세부공정들 **끝**에 이어 붙인다(공기 30 기본).
+  function subInit(parentName: string): { start: number; duration: number } {
+    const subs = tasks.filter((t) => (t.subName ?? '').trim() === parentName)
+    if (subs.length)
+      return { start: subs.reduce((m, t) => Math.max(m, t.start + t.duration), 0), duration: 30 }
+    const parent = tasks.find((t) => t.name === parentName && !(t.subName ?? '').trim())
+    return parent ? { start: parent.start, duration: parent.duration } : { start: 0, duration: 30 }
   }
   // 오펀 컨테이너(공정) 삭제 — 그 묶음의 세부공정 전부 삭제.
   function deleteSub(subName: string, items: typeof tasks) {
@@ -419,6 +419,23 @@ function CategoryNode({
         title="이 공정을 도면에 표시 ON/OFF"
       />
       <span className="dur">{t.isMilestone ? 'MS' : `${t.duration}일`}</span>
+      <button
+        className="cat__del"
+        title="이 공정 삭제"
+        onClick={(e) => {
+          e.stopPropagation()
+          const kids = tasks.filter((x) => (x.subName ?? '').trim() === t.name).length
+          if (
+            kids > 0 &&
+            typeof window !== 'undefined' &&
+            !window.confirm(`‘${t.name}’ 공정과 세부공정 ${kids}개를 삭제할까요?`)
+          )
+            return
+          a().deleteTask(t.id)
+        }}
+      >
+        ✕
+      </button>
     </div>
   )
   // 행별 ➕ 삽입 메뉴 — 기준 공정 바로 아래에 끼워 넣는다.
@@ -449,7 +466,7 @@ function CategoryNode({
             const parentName = anchorSub || anchor?.name || ''
             const nid = a().addTask(
               cat.id,
-              { name: '새 세부공정', subName: parentName, start: rowEndFor(parentName) },
+              { name: '새 세부공정', subName: parentName, ...subInit(parentName) },
               { afterId },
             )
             taskDone.current = false
@@ -672,7 +689,7 @@ function CategoryNode({
                       a().addTask(cat.id, {
                         name: '새 세부공정',
                         subName: g.sub,
-                        start: rowEndFor(g.sub),
+                        ...subInit(g.sub),
                       })
                     }
                   >
