@@ -316,6 +316,25 @@ function CategoryNode({
     if (v && v !== editSub.oldSub) a().renameSubName(cat.id, editSub.oldSub, v)
     setEditSub(null)
   }
+  // 세부공정을 상위 공정 줄 **끝**(그 줄의 마지막 막대 종료)에 이어 붙이기 위한 시작일. 줄에는 상위
+  // 공정(같은 이름 평면 task)과 이미 붙은 세부공정(subName=상위)이 함께 있다.
+  function rowEndFor(parentName: string): number {
+    return tasks.reduce((m, t) => {
+      const onRow =
+        (t.subName ?? '').trim() === parentName ||
+        (t.name === parentName && !(t.subName ?? '').trim())
+      return onRow ? Math.max(m, t.start + t.duration) : m
+    }, 0)
+  }
+  // 오펀 컨테이너(공정) 삭제 — 그 묶음의 세부공정 전부 삭제.
+  function deleteSub(subName: string, items: typeof tasks) {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(`‘${subName}’ 공정과 세부공정 ${items.length}개를 삭제할까요?`)
+    )
+      return
+    for (const t of items) a().deleteTask(t.id)
+  }
   // 공정을 세부공종(subName)별로 묶어 WBS 3단계(공종 > 세부공종 > 공정)로 나열한다. 차트 layout과
   // 동일하게 **연속 런(run)** 으로 묶는다 — 배열 순서에서 subName이 바뀔 때마다 새 그룹. 그래야
   // 특정 공정 위치에 삽입/감싼 세부공종이 그 자리에 나타난다(전역 병합이면 맨 아래로 몰림).
@@ -326,6 +345,11 @@ function CategoryNode({
     if (last && last.sub === s) last.items.push(t)
     else subGroups.push({ sub: s, items: [t] })
   }
+  // 세부공정 = subName이 상위 공정 이름인 task. 상위 공정(같은 이름 평면 task)이 있으면 그 공정
+  // 아래 자식으로(헤더 없이), 없으면(오펀=facility 묶음) 컨테이너 헤더로 렌더한다.
+  const parentNames = new Set(
+    tasks.filter((t) => !(t.subName ?? '').trim() && !t.isMilestone).map((t) => t.name),
+  )
   // 한 공정 줄(드래그 재배치·인라인 편집·표시토글). idx = 전체 tasks 배열 내 위치(드롭 기준).
   // child=true면 세부공정(부모 공정 아래 한 단 더 들여쓰기).
   const renderTaskRow = (t: (typeof tasks)[number], idx: number, child = false) => (
@@ -419,12 +443,15 @@ function CategoryNode({
           className="btn btn--sm btn--ghost"
           title="이 공정의 하위에 세부공정을 추가합니다"
           onClick={() => {
-            // 세부공정 = subName이 상위 공정 이름인 task로, 마일스톤에서 상위 공정 한 줄에 이어 붙는다.
-            // anchor가 이미 세부공정이면 같은 상위(anchorSub) 밑 형제로, 평면 공정이면 그 공정을
-            // 컨테이너로 전환(subName=자기 이름)해 세부공정과 한 줄에 묶는다.
+            // 세부공정 = subName이 상위 공정 이름인 task. 상위 공정(anchor가 평면이면 그 이름, 이미
+            // 세부공정이면 그 상위 anchorSub)의 **줄 끝**에 이어 붙인다 — 상위 공정 막대는 그대로
+            // (평면 task 유지 → 삭제 가능), 세부공정만 그 줄에 계속 이어진다(겹치지 않음).
             const parentName = anchorSub || anchor?.name || ''
-            if (!anchorSub && anchor) a().updateTask(anchor.id, { subName: parentName })
-            const nid = a().addTask(cat.id, { name: '새 세부공정', subName: parentName }, { afterId })
+            const nid = a().addTask(
+              cat.id,
+              { name: '새 세부공정', subName: parentName, start: rowEndFor(parentName) },
+              { afterId },
+            )
             taskDone.current = false
             setEditTask({ id: nid, text: '새 세부공정' })
             setInsertAt(null)
@@ -592,10 +619,12 @@ function CategoryNode({
               붙는다(요구2). 세부공정이 없는 공정은 직속 한 줄. */}
           {subGroups.map((g) => (
             <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
-              {g.sub !== '' && (
+              {/* 상위 공정(같은 이름 평면 task)이 있으면 그 공정 아래 자식으로 붙어 헤더가 없다.
+                  상위가 없는 오펀 묶음(facility 등)만 '공정' 컨테이너 헤더로 표시한다. */}
+              {g.sub !== '' && !parentNames.has(g.sub) && (
                 <div
                   className="cat__prochead"
-                  title="공정(세부공정 묶음) — 더블클릭: 이름 수정 · ＋세부공정: 하위 세부공정 추가"
+                  title="공정(세부공정 묶음) — 더블클릭: 이름 수정 · ＋세부공정 추가 · ✕ 삭제"
                 >
                   <span className="cat__proc-ic">▬</span>
                   {editSub?.oldSub === g.sub ? (
@@ -639,9 +668,22 @@ function CategoryNode({
                   <button
                     className="btn btn--sm btn--ghost"
                     title="이 공정에 세부공정 추가"
-                    onClick={() => a().addTask(cat.id, { name: '새 세부공정', subName: g.sub })}
+                    onClick={() =>
+                      a().addTask(cat.id, {
+                        name: '새 세부공정',
+                        subName: g.sub,
+                        start: rowEndFor(g.sub),
+                      })
+                    }
                   >
                     ＋세부공정
+                  </button>
+                  <button
+                    className="icon-btn icon-btn--danger"
+                    title="이 공정(세부공정 포함) 삭제"
+                    onClick={() => deleteSub(g.sub, g.items)}
+                  >
+                    ✕
                   </button>
                 </div>
               )}

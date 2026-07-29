@@ -141,6 +141,13 @@ function ChartSvgBase({
   // 좌측 라벨열은 WBS(공종·세부공종)만 표기하고, 공정명은 **항상 막대 위**에 띄운다.
   // taskCol(기본 ON)은 공종명을 레인 상단 헤더로 올릴지(WBS 정렬)만 결정한다.
   const taskCol = project.view.taskColumn !== false
+  // 세부공정의 subName이 어떤 평면 공정(부모) 이름과 같으면, 좌측 세부공종 라벨은 생략한다 —
+  // 그 줄의 부모 공정명이 이미 좌측에 표기되기 때문(중복 방지). 부모가 없는 오펀 묶음만 라벨 표시.
+  const parentTaskNames = new Set(
+    model.tasks
+      .filter((lt) => !(lt.task.subName ?? '').trim() && !lt.isMilestone)
+      .map((lt) => lt.task.name),
+  )
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -444,19 +451,22 @@ function ChartSvgBase({
               <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
                 {c.name}
               </text>
-              {/* 세부공정 묶음(subName=상위 공정) 라벨 = 좌측열에 그 공정명을 표시. 세부공정 각각은
-                  좌측에 나열하지 않고 이 한 줄에 막대로만 이어 붙는다(요구2). */}
+              {/* 세부공정 묶음(subName=상위 공정) 라벨. 부모 평면 공정이 있으면 그 공정명이 이미
+                  좌측에 있으므로 라벨 생략(중복 방지). 부모 없는 오펀 묶음만 좌측에 컨테이너명 표시.
+                  세부공정 각각은 좌측에 나열하지 않고 그 한 줄에 막대로만 이어 붙는다(요구2). */}
               {hasSubs &&
-                c.subGroups.map((sg, i) => (
-                  <text
-                    key={`sg-${i}`}
-                    x={26}
-                    y={sg.y + roleAttrs('subCategoryLabel').fontSize + 2}
-                    {...roleAttrs('subCategoryLabel')}
-                  >
-                    {sg.name}
-                  </text>
-                ))}
+                c.subGroups.map((sg, i) =>
+                  parentTaskNames.has(sg.name) ? null : (
+                    <text
+                      key={`sg-${i}`}
+                      x={26}
+                      y={sg.y + roleAttrs('subCategoryLabel').fontSize + 2}
+                      {...roleAttrs('subCategoryLabel')}
+                    >
+                      {sg.name}
+                    </text>
+                  ),
+                )}
             </g>
           )
         })}
