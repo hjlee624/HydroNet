@@ -3,7 +3,7 @@
 // drag activities between lanes, drag lanes to re-order, double-click to rename,
 // and toggle per-row chart visibility (ON/OFF).
 
-import { useRef, useState } from 'react'
+import { Fragment, useRef, useState } from 'react'
 import type { DragEvent as RDragEvent, MouseEvent as RMouseEvent } from 'react'
 import { useEditor, filterActive } from '../state/store'
 import type { Category } from '../types/model'
@@ -204,6 +204,8 @@ function CategoryNode({
   const [editTask, setEditTask] = useState<{ id: string; text: string } | null>(null)
   // 세부공종(WBS 2단계) 헤더 인라인 이름변경 상태(oldSub = 편집 대상 그룹의 현재 이름).
   const [editSub, setEditSub] = useState<{ oldSub: string; text: string } | null>(null)
+  // 행별 ➕ 삽입 메뉴가 열린 공정 id(그 행 바로 아래에 공정/세부공종/마일스톤 삽입).
+  const [insertAt, setInsertAt] = useState<string | null>(null)
   const nameDone = useRef(false)
   const taskDone = useRef(false)
   const subDone = useRef(false)
@@ -382,12 +384,57 @@ function CategoryNode({
           {t.name.replace(/^◆\s*/, '')}
         </span>
       )}
+      <button
+        className="cat__insert"
+        title="이 아래에 공정/세부공종/마일스톤 삽입"
+        onClick={(e) => {
+          e.stopPropagation()
+          setInsertAt(insertAt === t.id ? null : t.id)
+        }}
+      >
+        ＋
+      </button>
       <VisToggle
         on={!t.hidden}
         onToggle={() => a().toggleTaskVisible(t.id)}
         title="이 공정을 도면에 표시 ON/OFF"
       />
       <span className="dur">{t.isMilestone ? 'MS' : `${t.duration}일`}</span>
+    </div>
+  )
+  // 행별 ➕ 삽입 메뉴 — 기준 공정 바로 아래에 공정/세부공종/마일스톤을 끼워 넣는다.
+  const insertMenu = (afterId: string) => (
+    <div className="cat__insertmenu">
+      <button
+        className="btn btn--sm btn--ghost"
+        onClick={() => {
+          a().addTask(cat.id, undefined, { afterId })
+          setInsertAt(null)
+        }}
+      >
+        ＋공정
+      </button>
+      <button
+        className="btn btn--sm btn--ghost"
+        onClick={() => {
+          const base = '새 세부공종'
+          a().addTask(cat.id, { subName: base }, { afterId })
+          subDone.current = false
+          setEditSub({ oldSub: base, text: base })
+          setInsertAt(null)
+        }}
+      >
+        ＋세부공종
+      </button>
+      <button
+        className="btn btn--sm btn--ghost"
+        onClick={() => {
+          a().addTask(cat.id, { name: '◆ 마일스톤', isMilestone: true, duration: 0 }, { afterId })
+          setInsertAt(null)
+        }}
+      >
+        ＋마일스톤
+      </button>
     </div>
   )
   // 공종 선택: 일반=단일, Ctrl/⌘=토글 누적, Shift=기준(anchor)부터 범위. 복붙(Ctrl+C/V)
@@ -585,7 +632,12 @@ function CategoryNode({
                   </button>
                 </div>
               )}
-              {g.items.map((t) => renderTaskRow(t, tasks.indexOf(t)))}
+              {g.items.map((t) => (
+                <Fragment key={t.id}>
+                  {renderTaskRow(t, tasks.indexOf(t))}
+                  {insertAt === t.id && insertMenu(t.id)}
+                </Fragment>
+              ))}
             </div>
           ))}
           {/* 예정공정표 연동 공정(표시 전용) — 같은 이름 공종 아래로 함께 표시. */}

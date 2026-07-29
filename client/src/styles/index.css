@@ -1473,6 +1473,33 @@ textarea {
   margin-left: 14px;
 }
 
+/* 행별 ➕ 삽입 — 평소 숨김, 행 hover 시 표시. 클릭하면 아래에 삽입 메뉴가 열린다. */
+.cat__insert {
+  border: none;
+  background: transparent;
+  color: var(--stone);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.cat__task:hover .cat__insert {
+  opacity: 0.55;
+}
+.cat__insert:hover {
+  opacity: 1;
+  background: var(--cream);
+  color: var(--primary);
+}
+.cat__insertmenu {
+  display: flex;
+  gap: 6px;
+  padding: 3px 8px 5px 22px;
+}
+
 /* Insertion line when dragging a 공정 to a new position within/across 공종. */
 .cat__task.drop-before {
   box-shadow: inset 0 2px 0 0 var(--primary);

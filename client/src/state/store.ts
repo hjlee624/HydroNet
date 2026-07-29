@@ -196,7 +196,8 @@ export interface EditorState {
   renameSheet: (id: ID, name: string) => void
 
   // tasks
-  addTask: (categoryId: ID, partial?: Partial<Task>) => ID
+  /** 공정 추가. opts.afterId가 있으면 그 공정 바로 다음에 끼워 넣는다(사이드바 행별 ➕ 삽입). */
+  addTask: (categoryId: ID, partial?: Partial<Task>, opts?: { afterId?: ID }) => ID
   updateTask: (id: ID, patch: Partial<Task>, opts?: { history?: boolean }) => void
   /** 세부공종(WBS 2단계) 일괄 이름변경 — 한 공종 안에서 subName===oldSub 인 공정들의 subName을
    *  newSub로 바꾼다(사이드바 세부공종 헤더 더블클릭). 빈 문자열 newSub = 세부공종 해제(직속). */
@@ -583,21 +584,27 @@ export const useEditor = create<EditorState>()((set, get) => {
       )
     },
 
-    addTask: (categoryId, partial) => {
+    addTask: (categoryId, partial, opts) => {
       const id = `t-${nanoid(8)}`
       commit((p) => {
         const maxEnd = p.tasks
           .filter((t) => t.categoryId === categoryId)
           .reduce((m, t) => Math.max(m, t.start + t.duration), 0)
-        p.tasks.push({
+        // afterId가 주어지면 그 공정 **바로 다음** 위치에 끼워 넣는다(사이드바 행별 ➕ 삽입).
+        // 삽입 시 시작일은 기준 공정과 같게 둬 새 항목이 그 근처에 뜨게 한다(맨 아래로 튀지 않음).
+        const anchorIdx = opts?.afterId ? p.tasks.findIndex((t) => t.id === opts.afterId) : -1
+        const anchor = anchorIdx >= 0 ? p.tasks[anchorIdx] : undefined
+        const task: Task = {
           id,
           categoryId,
           name: partial?.name ?? '새 공정',
-          start: partial?.start ?? maxEnd,
+          start: partial?.start ?? (anchor ? anchor.start : maxEnd),
           duration: partial?.duration ?? 30,
           isMilestone: partial?.isMilestone ?? false,
           ...partial,
-        })
+        }
+        if (anchor) p.tasks.splice(anchorIdx + 1, 0, task)
+        else p.tasks.push(task)
       })
       set({ selectedTaskId: id, selectedLinkId: null })
       return id
