@@ -1447,6 +1447,32 @@ textarea {
   cursor: grabbing;
 }
 
+/* WBS 3단계 — 세부공종(2단계) 그룹 헤더와 그 하위 공정 들여쓰기 */
+.cat__subhead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 8px 3px 0;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--stone);
+}
+.cat__subtwig {
+  color: var(--stone);
+  opacity: 0.6;
+  font-size: 11px;
+}
+.cat__subhead .btn {
+  opacity: 0.5;
+  transition: opacity 0.12s;
+}
+.cat__subhead:hover .btn {
+  opacity: 1;
+}
+.cat__subgroup .cat__task {
+  margin-left: 14px;
+}
+
 /* Insertion line when dragging a 공정 to a new position within/across 공종. */
 .cat__task.drop-before {
   box-shadow: inset 0 2px 0 0 var(--primary);

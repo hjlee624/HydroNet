@@ -139,24 +139,9 @@ function ChartSvgBase({
     }
   }
 
-  // 왼쪽 라벨열에 공정명을 공종 하위로 나열할지(요구사항 4). 한 줄에 공정이 1개이고 세부공종이
-  // 없는 비마일스톤만 왼쪽으로 옮기고(막대 위 플로팅 이름 생략) — 한 줄 패키지(여러 공정)·세부
-  // 공종·마일스톤은 기존대로 막대/다이아몬드에 이름을 표기한다.
+  // 좌측 라벨열은 WBS(공종·세부공종)만 표기하고, 공정명은 **항상 막대 위**에 띄운다.
+  // taskCol(기본 ON)은 공종명을 레인 상단 헤더로 올릴지(WBS 정렬)만 결정한다.
   const taskCol = project.view.taskColumn !== false
-  const rowMeta = new Map<string, { count: number; hasSub: boolean }>()
-  if (taskCol)
-    for (const lt of model.tasks) {
-      const key = `${lt.categoryId}#${lt.subRow}`
-      const m = rowMeta.get(key) ?? { count: 0, hasSub: false }
-      m.count++
-      if ((lt.task.subName ?? '').trim()) m.hasSub = true
-      rowMeta.set(key, m)
-    }
-  const nameOnLeft = (lt: LaidTask): boolean => {
-    if (!taskCol || lt.isMilestone) return false
-    const m = rowMeta.get(`${lt.categoryId}#${lt.subRow}`)
-    return !!m && m.count === 1 && !m.hasSub
-  }
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -447,11 +432,16 @@ function ChartSvgBase({
           const hasSubs = c.subGroups.length > 0
           // 공정명을 왼쪽에 나열하면 공종명은 레인 상단 헤더로 올린다(공정 줄과 겹치지 않게).
           const topAlign = hasSubs || taskCol
-          const swatchY = topAlign ? c.y + 4 : c.y + c.height / 2 - 7
-          const nameY = topAlign ? c.y + 15 : c.y + c.height / 2 + 4
+          // 공종명 배치는 글자 크기(fontScale)에 연동해야 한다. 고정 오프셋이면 fit-to-paper로
+          // 폰트가 커질 때(A3 등 작은 용지) 글자가 baseline 위로 넘쳐 위 레인/헤더 밴드와 겹친다.
+          // 레인 상단 인셋(layout.ts headerInset = max(20, ceil(fs*1.4)) 안에 들어오도록 스케일.
+          const catFs = roleAttrs('categoryLabel').fontSize
+          const swH = Math.max(14, Math.round(catFs))
+          const swatchY = topAlign ? c.y + 4 : c.y + c.height / 2 - swH / 2
+          const nameY = topAlign ? c.y + Math.max(15, catFs + 4) : c.y + c.height / 2 + 4
           return (
             <g key={`lbl-${c.id}`}>
-              <rect x={6} y={swatchY} width={4} height={14} rx={2} fill={c.color} />
+              <rect x={6} y={swatchY} width={4} height={swH} rx={2} fill={c.color} />
               <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
                 {c.name}
               </text>
@@ -469,22 +459,6 @@ function ChartSvgBase({
             </g>
           )
         })}
-        {/* 공정명을 공종(및 세부공종) 하위 행으로 왼쪽 라벨열에 나열 — 사이드바 '공종 구성'
-            트리처럼. 막대와 같은 줄 높이(cy)에 맞춰 표시한다. */}
-        {taskCol &&
-          model.tasks.map((lt) =>
-            nameOnLeft(lt) ? (
-              <text
-                key={`tl-${lt.task.id}`}
-                x={30}
-                y={lt.cy + 3.5}
-                {...roleAttrs('taskName')}
-                {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
-              >
-                {lt.task.name}
-              </text>
-            ) : null,
-          )}
       </g>
 
       {/* auto DUMMY fill — faded lane-colour band in the gaps between consecutive
@@ -667,17 +641,15 @@ function ChartSvgBase({
               }}
               style={mirror ? { opacity: 0.6 } : undefined}
             >
-              {/* 공정명이 왼쪽 라벨열로 옮겨간 줄(한 줄·세부공종 없음)은 막대 위 이름을 생략. */}
-              {!nameOnLeft(lt) && (
-                <text
-                  x={lt.x}
-                  y={lt.y - 3.5}
-                  {...roleAttrs('taskName')}
-                  {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
-                >
-                  {t.name}
-                </text>
-              )}
+              {/* 공정명은 항상 막대 위에 표기(좌측 라벨열은 WBS=공종·세부공종 전용). */}
+              <text
+                x={lt.x}
+                y={lt.y - 3.5}
+                {...roleAttrs('taskName')}
+                {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
+              >
+                {t.name}
+              </text>
               <rect
                 className="chart-bar"
                 data-task-id={mirror ? undefined : t.id}

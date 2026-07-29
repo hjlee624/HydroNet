@@ -583,40 +583,42 @@ console.log('')
   )
 }
 
-// 16. 왼쪽 공정명 표(view.taskColumn) — 공정명 폭만큼 라벨열 확장 + 공종 헤더 인셋(요구사항 4 후속)
+// 16. 좌측 WBS 라벨열(view.taskColumn) — 공종명을 레인 상단 헤더로 올려 도면이 높아지되,
+//     공정명은 항상 막대 위에 표기하므로 라벨열을 공정명 폭까지 넓히지 않는다(좌측=WBS 전용).
 console.log('')
 {
   const dd: any = makeProject('detailed-design', 'rockfill-cfrd') // 예정공정표(세부공종 없음)
   const on = computeLayout(dd) // taskColumn 기본 ON
   const off = computeLayout({ ...dd, view: { ...dd.view, taskColumn: false } })
   console.log(
-    `\n[공정표] height ${Math.round(off.contentHeight)}→${Math.round(on.contentHeight)} (label ${off.labelWidth}/${on.labelWidth})`,
+    `\n[WBS라벨] height ${Math.round(off.contentHeight)}→${Math.round(on.contentHeight)} (label ${off.labelWidth}/${on.labelWidth})`,
   )
   check(
     on.contentHeight > off.contentHeight,
-    '공정을 공종 헤더 아래로 나열해 도면이 높아짐(공종 헤더 인셋)',
+    '공종명을 상단 헤더로 올려 도면이 높아짐(공종 헤더 인셋)',
   )
-  check(on.labelWidth >= off.labelWidth, '공정명 표시가 라벨열을 좁히지 않음')
   check(
     on.tasks.every((lt: any) => Number.isFinite(lt.cy) && Number.isFinite(lt.x)),
-    '공정표 ON 레이아웃 좌표 유한',
+    'WBS 라벨 ON 레이아웃 좌표 유한',
   )
-  // 긴 공정명이 있으면 라벨열이 공정명 폭만큼 넓어진다(공정명을 담아 차트 침범 방지).
+  // 긴 공정명을 넣어도 라벨열은 넓어지지 않는다(공정명은 좌측에 나열하지 않고 막대 위에 표기).
   const longName = '아주 긴 공정 이름 테스트용으로 충분히 길게 만든 라벨 문자열입니다'
-  let injected = false
-  const ddLong: any = {
-    ...dd,
-    tasks: dd.tasks.map((t: any) => {
-      if (!injected && !t.isMilestone) {
-        injected = true
-        return { ...t, name: longName }
-      }
-      return t
-    }),
+  const inject = (field: 'name' | 'subName') => {
+    let done = false
+    return computeLayout({
+      ...dd,
+      tasks: dd.tasks.map((t: any) => {
+        if (!done && !t.isMilestone) {
+          done = true
+          return { ...t, [field]: longName }
+        }
+        return t
+      }),
+    })
   }
-  const onLong = computeLayout(ddLong)
-  const offLong = computeLayout({ ...ddLong, view: { ...ddLong.view, taskColumn: false } })
-  check(onLong.labelWidth > offLong.labelWidth, '긴 공정명이 있으면 라벨열이 공정명 폭만큼 넓어짐')
+  check(inject('name').labelWidth === on.labelWidth, '긴 공정명이 라벨열 폭을 바꾸지 않음(공정명은 막대 위)')
+  // 세부공종(WBS)은 좌측에 표기하므로 길어지면 라벨열을 넓힌다.
+  check(inject('subName').labelWidth > on.labelWidth, '긴 세부공종명은 라벨열을 넓힌다(WBS는 좌측 표기)')
 }
 
 // 17. 연결 유형별 라우팅 끝점 — 막대 앞/뒤 양쪽에서 연결(FS/SS/FF/SF) 시 출발·도착 끝점이

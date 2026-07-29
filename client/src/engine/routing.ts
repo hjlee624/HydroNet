@@ -106,6 +106,30 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
         [src.x, src.y],
         [dst.x, dstY],
       ]
+    } else if (src.dir === dst.dir) {
+      // Same-facing anchors — FF (both exit/enter right) or SS (both left).
+      // 요구(FF.png의 TO-BE): 출발 끝에서 **출발 막대 높이 그대로 수평 직진**하다가
+      // 대상 끝 지점에서 **수직 한 번만** 꺾어 내려(올려) 붙는다. 중간 채널로 일찍
+      // 꺾여 계단처럼 내려가던 AS-IS를 없앤다. 보통의 FF(짧은 선행이 긴 후행의 종료를
+      // 끄는 경우)는 대상 끝이 출발 끝보다 더 바깥(오른쪽/왼쪽)이라, 수직선을 대상 끝에
+      // 정확히 내리면 화살표가 끝점에 수직으로 꽂히고 되꺾임(back-hook)이 없다.
+      const targetBeyond = src.dir === 1 ? dst.x >= src.x : dst.x <= src.x
+      if (targetBeyond) {
+        pts = [
+          [src.x, src.y],
+          [dst.x, src.y],
+          [dst.x, dstY],
+        ]
+      } else {
+        // 대상 끝이 출발 끝보다 안쪽이면 짧은 스텁만 내밀고 내려가 수평으로 접근한다.
+        const cornerX = src.x + src.dir * STUB
+        pts = [
+          [src.x, src.y],
+          [cornerX, src.y],
+          [cornerX, dstY],
+          [dst.x, dstY],
+        ]
+      }
     } else {
       pts = [
         [src.x, src.y],

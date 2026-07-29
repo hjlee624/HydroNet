@@ -45,7 +45,7 @@ function projectShell(
     kind: opts.kind ?? 'construction',
     ...(opts.facility ? { facility: opts.facility } : {}),
     startDate: START,
-    paper: { size: 'A1', orientation: 'landscape', marginMm: 10, dpi: 150, fitToPage: true },
+    paper: { size: 'A3', orientation: 'landscape', marginMm: 10, dpi: 150, fitToPage: true },
     view: {
       pxPerDay: 1.5,
       rowHeight: 46,

@@ -202,8 +202,11 @@ function CategoryNode({
   // mirroring the chart's inline rename.
   const [editName, setEditName] = useState<string | null>(null)
   const [editTask, setEditTask] = useState<{ id: string; text: string } | null>(null)
+  // 세부공종(WBS 2단계) 헤더 인라인 이름변경 상태(oldSub = 편집 대상 그룹의 현재 이름).
+  const [editSub, setEditSub] = useState<{ oldSub: string; text: string } | null>(null)
   const nameDone = useRef(false)
   const taskDone = useRef(false)
+  const subDone = useRef(false)
   // While a filter is active the lane list is a SUBSET, so an insertion position
   // computed from it is ambiguous against the full array (where do the hidden
   // neighbours go?). Disable drag-reorder while filtered, exactly as the chart
@@ -304,6 +307,89 @@ function CategoryNode({
     if (v) a().updateTask(editTask.id, { name: v })
     setEditTask(null)
   }
+  function commitSub() {
+    if (!editSub || subDone.current) return
+    subDone.current = true
+    const v = editSub.text.trim()
+    if (v && v !== editSub.oldSub) a().renameSubName(cat.id, editSub.oldSub, v)
+    setEditSub(null)
+  }
+  // 공정을 세부공종(subName)별로 묶어 WBS 3단계(공종 > 세부공종 > 공정)로 나열한다. 등장 순서를
+  // 보존하고, 세부공종이 없는 공정은 맨 앞의 이름 없는 그룹('')에 직속으로 둔다.
+  const subGroups: { sub: string; items: typeof tasks }[] = []
+  {
+    const gi = new Map<string, number>()
+    for (const t of tasks) {
+      const s = (t.subName ?? '').trim()
+      let idx = gi.get(s)
+      if (idx === undefined) {
+        idx = subGroups.length
+        gi.set(s, idx)
+        subGroups.push({ sub: s, items: [] })
+      }
+      subGroups[idx].items.push(t)
+    }
+  }
+  // 한 공정 줄(드래그 재배치·인라인 편집·표시토글). idx = 전체 tasks 배열 내 위치(드롭 기준).
+  const renderTaskRow = (t: (typeof tasks)[number], idx: number) => (
+    <div
+      key={t.id}
+      className={`cat__task ${t.id === selectedTaskId ? 'selected' : ''} ${t.critical ? 'crit' : ''} ${t.hidden ? 'is-hidden' : ''} ${dropAt?.taskId === t.id ? (dropAt.pos === 'before' ? 'drop-before' : 'drop-after') : ''}`}
+      draggable={!filtered && editTask?.id !== t.id}
+      onDragStart={(e) => {
+        e.dataTransfer.setData('text/hn-task', t.id)
+        e.dataTransfer.effectAllowed = 'move'
+      }}
+      onDragOver={(e) => onTaskDragOver(e, t.id)}
+      onDrop={(e) => onTaskDrop(e, idx)}
+      onClick={() => a().selectTask(t.id)}
+      title={
+        filtered
+          ? '필터를 해제하면 드래그로 순서를 변경할 수 있습니다'
+          : '드래그: 순서 변경/다른 공종 이동 · 더블클릭: 이름 수정'
+      }
+    >
+      <span>{t.isMilestone ? '◆' : '▬'}</span>
+      {editTask?.id === t.id ? (
+        <input
+          className="cat__edit"
+          autoFocus
+          style={{ flex: 1 }}
+          value={editTask.text}
+          onChange={(e) => setEditTask({ id: t.id, text: e.target.value })}
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') {
+              e.preventDefault()
+              commitTask()
+            } else if (e.key === 'Escape') {
+              e.preventDefault()
+              taskDone.current = true
+              setEditTask(null)
+            }
+          }}
+          onBlur={commitTask}
+        />
+      ) : (
+        <span
+          style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1 }}
+          onDoubleClick={(e) => {
+            e.stopPropagation()
+            taskDone.current = false
+            setEditTask({ id: t.id, text: t.name.replace(/^◆\s*/, '') })
+          }}
+        >
+          {t.name.replace(/^◆\s*/, '')}
+        </span>
+      )}
+      <VisToggle
+        on={!t.hidden}
+        onToggle={() => a().toggleTaskVisible(t.id)}
+        title="이 공정을 도면에 표시 ON/OFF"
+      />
+      <span className="dur">{t.isMilestone ? 'MS' : `${t.duration}일`}</span>
+    </div>
+  )
   // 공종 선택: 일반=단일, Ctrl/⌘=토글 누적, Shift=기준(anchor)부터 범위. 복붙(Ctrl+C/V)
   // 대상이 된다.
   function onRowClick(e: RMouseEvent) {
@@ -443,77 +529,84 @@ function CategoryNode({
       </div>
       {!cat.collapsed && (
         <div className="cat__tasks">
-          {tasks.map((t, idx) => (
-            <div
-              key={t.id}
-              className={`cat__task ${t.id === selectedTaskId ? 'selected' : ''} ${t.critical ? 'crit' : ''} ${t.hidden ? 'is-hidden' : ''} ${dropAt?.taskId === t.id ? (dropAt.pos === 'before' ? 'drop-before' : 'drop-after') : ''}`}
-              draggable={!filtered && editTask?.id !== t.id}
-              onDragStart={(e) => {
-                e.dataTransfer.setData('text/hn-task', t.id)
-                e.dataTransfer.effectAllowed = 'move'
-              }}
-              onDragOver={(e) => onTaskDragOver(e, t.id)}
-              onDrop={(e) => onTaskDrop(e, idx)}
-              onClick={() => a().selectTask(t.id)}
-              title={
-                filtered
-                  ? '필터를 해제하면 드래그로 순서를 변경할 수 있습니다'
-                  : '드래그: 순서 변경/다른 공종 이동 · 더블클릭: 이름 수정'
-              }
-            >
-              <span>{t.isMilestone ? '◆' : '▬'}</span>
-              {editTask?.id === t.id ? (
-                <input
-                  className="cat__edit"
-                  autoFocus
-                  style={{ flex: 1 }}
-                  value={editTask.text}
-                  onChange={(e) => setEditTask({ id: t.id, text: e.target.value })}
-                  onClick={(e) => e.stopPropagation()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      e.preventDefault()
-                      commitTask()
-                    } else if (e.key === 'Escape') {
-                      e.preventDefault()
-                      taskDone.current = true
-                      setEditTask(null)
-                    }
-                  }}
-                  onBlur={commitTask}
-                />
-              ) : (
-                <span
-                  style={{
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                    flex: 1,
-                  }}
-                  onDoubleClick={(e) => {
-                    e.stopPropagation()
-                    taskDone.current = false
-                    setEditTask({ id: t.id, text: t.name.replace(/^◆\s*/, '') })
-                  }}
+          {/* WBS 3단계: 세부공종 그룹 헤더 + 그 하위 공정들. 세부공종 없는 공정은 직속으로. */}
+          {subGroups.map((g) => (
+            <div key={`sg-${g.sub || '__none'}`} className={g.sub ? 'cat__subgroup' : undefined}>
+              {g.sub !== '' && (
+                <div
+                  className="cat__subhead"
+                  title="세부공종(WBS 2단계) — 더블클릭: 이름 수정 · ＋공정: 하위 공정 추가"
                 >
-                  {t.name.replace(/^◆\s*/, '')}
-                </span>
+                  <span className="cat__subtwig">┗</span>
+                  {editSub?.oldSub === g.sub ? (
+                    <input
+                      className="cat__edit"
+                      autoFocus
+                      style={{ flex: 1 }}
+                      value={editSub.text}
+                      onChange={(e) => setEditSub({ oldSub: g.sub, text: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          commitSub()
+                        } else if (e.key === 'Escape') {
+                          e.preventDefault()
+                          subDone.current = true
+                          setEditSub(null)
+                        }
+                      }}
+                      onBlur={commitSub}
+                    />
+                  ) : (
+                    <span
+                      className="cat__subname"
+                      style={{
+                        flex: 1,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      onDoubleClick={(e) => {
+                        e.stopPropagation()
+                        subDone.current = false
+                        setEditSub({ oldSub: g.sub, text: g.sub })
+                      }}
+                    >
+                      {g.sub}
+                    </span>
+                  )}
+                  <button
+                    className="btn btn--sm btn--ghost"
+                    title="이 세부공종 아래에 공정 추가"
+                    onClick={() => a().addTask(cat.id, { subName: g.sub })}
+                  >
+                    ＋공정
+                  </button>
+                </div>
               )}
-              <VisToggle
-                on={!t.hidden}
-                onToggle={() => a().toggleTaskVisible(t.id)}
-                title="이 공정을 도면에 표시 ON/OFF"
-              />
-              <span className="dur">{t.isMilestone ? 'MS' : `${t.duration}일`}</span>
+              {g.items.map((t) => renderTaskRow(t, tasks.indexOf(t)))}
             </div>
           ))}
           {/* 예정공정표 연동 공정(표시 전용) — 같은 이름 공종 아래로 함께 표시. */}
           {mirrorRows.map((m) => (
             <MirrorRowView key={`mir-${m.id}`} row={m} />
           ))}
-          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+          <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
             <button className="btn btn--sm btn--ghost" onClick={() => a().addTask(cat.id)}>
               ＋ 공정
+            </button>
+            <button
+              className="btn btn--sm btn--ghost"
+              title="세부공종(WBS 2단계)을 추가합니다 — 새 공정이 그 아래로 들어갑니다"
+              onClick={() => {
+                const base = '새 세부공종'
+                a().addTask(cat.id, { subName: base })
+                subDone.current = false
+                setEditSub({ oldSub: base, text: base })
+              }}
+            >
+              ＋ 세부공종
             </button>
             <button
               className="btn btn--sm btn--ghost"

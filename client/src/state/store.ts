@@ -86,6 +86,46 @@ function lsSet(key: string, value: string): void {
   }
 }
 
+// ── 마지막 작업 자동복원(수동 파일 저장/불러오기와 별개) ────────────────────────
+// 편집할 때마다 전체 프로젝트를 localStorage에 (디바운스로) 캐시해 두고, 앱을 다시
+// 열면 샘플 대신 그 프로젝트를 복원한다. 파일 저장 여부(dirty)도 함께 담아 '● 미저장'
+// 배지가 재시작 후에도 정확하게 유지된다. 자동저장이 아니라 어디까지나 임시 캐시라,
+// 실제 보관은 여전히 사용자가 '저장'으로 .json에 해야 한다(파일 형식은 순수 Project).
+const AUTOSAVE_KEY = 'hydronet:autosave'
+interface Autosave {
+  project: Project
+  dirty: boolean
+}
+
+/** localStorage 캐시에서 마지막 프로젝트를 읽는다. 없거나 형식이 깨졌으면 null. */
+function loadAutosave(): Autosave | null {
+  try {
+    const raw = typeof localStorage !== 'undefined' && localStorage.getItem(AUTOSAVE_KEY)
+    if (!raw) return null
+    const obj = JSON.parse(raw) as { project?: unknown; dirty?: unknown }
+    const p = obj?.project as Project | undefined
+    if (!p || !Array.isArray(p.tasks) || !Array.isArray(p.categories)) return null
+    return { project: p, dirty: !!obj.dirty }
+  } catch {
+    return null
+  }
+}
+
+let autosaveTimer: ReturnType<typeof setTimeout> | null = null
+/** 프로젝트 변경 시 캐시 저장을 살짝(400ms) 미뤄 연속 편집에서 과도한 직렬화를 피한다.
+ *  용량 초과(대형 CI 이미지 등)나 비브라우저 환경은 조용히 무시한다. */
+function persistAutosaveSoon(project: Project, dirty: boolean): void {
+  if (typeof localStorage === 'undefined') return
+  if (autosaveTimer) clearTimeout(autosaveTimer)
+  autosaveTimer = setTimeout(() => {
+    try {
+      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ project, dirty }))
+    } catch {
+      /* 용량 초과 등 — 자동복원은 최선노력, 실패해도 파일 저장이 진짜 보관 */
+    }
+  }, 400)
+}
+
 /** One task whose start moved during a 재계산 / 일정 정렬 pass. */
 export interface RecalcChange {
   id: ID
@@ -158,6 +198,9 @@ export interface EditorState {
   // tasks
   addTask: (categoryId: ID, partial?: Partial<Task>) => ID
   updateTask: (id: ID, patch: Partial<Task>, opts?: { history?: boolean }) => void
+  /** 세부공종(WBS 2단계) 일괄 이름변경 — 한 공종 안에서 subName===oldSub 인 공정들의 subName을
+   *  newSub로 바꾼다(사이드바 세부공종 헤더 더블클릭). 빈 문자열 newSub = 세부공종 해제(직속). */
+  renameSubName: (categoryId: ID, oldSub: string, newSub: string) => void
   setTaskStartLive: (id: ID, startDay: number) => void
   setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
@@ -433,7 +476,10 @@ export const useEditor = create<EditorState>()((set, get) => {
     }))
   }
 
-  const initial = withSchedule(normalize(createSampleProject())).project
+  // 재시작 시 마지막 작업 복원 — localStorage 캐시가 있으면 그걸, 없으면 샘플로 시작.
+  const cached = loadAutosave()
+  const initial = withSchedule(normalize(cached?.project ?? createSampleProject())).project
+  const initialDirty = cached?.dirty ?? false
 
   return {
     project: initial,
@@ -454,7 +500,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     // localStorage에 남아 기능이 숨겨진 채 갇히지 않도록 'pro'로 고정한다.
     uiMode: 'pro' as UiMode,
     autoCascade: true,
-    dirty: false,
+    dirty: initialDirty,
     warnings: [],
     recalcReport: null,
     past: [],
@@ -569,6 +615,17 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { cascade: affectsSchedule, history: opts?.history ?? true },
       )
+    },
+    renameSubName: (categoryId, oldSub, newSub) => {
+      const next = newSub.trim()
+      commit((p) => {
+        for (const t of p.tasks) {
+          if (t.categoryId === categoryId && (t.subName ?? '') === oldSub) {
+            if (next) t.subName = next
+            else t.subName = undefined
+          }
+        }
+      })
     },
     setTaskStartLive: (id, startDay) => {
       // No history push (gesture already snapshotted); cascade respected. 옮긴 막대의
@@ -1313,5 +1370,14 @@ export const useEditor = create<EditorState>()((set, get) => {
         logWarn('저장 실패', e)
       }
     },
+  }
+})
+
+// 프로젝트(또는 파일 저장 상태 dirty)가 바뀔 때마다 마지막 작업을 localStorage에 캐시한다.
+// 어느 경로(commit/undo/setProject/save…)로 바뀌든 한 곳에서 잡는다. save()는 project ref를
+// 안 바꾸고 dirty만 내리므로 dirty 변화도 함께 감시해야 배지가 정확히 캐시된다.
+useEditor.subscribe((s, prev) => {
+  if (s.project !== prev.project || s.dirty !== prev.dirty) {
+    persistAutosaveSoon(s.project, s.dirty)
   }
 })
