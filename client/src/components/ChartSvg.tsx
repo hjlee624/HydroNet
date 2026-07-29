@@ -106,14 +106,25 @@ function ChartSvgBase({
   // DUMMY opacity: "투명도 60%" → 60% transparent → 0.4 opaque.
   const DUMMY_OPACITY = 0.4
 
-  // Auto DUMMY fill: the empty span between consecutive 공정 sharing one row (한 줄
-  // 패키지의 공정 사이 빈 구간) is filled with the lane colour at low opacity so the
-  // package reads as one continuous band. Only multi-task rows produce gaps.
+  // 세부공정이 달린 상위 공정 이름들(사용 중인 subName). 이런 상위 공정은 막대가 없다(숨김).
+  const usedSubNames = new Set(
+    model.tasks.map((lt) => (lt.task.subName ?? '').trim()).filter((s) => s !== ''),
+  )
+  // DUMMY 채움: 같은 줄의 두 막대 **사이를 사용자가 화살표(링크)로 연결한 경우에만** 그 빈 구간을
+  // 공종색 옅게 채운다(요구). 링크 없이 그냥 인접하거나 세부공정을 추가한 것만으로는 더미를
+  // 만들지 않는다. 링크된 쌍(순서 무관)만 대상.
+  const linkedPairs = new Set<string>()
+  for (const l of project.links) {
+    const [a, b] = l.from < l.to ? [l.from, l.to] : [l.to, l.from]
+    linkedPairs.add(`${a}|${b}`)
+  }
   const gapRects: Array<{ x: number; y: number; w: number; h: number; color: string }> = []
   {
     const byRow = new Map<string, LaidTask[]>()
     for (const lt of model.tasks) {
       if (lt.isMilestone) continue
+      // 숨겨진 상위 공정(세부공정 보유)은 막대가 없으니 더미 계산에서 제외한다.
+      if (!(lt.task.subName ?? '').trim() && usedSubNames.has(lt.task.name)) continue
       const key = `${lt.categoryId}#${lt.subRow}`
       const arr = byRow.get(key)
       if (arr) arr.push(lt)
@@ -126,7 +137,9 @@ function ChartSvgBase({
         const prev = arr[i - 1],
           cur = arr[i]
         const gap = cur.startX - prev.endX
-        if (gap > 1.5)
+        const [a, b] =
+          prev.task.id < cur.task.id ? [prev.task.id, cur.task.id] : [cur.task.id, prev.task.id]
+        if (gap > 1.5 && linkedPairs.has(`${a}|${b}`))
           gapRects.push({
             x: prev.endX,
             y: prev.y,
@@ -147,11 +160,6 @@ function ChartSvgBase({
     model.tasks
       .filter((lt) => !(lt.task.subName ?? '').trim() && !lt.isMilestone)
       .map((lt) => lt.task.name),
-  )
-  // 실제로 세부공정이 달린 상위 공정 이름들(사용 중인 subName 집합). 이런 상위 공정은 자기 막대를
-  // 그리지 않고(세부공정 막대만 그 줄에 표시) 이름은 좌측 라벨로만 남긴다(check.png 요구).
-  const usedSubNames = new Set(
-    model.tasks.map((lt) => (lt.task.subName ?? '').trim()).filter((s) => s !== ''),
   )
 
   // Resolve a styleable text role into the props every <text> needs. font-family
@@ -494,8 +502,8 @@ function ChartSvgBase({
           )}
       </g>
 
-      {/* auto DUMMY fill — faded lane-colour band in the gaps between consecutive
-          공정 on one row (한 줄 패키지가 끊김 없이 이어져 보이도록). Exported too. */}
+      {/* DUMMY fill — 같은 줄에서 사용자가 화살표(링크)로 연결한 두 막대 사이의 빈 구간만
+          공종색 옅게 채운다(그 외/세부공정 추가엔 더미 없음). Exported too. */}
       {gapRects.length > 0 && (
         <g>
           {gapRects.map((r, i) => (
