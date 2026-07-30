@@ -4,7 +4,7 @@
 import { JSDOM } from 'jsdom'
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
-  url: 'http://localhost:5173/',
+  url: 'http://localhost:5273/',
   pretendToBeVisual: true,
 })
 const w = dom.window as unknown as Window & typeof globalThis

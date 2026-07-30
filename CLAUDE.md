@@ -12,7 +12,7 @@
 
 ## 자주 쓰는 명령 (dev 폴더)
 ```bash
-npm run dev                              # 클라 5173 + API 4020
+npm run dev                              # 클라 5273 + API 4020 (5173은 SYNC-BUILD 점유)
 start-lan.bat                            # LAN 단일포트(기본 4020)
 cd client && npm run build               # tsc --noEmit + vite
 cd client && npx tsx scripts/smoke.ts        # 엔진 검증

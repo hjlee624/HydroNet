@@ -16,7 +16,10 @@ export default defineConfig({
   base: './',
   plugins: [react(), ...(single ? [viteSingleFile()] : [])],
   server: {
-    port: 5173,
+    // 5173은 SYNC-BUILD(apps/web)가 점유 — HydroNet dev 클라는 5273 고정.
+    // strictPort: 포트가 막혀 있으면 조용히 5274로 밀리지 말고 즉시 실패.
+    port: 5273,
+    strictPort: true,
     proxy: {
       '/api': 'http://localhost:4020',
     },

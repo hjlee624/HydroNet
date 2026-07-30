@@ -171,7 +171,7 @@ npm install        # 루트 + client + server 일괄 설치 (postinstall)
 ### 개발 모드 (서버 + 클라이언트 동시 실행)
 ```bash
 npm run dev
-# 클라이언트: http://localhost:5173
+# 클라이언트: http://localhost:5273
 # 서버 API : http://localhost:4020  (Vite가 /api 프록시)
 ```
 > 서버를 띄우지 않아도 클라이언트는 동작합니다 — 이 경우 프로젝트는 브라우저 `localStorage`에 저장됩니다.
