@@ -115,43 +115,33 @@ HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 �
 
 ```mermaid
 flowchart TD
-    subgraph Client["client — React 18 + Vite + TS (모든 핵심 로직)"]
-        UI["components/<br/>ChartSvg · ChartCanvas · TopBar · Sidebar · Inspector"]
-        Store["state/store.ts (zustand)<br/>Project 단일 문서 · undo/redo · normalize · withSchedule"]
-        subgraph Engine["engine/ — 순수 로직 (DOM 비의존)"]
-            Sched["scheduling.ts<br/>CPM · 주공정 · 연쇄수정"]
-            Layout["layout.ts<br/>좌표 · 레인 · 타임라인 · 우기밴드"]
-            Route["routing.ts<br/>의존성 화살표 라우팅"]
-            Paper["paper.ts<br/>A4~A0 용지 치수/픽셀"]
-            Kpis["kpis.ts<br/>EVM · SPI/CPI · 진척 단일 셀렉터"]
-            Mirror["mirror.ts<br/>예정공정표 ↔ 마일스톤 연동"]
-            Dates["dates.ts<br/>날짜 ↔ Day offset"]
-        end
-        Export["export/<br/>exporter.ts (SVG/PNG/JPG/PDF) · dxf.ts (DXF)"]
-        FileIO["state/fileIO.ts<br/>File System Access API"]
-        Api["state/api.ts · logger.ts"]
+    subgraph Client["Client — React + Vite (모든 핵심 로직)"]
+        UI["components/ (ChartSvg · ChartCanvas · TopBar · Sidebar · Inspector)"]
+        Store["state/store.ts — zustand 단일 문서 · undo/redo"]
+        Engine["engine/ 순수 로직 — CPM · 레이아웃 · 라우팅 · KPI"]
+        FileIO["state/fileIO.ts — File System Access API"]
+        Export["export/ — SVG · PNG · JPG · PDF · DXF"]
+        Logger["state/logger.ts"]
     end
 
-    subgraph Server["server — Express (순수 JS ESM)"]
-        Express["src/index.js<br/>/api 파일저장 · /fonts · SPA 정적호스팅"]
-        Data[("data/ *.json<br/>프로젝트 저장소")]
-        ErrLog[["error.log (ABS_RULE)"]]
+    subgraph Server["Server — Express (경량)"]
+        Express["src/index.js — /fonts 글꼴 · SPA 정적호스팅 · /api/log 수신"]
     end
 
-    JsonFile[[".json 프로젝트 파일<br/>(사용자 경로 직접 지정)"]]
-    Local[("localStorage<br/>(서버 없을 때 폴백)")]
+    subgraph Storage["저장소"]
+        JsonFile["사용자가 고른 .json 파일"]
+        Local["localStorage — 재시작 복원 캐시"]
+        ErrLog["error.log"]
+    end
 
     UI <--> Store
     Store --> Engine
     Engine --> UI
     Store --> Export
-    Store --> FileIO
-    FileIO -->|저장/불러오기| JsonFile
-    Store -->|저장 요청| Api
-    Api -->|PUT /api/projects| Express
-    Express --> Data
-    Api -->|서버 없으면| Local
-    Api -.->|POST /api/log| Express
+    Store -->|저장·불러오기| FileIO
+    FileIO --> JsonFile
+    Store -->|편집 시 자동 캐시| Local
+    Logger -->|POST /api/log| Express
     Express --> ErrLog
     UI -.->|글꼴 /fonts| Express
 ```
