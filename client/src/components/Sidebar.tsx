@@ -558,7 +558,29 @@ function CategoryNode({
         >
           {cat.collapsed ? '▸' : '▾'}
         </button>
-        <span className="cat__swatch" style={{ background: cat.color }} />
+        {/* 색상 스와치 = 공종 색상 편집기. 바꾸면 이 공종의 모든 공정 색도 함께 바뀐다(요구). */}
+        <label
+          className="cat__swatch"
+          style={{ background: cat.color, cursor: 'pointer', position: 'relative' }}
+          title="클릭하여 공종 색상 변경 — 하위 공정 색도 모두 함께 바뀝니다"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <input
+            type="color"
+            value={/^#[0-9a-f]{6}$/i.test(cat.color) ? cat.color : '#7c93a8'}
+            onChange={(e) => a().setCategoryColor(cat.id, e.target.value)}
+            style={{
+              position: 'absolute',
+              inset: 0,
+              width: '100%',
+              height: '100%',
+              opacity: 0,
+              border: 'none',
+              padding: 0,
+              cursor: 'pointer',
+            }}
+          />
+        </label>
         {editName !== null ? (
           <input
             className="cat__edit"

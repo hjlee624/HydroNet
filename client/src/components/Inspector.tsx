@@ -248,9 +248,17 @@ function TextStyleInspector({ role }: { role: TextRole }) {
 function TaskInspector({ id }: { id: string }) {
   const project = useEditor((s) => s.project)
   const pro = useEditor((s) => s.uiMode) === 'pro'
+  const selectedTaskIds = useEditor((s) => s.selectedTaskIds)
   const task = project.tasks.find((t) => t.id === id)
   const a = useEditor.getState
   if (!task) return <div className="empty-hint">선택된 공정이 없습니다.</div>
+
+  // 색상 변경은 다중 선택 시 **선택된 공정 모두**에 적용(단일이면 그 하나만).
+  const multiSel = selectedTaskIds.length > 1
+  const applyColor = (color: string, opts?: { history?: boolean }) => {
+    if (multiSel) a().setTasksColor(selectedTaskIds, color, opts)
+    else a().updateTask(id, { color }, opts)
+  }
 
   const startISO = toISO(dayToDate(project.startDate, task.start))
   const finishISO = toISO(dayToDate(project.startDate, task.start + task.duration))
@@ -361,7 +369,7 @@ function TaskInspector({ id }: { id: string }) {
             style={{ padding: 2 }}
             type="color"
             value={currentColor}
-            onChange={(e) => a().updateTask(id, { color: e.target.value }, { history: false })}
+            onChange={(e) => applyColor(e.target.value, { history: false })}
           />
         </div>
         <div className="field">
@@ -369,6 +377,11 @@ function TaskInspector({ id }: { id: string }) {
           <input className="input" value={finishISO} disabled />
         </div>
       </div>
+      {multiSel && (
+        <p className="note" style={{ marginTop: 0 }}>
+          공정 <b>{selectedTaskIds.length}개</b>가 선택되어 있어 색상은 선택된 공정 전체에 적용됩니다.
+        </p>
+      )}
 
       <div className="field">
         <label>Palette · 즐겨찾기 (최대 {PALETTE_MAX})</label>
@@ -382,7 +395,7 @@ function TaskInspector({ id }: { id: string }) {
                 className="palette__sw"
                 style={{ background: c }}
                 title={`${c} · 클릭 적용 / 우클릭 삭제`}
-                onClick={() => a().updateTask(id, { color: c })}
+                onClick={() => applyColor(c)}
                 onContextMenu={(e) => {
                   e.preventDefault()
                   a().removePaletteColor(i)
@@ -451,6 +464,8 @@ function LinkInspector({ id }: { id: string }) {
   if (!link) return <div className="empty-hint">선택된 연결이 없습니다.</div>
   const from = project.tasks.find((t) => t.id === link.from)
   const to = project.tasks.find((t) => t.id === link.to)
+  // 두께 슬라이더 기본값을 실제 자동 두께(주공정 2·그 외 1.3)에 맞춰 표시(미지정 시 렌더와 일치).
+  const autoWidth = from?.critical && to?.critical ? 2 : 1.3
 
   return (
     <>
@@ -500,6 +515,36 @@ function LinkInspector({ id }: { id: string }) {
           <option value="dotted">····· 점선</option>
         </select>
       </div>
+      <div className="field">
+        <label>
+          화살표 선 두께{' '}
+          <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
+            {(link.width ?? autoWidth).toFixed(1)}px{link.width == null ? ' (자동)' : ''}
+          </span>
+        </label>
+        <input
+          type="range"
+          min={1}
+          max={8}
+          step={0.5}
+          value={link.width ?? autoWidth}
+          onChange={(e) => a().updateLink(id, { width: Number(e.target.value) })}
+          aria-label="화살표 선 두께"
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+      </div>
+      <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={link.showDummy !== false}
+          onChange={(e) => a().updateLink(id, { showDummy: e.target.checked })}
+        />
+        연결 음영(DUMMY) 표시
+      </label>
+      <p className="note" style={{ marginTop: 0 }}>
+        같은 줄에서 연결된 두 공정 <b>사이 빈 구간</b>을 공종색 옅게 채우는 음영입니다. 끄면 그 구간을
+        비웁니다(다른 줄로 이어지는 연결에는 영향 없음).
+      </p>
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteLink(id)}>
         연결 삭제
       </button>

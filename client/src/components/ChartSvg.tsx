@@ -119,10 +119,16 @@ function ChartSvgBase({
   // DUMMY 채움: 같은 줄의 두 막대 **사이를 사용자가 화살표(링크)로 연결한 경우에만** 그 빈 구간을
   // 공종색 옅게 채운다(요구). 링크 없이 그냥 인접하거나 세부공정을 추가한 것만으로는 더미를
   // 만들지 않는다. 링크된 쌍(순서 무관)만 대상.
+  // 링크된 쌍(순서 무관) + 그 링크의 DUMMY 음영 표시 여부(link.showDummy). false면 그 구간은
+  // 채우지 않는다(연결 속성의 '연결 음영' 토글). 기본(undefined/true)은 표시.
   const linkedPairs = new Set<string>()
+  const dummyShownByPair = new Map<string, boolean>()
   for (const l of project.links) {
     const [a, b] = l.from < l.to ? [l.from, l.to] : [l.to, l.from]
-    linkedPairs.add(`${a}|${b}`)
+    const key = `${a}|${b}`
+    linkedPairs.add(key)
+    // 한 쌍에 여러 링크가 있으면 하나라도 표시면 표시(OR).
+    dummyShownByPair.set(key, (dummyShownByPair.get(key) ?? false) || l.showDummy !== false)
   }
   const gapRects: Array<{ x: number; y: number; w: number; h: number; color: string }> = []
   {
@@ -145,7 +151,7 @@ function ChartSvgBase({
         const gap = cur.startX - prev.endX
         const [a, b] =
           prev.task.id < cur.task.id ? [prev.task.id, cur.task.id] : [cur.task.id, prev.task.id]
-        if (gap > 1.5 && linkedPairs.has(`${a}|${b}`))
+        if (gap > 1.5 && linkedPairs.has(`${a}|${b}`) && dummyShownByPair.get(`${a}|${b}`) !== false)
           gapRects.push({
             x: prev.endX,
             y: prev.y,
@@ -539,6 +545,9 @@ function ChartSvgBase({
                   : crit
                     ? undefined
                     : '5 3'
+          // 사용자 지정 선 두께(연결 속성) 우선, 없으면 자동(주공정 2·그 외 1.3).
+          const baseW = r.width ?? (crit ? 2 : 1.3)
+          const lineW = selected ? Math.max(2.4, baseW) : baseW
           return (
             <g key={r.id}>
               {/* Invisible fat hit area: pointer-events:'stroke' makes the WHOLE
@@ -550,7 +559,7 @@ function ChartSvgBase({
                 d={r.d}
                 fill="none"
                 stroke="transparent"
-                strokeWidth={14}
+                strokeWidth={Math.max(14, lineW + 6)}
                 strokeLinecap="round"
                 data-export-hide="1"
                 style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
@@ -563,7 +572,7 @@ function ChartSvgBase({
                 d={r.d}
                 fill="none"
                 stroke={selected ? colors.primary : crit ? colors.critical : colors.steel}
-                strokeWidth={selected ? 2.4 : crit ? 2 : 1.3}
+                strokeWidth={lineW}
                 strokeDasharray={dash}
                 markerEnd={`url(#${crit ? 'hn-arrow-crit' : 'hn-arrow'})`}
                 style={{ pointerEvents: 'none' }}
@@ -685,11 +694,12 @@ function ChartSvgBase({
               }}
               style={mirror ? { opacity: 0.6 } : undefined}
             >
-              {/* 공정명은 항상 막대 위에 표기. 막대 선택을 방해하지 않도록 클릭 통과(pointer-events
-                  none) — 칸이 좁아도 막대가 잘 잡힌다. 텍스트 편집은 우측 인스펙터/사이드바에서. */}
+              {/* 공정명은 항상 막대 위 **중앙**에 표기(요구). 막대 선택을 방해하지 않도록 클릭
+                  통과(pointer-events none) — 칸이 좁아도 막대가 잘 잡힌다. 텍스트 편집은 인스펙터/사이드바. */}
               <text
-                x={lt.x}
+                x={lt.x + lt.w / 2}
                 y={lt.y - 3.5}
+                textAnchor="middle"
                 {...roleAttrs('taskName')}
                 {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
                 style={{ ...roleAttrs('taskName').style, pointerEvents: 'none' }}

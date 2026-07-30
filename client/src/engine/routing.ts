@@ -25,6 +25,8 @@ export interface RoutedLink {
   type: Link['type']
   /** User-chosen line style (실선/파선/점선); undefined = auto. */
   style?: Link['style']
+  /** User-chosen line width (px); undefined = auto. */
+  width?: Link['width']
 }
 
 const STUB = 12
@@ -164,6 +166,7 @@ export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
       critical: !!(a.critical && b.critical),
       type: link.type,
       style: link.style,
+      width: link.width,
     })
   }
   return routed

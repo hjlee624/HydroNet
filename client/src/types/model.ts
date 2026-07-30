@@ -118,6 +118,11 @@ export interface Link {
   /** Line style of the arrow (실선/파선/점선). Undefined = auto (critical=solid,
    *  else dashed). User-set via the 연결 속성 inspector. */
   style?: LinkStyle
+  /** Arrow line width in px. Undefined = auto (critical=2, else 1.3). 연결 속성에서 조절. */
+  width?: number
+  /** 같은 줄로 연결된 두 공정 사이 빈 구간의 DUMMY 음영(공종색 옅게) 표시 여부.
+   *  undefined/true = 표시(기존 동작), false = 숨김. 연결 속성에서 토글. */
+  showDummy?: boolean
 }
 
 /**

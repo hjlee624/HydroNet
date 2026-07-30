@@ -199,6 +199,8 @@ export interface EditorState {
   /** 공정 추가. opts.afterId가 있으면 그 공정 바로 다음에 끼워 넣는다(사이드바 행별 ➕ 삽입). */
   addTask: (categoryId: ID, partial?: Partial<Task>, opts?: { afterId?: ID }) => ID
   updateTask: (id: ID, patch: Partial<Task>, opts?: { history?: boolean }) => void
+  /** 여러 공정 색상을 한 번에 지정(다중 선택 색 변경). ids가 1개면 그 하나만. */
+  setTasksColor: (ids: ID[], color: string, opts?: { history?: boolean }) => void
   /** 세부공종(WBS 2단계) 일괄 이름변경 — 한 공종 안에서 subName===oldSub 인 공정들의 subName을
    *  newSub로 바꾼다(사이드바 세부공종 헤더 더블클릭). 빈 문자열 newSub = 세부공종 해제(직속). */
   renameSubName: (categoryId: ID, oldSub: string, newSub: string) => void
@@ -235,6 +237,9 @@ export interface EditorState {
   // categories
   addCategory: (partial?: Partial<Category>) => ID
   updateCategory: (id: ID, patch: Partial<Category>) => void
+  /** 공종 색상 변경 — 그 공종에 속한 모든 공정의 색 override를 지워 새 공종색을 따르게 한다
+   *  (사이드바 색상 스와치, 하위 공정 색도 함께 변경). */
+  setCategoryColor: (id: ID, color: string) => void
   deleteCategory: (id: ID) => void
   toggleCollapse: (id: ID) => void
   moveCategory: (id: ID, dir: -1 | 1) => void
@@ -685,6 +690,15 @@ export const useEditor = create<EditorState>()((set, get) => {
         { cascade: affectsSchedule, history: opts?.history ?? true },
       )
     },
+    setTasksColor: (ids, color, opts) => {
+      const set = new Set(ids)
+      commit(
+        (p) => {
+          for (const t of p.tasks) if (set.has(t.id)) t.color = color
+        },
+        { history: opts?.history ?? true },
+      )
+    },
     renameSubName: (categoryId, oldSub, newSub) => {
       const next = newSub.trim()
       commit((p) => {
@@ -900,6 +914,17 @@ export const useEditor = create<EditorState>()((set, get) => {
         const c = p.categories.find((x) => x.id === id)
         if (c) Object.assign(c, patch)
       }),
+    setCategoryColor: (id, color) =>
+      commit(
+        (p) => {
+          const c = p.categories.find((x) => x.id === id)
+          if (!c) return
+          c.color = color
+          // 하위 공정의 개별 색 override 제거 → 전부 새 공종색을 따른다(요구: 다 바뀌게).
+          for (const t of p.tasks) if (t.categoryId === id) t.color = undefined
+        },
+        { history: false },
+      ),
     deleteCategory: (id) => {
       commit((p) => {
         p.categories = p.categories.filter((c) => c.id !== id)
