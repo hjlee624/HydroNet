@@ -668,7 +668,7 @@ function ProjectInspector() {
           checked={project.view.showGrid}
           onChange={(e) => a().setView({ showGrid: e.target.checked })}
         />
-        격자 표시
+        행 구분선(가로 격자) 표시
       </label>
       <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
         <input
@@ -686,6 +686,11 @@ function ProjectInspector() {
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>
+        공사기간 구분선
+      </div>
+
+      {/* 연도 구분선 (제목↔연도 가로선 포함) */}
+      <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--charcoal)', marginBottom: 6 }}>
         연도 구분선
       </div>
       <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
@@ -694,7 +699,7 @@ function ProjectInspector() {
           checked={project.view.showYearLine !== false}
           onChange={(e) => a().setView({ showYearLine: e.target.checked })}
         />
-        연도 구분선 표시
+        연도 구분선 표시(제목↔연도 가로선 포함)
       </label>
       <div className="field">
         <label>
@@ -715,9 +720,41 @@ function ProjectInspector() {
           style={{ width: '100%', accentColor: 'var(--primary)' }}
         />
       </div>
+
+      {/* 월 구분선 */}
+      <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--charcoal)', margin: '14px 0 6px' }}>
+        월 구분선
+      </div>
+      <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={project.view.showMonthLine !== false}
+          onChange={(e) => a().setView({ showMonthLine: e.target.checked })}
+        />
+        월 구분선 표시
+      </label>
+      <div className="field">
+        <label>
+          선 두께{' '}
+          <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
+            {(project.view.monthLineWidth ?? 1).toFixed(1)}px
+          </span>
+        </label>
+        <input
+          type="range"
+          min={1}
+          max={20}
+          step={0.5}
+          value={project.view.monthLineWidth ?? 1}
+          disabled={project.view.showMonthLine === false}
+          onChange={(e) => a().setView({ monthLineWidth: Number(e.target.value) })}
+          aria-label="월 구분선 두께"
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+      </div>
       <p className="note" style={{ marginTop: 0 }}>
-        해가 바뀌는 자리의 <b>세로선</b>과 <b>제목↔연도 가로 구분선</b>을 함께 진하게 그어 연 단위 구획을
-        강조합니다(월 격자와 별개). 두께(최대 20px)를 조절하거나 끌 수 있습니다.
+        공사기간을 세로선으로 나눕니다. <b>연도 구분선</b>은 해 경계(+제목↔연도 가로선), <b>월 구분선</b>은 달
+        경계에 긋습니다. 각각 표시/두께(최대 20px)를 조절할 수 있습니다.
       </p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />

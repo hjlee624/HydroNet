@@ -100,9 +100,11 @@ function ChartSvgBase({
   } = model
   const yearRowH = headerHeight * 0.46
   const chartBottom = chartTop + chartHeight
-  // 연도 구분선 — 표시/두께는 사용자 조절(월 격자 showGrid와 독립).
+  // 공사기간 구분선(세로) — 연도·월 각각 표시/두께 사용자 조절. showGrid(가로 행 구분선)와 독립.
   const showYearLine = project.view.showYearLine !== false
   const yearLineW = project.view.yearLineWidth ?? 2.5
+  const showMonthLine = project.view.showMonthLine !== false
+  const monthLineW = project.view.monthLineWidth ?? 1
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
   const selSet = new Set(selectedTaskIds)
   const singleSel = selectedTaskIds.length <= 1
@@ -246,8 +248,8 @@ function ChartSvgBase({
           </g>
         ))}
 
-      {/* grid: month verticals + lane separators */}
-      {showGrid && (
+      {/* 월 구분선(세로) — 공사기간 구분선의 월 단위. showMonthLine·monthLineWidth로 표시/두께 조절. */}
+      {showMonthLine && (
         <g>
           {model.months.map((m, i) => (
             <line
@@ -257,9 +259,15 @@ function ChartSvgBase({
               x2={m.x}
               y2={chartBottom}
               stroke={colors.gridLine}
-              strokeWidth={1}
+              strokeWidth={monthLineW}
             />
           ))}
+        </g>
+      )}
+
+      {/* 가로 행 구분선(레인 경계) — showGrid('행 구분선 표시')로 제어. 세로 시간 구분선과 별개. */}
+      {showGrid && (
+        <g>
           {model.categories.map((c) => (
             <line
               key={`ls-${c.id}`}
@@ -274,7 +282,7 @@ function ChartSvgBase({
         </g>
       )}
 
-      {/* 연도 구분선 — 월 격자와 독립 토글·두께. 격자를 꺼도 연 구획은 남길 수 있게 별도 그룹. */}
+      {/* 연도 구분선(세로) — 공사기간 구분선의 연 단위. 월/행 격자와 독립(격자를 꺼도 연 구획 유지). */}
       {showYearLine && (
         <g>
           {model.years.map((y, i) => (
@@ -396,14 +404,17 @@ function ChartSvgBase({
         ))}
         {model.months.map((m, i) => (
           <g key={`mo-${i}`}>
-            <line
-              x1={m.x}
-              y1={yearRowH}
-              x2={m.x}
-              y2={headerHeight}
-              stroke={colors.beigeDeep}
-              strokeWidth={0.75}
-            />
+            {/* 월 눈금선 — 월 구분선 설정을 따름(라벨은 항상 표시). */}
+            {showMonthLine && (
+              <line
+                x1={m.x}
+                y1={yearRowH}
+                x2={m.x}
+                y2={headerHeight}
+                stroke={colors.beigeDeep}
+                strokeWidth={monthLineW}
+              />
+            )}
             <text
               x={m.x + m.width / 2}
               y={yearRowH + (headerHeight - yearRowH) * 0.62}

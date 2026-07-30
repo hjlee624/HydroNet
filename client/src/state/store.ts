@@ -438,9 +438,12 @@ function normalize(project: Project): Project {
       displayEnd: v.displayEnd,
       mirrorPlan: v.mirrorPlan,
       mirrorHidden: v.mirrorHidden,
-      // 연도 구분선 — 기본 ON·두께 2.5px(월 격자보다 굵게). 사용자가 인스펙터에서 조절.
+      // 공사기간 구분선 — 연도(세로+제목가로) 기본 ON·2.5px, 월(세로) 기본 ON·1px. 각각 인스펙터 조절.
       showYearLine: v.showYearLine !== false,
       yearLineWidth: v.yearLineWidth ?? 2.5,
+      // 월 구분선 기본값은 구버전의 showGrid를 승계(격자 끄고 저장했던 도면은 월선도 꺼진 채 유지).
+      showMonthLine: v.showMonthLine ?? v.showGrid ?? true,
+      monthLineWidth: v.monthLineWidth ?? 1,
     }))(project.view ?? ({} as Partial<ViewSettings>)),
   }
 }

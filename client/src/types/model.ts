@@ -181,10 +181,14 @@ export interface ViewSettings {
   mirrorPlan?: boolean
   /** 미러로 가져온 예정 공정 중 '마일스톤에서만' 숨긴 공정 id들(예정 원본은 불변). */
   mirrorHidden?: ID[]
-  /** 연도 경계 세로 구분선 + 제목↔연도 가로 구분선 표시 여부(기본 ON). 월 격자(showGrid)와 독립. */
+  /** [공사기간 구분선] 연도 경계 세로 구분선 + 제목↔연도 가로 구분선 표시 여부(기본 ON). */
   showYearLine?: boolean
-  /** 연도 구분선(세로 + 제목↔연도 가로) 두께(px, 기본 2.5, 1~20 사용자 조절). 월 격자보다 굵게 연 구획 강조. */
+  /** [공사기간 구분선] 연도 구분선(세로 + 제목↔연도 가로) 두께(px, 기본 2.5, 1~20 사용자 조절). */
   yearLineWidth?: number
+  /** [공사기간 구분선] 월 경계 세로 구분선 표시 여부(기본 ON). showGrid(가로 행 구분선)와 독립. */
+  showMonthLine?: boolean
+  /** [공사기간 구분선] 월 구분선(세로) 두께(px, 기본 1, 1~20 사용자 조절). */
+  monthLineWidth?: number
 }
 
 /** A CI/logo image (data URL) with its on-drawing box size in px. */

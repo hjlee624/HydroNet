@@ -262,7 +262,9 @@ export function projectToDxf(project: Project): string {
 
   // ── grid: month verticals, year verticals, lane separators ──
   const chartBottom = model.chartTop + model.chartHeight
-  for (const m of model.months) line('HN_GRID', m.x, model.chartTop, m.x, chartBottom, 9)
+  // 월 구분선(세로) — 표시 ON일 때만. R12는 선 두께가 없어 화면의 두께 조절은 미반영.
+  if (project.view.showMonthLine !== false)
+    for (const m of model.months) line('HN_GRID', m.x, model.chartTop, m.x, chartBottom, 9)
   // 연도 구분선은 월 격자(ACI 9, 연회색)보다 진한 회색(ACI 8)으로 — 화면과 동일하게 연 구획 강조.
   // R12는 선 두께가 없어 화면의 두께 조절은 미반영, 표시 ON/OFF만 반영한다.
   if (project.view.showYearLine !== false)
@@ -285,8 +287,9 @@ export function projectToDxf(project: Project): string {
     7,
   ) // 연도↔월
   line('HN_AXIS', model.labelWidth, model.chartTop, model.contentWidth, model.chartTop, 7) // 헤더↔차트
-  for (const m of model.months)
-    line('HN_GRID', m.x, model.headerTop + yearRowDxf, m.x, model.chartTop, 9) // 월 눈금
+  if (project.view.showMonthLine !== false)
+    for (const m of model.months)
+      line('HN_GRID', m.x, model.headerTop + yearRowDxf, m.x, model.chartTop, 9) // 월 눈금
   polyline(
     'HN_AXIS',
     [
