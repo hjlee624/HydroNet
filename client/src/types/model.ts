@@ -235,35 +235,6 @@ export interface Sheet {
   rainySeasons: RainySeason[]
 }
 
-/** A row in a package module (품질/안전/문서/원가/… 모듈의 한 항목). `values`는
- *  해당 모듈의 필드 스키마(data/modules.ts ModuleField[])에 따라 키가 정해진다. */
-export interface ModuleRecord {
-  id: ID
-  values: Record<string, string>
-}
-
-/** 베이스라인 스냅샷의 한 공정(계획 시작·기간 박제). */
-export interface BaselineTask {
-  id: ID
-  start: number
-  duration: number
-}
-
-/** 기준선(베이스라인) — 어느 시점의 계획 일정을 박제해 이후 표류(드리프트)를 잰다.
- *  사업 단위(시트 전환에도 보존). 없으면 미설정(구버전 호환). */
-export interface Baseline {
-  /** 박제 시각(ISO timestamp). */
-  capturedAt: string
-  /** 박제 기준일(YYYY-MM-DD). */
-  asOf: string
-  /** 박제 당시 활성 공정표 시트 id — 다른 시트로 전환하면 표류 비교가 무의미해 가린다.
-   *  단일 공정표(구버전)에선 undefined. */
-  sheetId?: ID
-  startDay: number
-  endDay: number
-  tasks: BaselineTask[]
-}
-
 export interface Project {
   id: ID
   name: string
@@ -272,10 +243,6 @@ export interface Project {
   /** 시설물 유형 키(data/facilities.ts FACILITY_TYPES). 새 사업 생성 시 선택하며,
    *  예정공정표·마일스톤(시공 패키지) 프리셋을 결정한다. 구버전엔 없음. */
   facility?: string
-  /** 패키지 모듈별 기록(키 = ModuleId). 기록형 모듈(품질·안전·문서·원가 등)에서 사용. */
-  modules?: Record<string, ModuleRecord[]>
-  /** 기준선(베이스라인) 스냅샷. 없으면 미설정(구버전 호환). */
-  baseline?: Baseline
   /** 비활성 공정표 시트들(활성 시트는 최상위 categories/tasks/links/rainySeasons). */
   sheets?: Sheet[]
   /** 현재 편집 중인 시트 메타. 없으면 단일 공정표(구버전 호환). */

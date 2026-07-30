@@ -33,7 +33,7 @@ import {
 } from '../engine/scheduling'
 import { fitToPaperView } from '../engine/layout'
 import { paperMm } from '../engine/paper'
-import { daysInMonth, doyToMonthDay, monthDayToDoy, toISO } from '../engine/dates'
+import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
 import { createSampleProject } from '../data/sampleProject'
 import { DEFAULT_PALETTE } from '../styles/theme'
 import { saveProjectToFile } from './fileIO'
@@ -222,18 +222,6 @@ export interface EditorState {
     mode: 'merge' | 'above' | 'below',
     opts?: { history?: boolean },
   ) => void
-  /** 실적 진척률(0–100) 설정 — 진척·실적 모듈. */
-  setTaskProgress: (id: ID, progress: number) => void
-
-  // package modules (품질·안전·문서·원가 등 기록형 모듈)
-  addModuleRecord: (moduleId: string, values?: Record<string, string>) => ID
-  updateModuleRecord: (moduleId: string, id: ID, values: Record<string, string>) => void
-  deleteModuleRecord: (moduleId: string, id: ID) => void
-
-  // baseline (기준선) — 현재 일정을 박제해 이후 표류를 측정(대시보드 EVM 연계)
-  captureBaseline: () => void
-  clearBaseline: () => void
-
   // categories
   addCategory: (partial?: Partial<Category>) => ID
   updateCategory: (id: ID, patch: Partial<Category>) => void
@@ -829,71 +817,6 @@ export const useEditor = create<EditorState>()((set, get) => {
       )
       set({ selectedTaskId: id, selectedLinkId: null })
     },
-    setTaskProgress: (id, progress) =>
-      commit(
-        (p) => {
-          const t = p.tasks.find((x) => x.id === id)
-          if (t) t.progress = Math.max(0, Math.min(100, Math.round(progress)))
-        },
-        { history: false },
-      ),
-
-    addModuleRecord: (moduleId, values = {}) => {
-      const id = `m-${nanoid(8)}`
-      commit(
-        (p) => {
-          if (!p.modules) p.modules = {}
-          p.modules[moduleId] = [...(p.modules[moduleId] ?? []), { id, values }]
-        },
-        { history: false },
-      )
-      return id
-    },
-    updateModuleRecord: (moduleId, id, values) =>
-      commit(
-        (p) => {
-          const r = p.modules?.[moduleId]?.find((x) => x.id === id)
-          if (r) r.values = { ...r.values, ...values }
-        },
-        { history: false },
-      ),
-    deleteModuleRecord: (moduleId, id) =>
-      commit(
-        (p) => {
-          if (p.modules?.[moduleId])
-            p.modules[moduleId] = p.modules[moduleId].filter((x) => x.id !== id)
-        },
-        { history: false },
-      ),
-
-    captureBaseline: () => {
-      commit((p) => {
-        const catById = new Map(p.categories.map((c) => [c.id, c]))
-        const vis = p.tasks.filter((t) => {
-          const c = catById.get(t.categoryId)
-          return c && (p.commissioningEnabled || !c.isCommissioning) && !t.hidden && !c.hidden
-        })
-        const starts = vis.map((t) => t.es ?? t.start)
-        const ends = vis.map((t) => t.ef ?? t.start + t.duration)
-        p.baseline = {
-          capturedAt: new Date().toISOString(),
-          asOf: toISO(new Date()),
-          // 활성 공정표 id를 박제 — 시트 전환 후엔 표류 비교가 무의미하므로 셀렉터가 가린다.
-          sheetId: p.activeSheet?.id,
-          startDay: starts.length ? Math.min(...starts) : 0,
-          endDay: ends.length ? Math.max(...ends) : 0,
-          tasks: p.tasks.map((t) => ({ id: t.id, start: t.es ?? t.start, duration: t.duration })),
-        }
-      })
-      logInfo('현재 일정을 기준선(베이스라인)으로 저장했습니다.')
-    },
-    clearBaseline: () => {
-      commit((p) => {
-        delete p.baseline
-      })
-      logInfo('기준선을 해제했습니다.')
-    },
-
     addCategory: (partial) => {
       const id = `c-${nanoid(8)}`
       commit((p) => {
