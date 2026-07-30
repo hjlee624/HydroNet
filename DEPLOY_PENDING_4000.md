@@ -3,7 +3,7 @@
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
 ## ⏳ 대기 (2026-07-30 — 클라이언트 전용, dist 스왑)
-- **마일스톤 연도 구분선 진하게** — 연도 경계 세로선이 월 격자와 거의 같은 연베이지라 연 단위 구획이 안 보이던 문제. 전용 토큰 `colors.yearLine`(#A89B85, 진한 토프) 추가 → 본문 격자·헤더 연도 구분선에 적용(strokeWidth 1→1.5). 가로 레인 구분선이 함께 쓰던 `gridLineStrong`은 무변경. DXF 파리티: 연도 세로선 ACI 9→8(진회색, LINE/SEQEND 수 불변). `theme.ts`·`ChartSvg.tsx`·`export/dxf.ts` 변경.
+- **마일스톤 연도 구분선 진하게 + 사용자 조절** — 연도 경계 세로선이 월 격자와 거의 같은 연베이지라 연 단위 구획이 안 보이던 문제. ① 전용 토큰 `colors.yearLine`(#A89B85, 진한 토프) 추가. ② `ViewSettings.showYearLine`(기본 ON)·`yearLineWidth`(기본 2.5px) 신설 → 연도 세로선을 월 격자(`showGrid`)에서 분리한 독립 그룹으로(격자를 꺼도 연 구획 유지). 본문·헤더 연도선 모두 표시/두께 설정을 따름. ③ 속성 패널(ProjectInspector) 순서 = **표시 옵션 → 연도 구분선(신규: 표시 토글 + 두께 슬라이더 1~6px) → CI(로고) → 우기(雨期) 보정**. ④ DXF 파리티: 연도 세로선 ACI 9→8(진회색), 표시 OFF면 미출력(R12는 선두께 없어 두께는 화면 전용, LINE/SEQEND 수 불변). `theme.ts`·`model.ts`·`store.ts`·`ChartSvg.tsx`·`Inspector.tsx`·`export/dxf.ts` 변경.
 - **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html`. 검증: build·smoke·mount·dxf-check·build:single·check-single·render-preview 통과.
 
 ## ⏳ 대기 (2026-07-01 — 클라이언트 전용, dist 스왑)
