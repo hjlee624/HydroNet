@@ -100,6 +100,9 @@ function ChartSvgBase({
   } = model
   const yearRowH = headerHeight * 0.46
   const chartBottom = chartTop + chartHeight
+  // 연도 구분선 — 표시/두께는 사용자 조절(월 격자 showGrid와 독립).
+  const showYearLine = project.view.showYearLine !== false
+  const yearLineW = project.view.yearLineWidth ?? 2.5
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
   const selSet = new Set(selectedTaskIds)
   const singleSel = selectedTaskIds.length <= 1
@@ -257,17 +260,6 @@ function ChartSvgBase({
               strokeWidth={1}
             />
           ))}
-          {model.years.map((y, i) => (
-            <line
-              key={`yv-${i}`}
-              x1={y.x}
-              y1={headerTop}
-              x2={y.x}
-              y2={chartBottom}
-              stroke={colors.yearLine}
-              strokeWidth={1.5}
-            />
-          ))}
           {model.categories.map((c) => (
             <line
               key={`ls-${c.id}`}
@@ -277,6 +269,23 @@ function ChartSvgBase({
               y2={c.y + c.height}
               stroke={colors.gridLineStrong}
               strokeWidth={1}
+            />
+          ))}
+        </g>
+      )}
+
+      {/* 연도 구분선 — 월 격자와 독립 토글·두께. 격자를 꺼도 연 구획은 남길 수 있게 별도 그룹. */}
+      {showYearLine && (
+        <g>
+          {model.years.map((y, i) => (
+            <line
+              key={`yv-${i}`}
+              x1={y.x}
+              y1={headerTop}
+              x2={y.x}
+              y2={chartBottom}
+              stroke={colors.yearLine}
+              strokeWidth={yearLineW}
             />
           ))}
         </g>
@@ -357,14 +366,14 @@ function ChartSvgBase({
         />
         {model.years.map((y, i) => (
           <g key={`yr-${i}`}>
-            {i > 0 && (
+            {i > 0 && showYearLine && (
               <line
                 x1={y.x}
                 y1={0}
                 x2={y.x}
                 y2={headerHeight}
                 stroke={colors.yearLine}
-                strokeWidth={1.5}
+                strokeWidth={yearLineW}
               />
             )}
             {/* 연/월 클릭 = 표시 기간 설정 팝업(요구사항 1). 축 텍스트 스타일은 속성 패널의

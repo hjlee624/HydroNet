@@ -438,6 +438,9 @@ function normalize(project: Project): Project {
       displayEnd: v.displayEnd,
       mirrorPlan: v.mirrorPlan,
       mirrorHidden: v.mirrorHidden,
+      // 연도 구분선 — 기본 ON·두께 2.5px(월 격자보다 굵게). 사용자가 인스펙터에서 조절.
+      showYearLine: v.showYearLine !== false,
+      yearLineWidth: v.yearLineWidth ?? 2.5,
     }))(project.view ?? ({} as Partial<ViewSettings>)),
   }
 }

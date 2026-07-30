@@ -686,6 +686,42 @@ function ProjectInspector() {
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
       <div className="panel__title" style={{ marginBottom: 10 }}>
+        연도 구분선
+      </div>
+      <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={project.view.showYearLine !== false}
+          onChange={(e) => a().setView({ showYearLine: e.target.checked })}
+        />
+        연도 구분선 표시
+      </label>
+      <div className="field">
+        <label>
+          선 두께{' '}
+          <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
+            {(project.view.yearLineWidth ?? 2.5).toFixed(1)}px
+          </span>
+        </label>
+        <input
+          type="range"
+          min={1}
+          max={6}
+          step={0.5}
+          value={project.view.yearLineWidth ?? 2.5}
+          disabled={project.view.showYearLine === false}
+          onChange={(e) => a().setView({ yearLineWidth: Number(e.target.value) })}
+          aria-label="연도 구분선 두께"
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+      </div>
+      <p className="note" style={{ marginTop: 0 }}>
+        해가 바뀌는 자리에 세로선을 진하게 그어 <b>연 단위 구획</b>을 강조합니다(월 격자와 별개). 두께를
+        조절하거나 끌 수 있습니다.
+      </p>
+
+      <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
+      <div className="panel__title" style={{ marginBottom: 10 }}>
         CI (로고)
       </div>
       <p className="note" style={{ marginTop: 0, marginBottom: 8 }}>
