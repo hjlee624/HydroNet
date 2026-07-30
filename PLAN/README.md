@@ -18,10 +18,10 @@ HydroNet은 이미 CRDT 전환에 유리한 골격을 갖췄다: (1) 모든 쓰�
 | **CRDT** | Yjs (yjs 13.6.x, 순수 JS·gzip ~18-20KB·WASM 없음). tasks/links/categories/rainySeasons/sheets = Y.Array&lt;Y.Map&gt;, meta/view/paper/branding = Y.Map, palette/mirrorHidden = Y.Array. Task.row·Category.order는 fractional-index 소수 정렬키, parentId는 LWW 값 필드로 move 우회. |
 | **전송(Transport)** | 온라인 LAN 모드에서만 부착하는 WebSocket provider(HocuspocusProvider, room=projectId). 오프라인 단일 HTML(file://)·서버 다운 시엔 provider 미부착 → y-indexeddb 로컬 영속만으로 완결. 프레즌스는 y-protocols awareness. |
 | **서버(Server)** | Hocuspocus(@hocuspocus/server, MIT). 기존 server/src/index.js의 http.createServer(app) 하나에 부착(추가 포트 없이 4020 유지, 운영 4000 금지). onAuthenticate 훅으로 인증·readOnly 역할. 순수 Node라 Node 24 LTS·Electron 패키징과 호환. |
-| **영속/DB** | 서버: @hocuspocus/extension-database(SQLite/Postgres BLOB) 또는 y-leveldb(MIT, 임베디드, 외부서비스 0). room별 Y.Doc append-log+주기 encodeStateAsUpdate 스냅샷, 임계치 시 재인코딩으로 GC. 클라: y-indexeddb(오프라인 영속, 자동 병합). .json은 스냅샷/백업·레거시 로드용으로 병존. |
-| **인증(Auth)** | 현재 무인증 0.0.0.0을 하드닝. 최소침습 경로: Caddy forward_auth(또는 nginx auth_request) 리버스프록시로 인증 게이트를 앱 밖에 두고 Express를 127.0.0.1 바인딩(프록시 우회 헤더 스푸핑 차단). CRDT 소켓 인증은 Hocuspocus onAuthenticate 단일 지점. 사내 IdP 없으면 독립 Express auth-server(JWT httpOnly 쿠키). WebSocket 토큰은 쿼리스트링 대신 쿠키/Sec-WebSocket-Protocol 헤더. |
+| **영속/DB** | **기본=임베디드 y-leveldb/SQLite**(외부서비스 0·에어갭 최적). **Supabase 배제**(과설계·RLS는 CRDT WebSocket 미보호). 순정 **Postgres는 SQL 감사/목록 조회 실요구 시에만** 승격. room별 Y.Doc append-log+스냅샷, 임계치 재인코딩 GC. 클라: y-indexeddb(오프라인 영속). .json은 스냅샷/백업·레거시 병존. → [ADR-001](ADR-001-vite8-and-db-auth.md) |
+| **인증(Auth)** | 현재 무인증 0.0.0.0을 하드닝. 최소침습 경로: Caddy forward_auth(또는 nginx auth_request) 리버스프록시로 인증 게이트를 앱 밖에 두고 Express를 127.0.0.1 바인딩(프록시 우회 헤더 스푸핑 차단). CRDT 소켓 인증은 Hocuspocus onAuthenticate 단일 지점. 사내 IdP 없으면 독립 경량 auth-server(**jose RS256 서명 JWT**, 자작 회피 시 PocketBase/SuperTokens). **접속자 인증키** = 이 서명 JWT(alg 고정·exp/nbf·jti). **정정**: 토큰은 **HocuspocusProvider token 옵션의 in-band 인증 메시지**로 전달(httpOnly 쿠키 세션→same-origin HTTP 단수명 collab 티켓). `?token=` 금지·wss(내부 CA)+Origin 검증. → [ADR-001](ADR-001-vite8-and-db-auth.md) |
 | **프레즌스** | y-protocols Awareness — user{name,color}·selection{selectedTaskIds,selectedCategoryIds,selectedLinkId} 필드 브로드캐스트. 기존 zustand selection state 재사용, SVG에 원격 커서·선택 하이라이트 직접 렌더. 재연결 시 clear로 유령 커서 방지(Y.Doc 비저장 휘발 상태라 권위/파생 경계와 무관). |
-| **배포(Deployment)** | 세 배포 형태 공존: (1) 오프라인 단일 HTML(vite-plugin-singlefile, provider 미부착·y-indexeddb만), (2) LAN 서버(Express+Hocuspocus 4020, extension-database 영속), (3) Electron(순수 JS라 무마찰). Node 24.x LTS 강제·Biome·Vite 7 유지. 오프라인/온라인은 provider 부착 여부로만 분기. |
+| **배포(Deployment)** | 세 배포 형태 공존: (1) 오프라인 단일 HTML(vite-plugin-singlefile, provider 미부착·y-indexeddb만), (2) LAN 서버(Express+Hocuspocus 4020, extension-database 영속), (3) Electron(순수 JS라 무마찰). Node 24.x LTS 강제·Biome·**Vite 7 유지**(Vite 8/Rolldown은 검증 완료·대기 — CRDT 전환 종료 후 **P5에서 별도 브랜치로 실측 채택**, [ADR-001](ADR-001-vite8-and-db-auth.md)). 오프라인/온라인은 provider 부착 여부로만 분기. |
 
 **근거**: 결정 변수는 성능이 아니라 '배포 제약'이다. HydroNet 최우선 제약(온프레 LAN·오프라인 단일HTML/file://·Electron·무인증→인증 하드닝)에 Yjs만 무마찰로 맞는다: 순수 JS라 단일 HTML 인라인·CSP·WASM 로드 문제 없음, y-indexeddb로 provider 없는 오프라인 영속, MIT 라이선스에 Hocuspocus·Y.UndoManager·awareness가 검증된 기성 조각으로 존재. commit() 단일 쓰기 관문 + CPM 순수 분리라는 코드 구조가 origin 태깅·파생 격리에 교과서적으로 맞아 통합 리스크가 최소다. 문서 규모(수백~수천 tasks)에선 성능이 병목이 아니므로 Loro/Automerge의 성능·이력 우위는 배포 부담을 정당화하지 못한다.
 
@@ -41,6 +41,7 @@ HydroNet은 이미 CRDT 전환에 유리한 골격을 갖췄다: (1) 모든 쓰�
 - [P5. 배포·호환 마감 — .json↔Y.Doc 무손실, LWW PUT 제거](P5-deploy-compat.md) — 중간 (5-8인일)
 - [마이그레이션 & 로드아웃](migration-rollout.md)
 - [리스크 · 열린 결정 · 참고자료](risks-and-decisions.md)
+- [**ADR-001. Vite 8 시점 · DB/인증(접속자 인증키)**](ADR-001-vite8-and-db-auth.md) ← 2026-07-30 정교화
 
 ## 단계 요약
 - **P0 경계 명문화 (비파괴) — 이미 반영됨** — CRDT의 최대 함정(파생 계산값을 협업 상태에 써 사용자끼리 덮어쓰기)을 문서로 못 박아 이후 어떤 CRDT를 붙여도 안전한 토대를 확정한다.

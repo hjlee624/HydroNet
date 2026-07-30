@@ -12,7 +12,7 @@
 5. **멀티시트의 '활성 시트만 최상위 + switchSheet swap' 구조가 CRDT와 궁합 나쁨(swap이 대규모 덮어쓰기)**
    - 완화: 전 시트를 sheets: Y.Array&lt;Y.Map&gt; 상주로 전환, '활성 시트'는 Y.Doc 상태 아닌 로컬 뷰 포인터(zustand)로만. 사용자마다 다른 시트를 봐도 충돌 없음.
 6. **무인증 0.0.0.0 Express — 프록시 우회 헤더 스푸핑·CRDT 소켓 무인증 노출**
-   - 완화: Express를 127.0.0.1 바인딩하고 프록시만 0.0.0.0 노출(forward-auth). CRDT는 Hocuspocus onAuthenticate 단일 관문. WebSocket 토큰은 쿼리스트링 대신 쿠키/Sec-WebSocket-Protocol.
+   - 완화: Express를 127.0.0.1 바인딩하고 프록시만 0.0.0.0 노출(forward-auth). CRDT 게이트는 Hocuspocus onAuthenticate 단일 관문(**RLS는 WebSocket 미보호 — Supabase/Postgres 무관**). **정정**: WebSocket 토큰은 **HocuspocusProvider token 옵션의 in-band 인증 메시지**로 전달(httpOnly 쿠키 세션→same-origin HTTP 단수명 collab 티켓), `?token=` 금지, wss(내부 CA)+Origin 검증. → [ADR-001](ADR-001-vite8-and-db-auth.md)
 7. **단일 HTML(file://)/Electron에서 WASM·번들 부담**
    - 완화: 순수 JS Yjs 채택(WASM 없음, gzip ~18KB 인라인 가능). 오프라인은 provider 미부착+y-indexeddb만. Automerge/Loro의 WASM는 단일 HTML엔 부적합이라 배제. build:single·check-single로 회귀.
 8. **서버 영속 용량 팽창(mergeUpdates는 삭제분 GC 안 함) 및 버전 히스토리 gc=false로 무한 증가**
@@ -29,8 +29,8 @@
 ## 착수 전 확인 필요 (Open Decisions)
 - 협업 단위: 문서 전체를 하나의 Y.Doc으로 vs tasks/links/categories만 CRDT로 하고 view/paper/branding은 별도 세밀도(또는 로컬)로? (초기 권고: 단일 Y.Doc, view/paper는 LWW로 함께 — 단 collapsed 등 순수 UI 상태는 로컬 뷰로 뺄지 결정 필요)
 - 멀티시트 상주 방식: 전 시트를 단일 Y.Doc에 상주 vs 시트별 Y.Subdocument로 지연로드? (대형 사업 규모·시트 수에 따라. 초기 권고: 단일 Y.Doc 상주)
-- 서버 영속 백엔드: Hocuspocus extension-database(SQLite/Postgres, SQL 조회 가능) vs y-leveldb(임베디드·설치 0)? (SQL로 프로젝트 목록·감사 로그 조회 필요성이 실제 있는지)
-- 인증 방식: 리버스프록시 forward-auth(사내 IdP/SSO 있을 때) vs 독립 Express auth-server(JWT 쿠키) vs 앱 내장 세션? 사내에 Keycloak/Authelia 등 IdP가 있는지 확인 필요
+- 서버 영속 백엔드: **[ADR-001 확정] 기본 y-leveldb/SQLite 임베디드 · Supabase 배제(과설계·RLS가 CRDT WS 미보호) · 순정 Postgres는 SQL 감사/목록 조회 실요구 시에만 승격.** ← 남은 판정: 그 SQL 실요구가 실제 있는가
+- 인증 방식: **[ADR-001 확정] 게이트=onAuthenticate · IdP 없으면 jose RS256 로컬 서명 JWT(자작 회피 시 PocketBase/SuperTokens) · Supabase GoTrue 풀스택 비권장.** ← 남은 확인: 사내 IdP(Keycloak/Authelia) 유무 · 내부 TLS(자체서명 CA) 배포 가능성
 - 역할 모델: '전무님=쓰기, 현장 PC=읽기' 같은 문서별 RBAC/readOnly가 실제 필요한지, 아니면 LAN 내 전원 편집 가능으로 충분한지
 - 변경 이력이 '제품 기능'인지: 공정표 베이스라인/개정본 감사추적·시점 열람이 요구사항이면 Automerge 3.x 재검토 트리거. 아니면 Yjs '버전 스냅샷 복사본'으로 충분
 - Loro 승격 조건 수치화: '동시 이동 시나리오에서 중복/유실이 mount-test 회귀로 재현되는가'를 실제 벤치로 확인해 Yjs fractional-index로 충분한지 판정
