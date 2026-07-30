@@ -2,6 +2,10 @@
 
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
+## ⏳ 대기 (2026-07-30 — 클라이언트 전용, dist 스왑)
+- **마일스톤 연도 구분선 진하게** — 연도 경계 세로선이 월 격자와 거의 같은 연베이지라 연 단위 구획이 안 보이던 문제. 전용 토큰 `colors.yearLine`(#A89B85, 진한 토프) 추가 → 본문 격자·헤더 연도 구분선에 적용(strokeWidth 1→1.5). 가로 레인 구분선이 함께 쓰던 `gridLineStrong`은 무변경. DXF 파리티: 연도 세로선 ACI 9→8(진회색, LINE/SEQEND 수 불변). `theme.ts`·`ChartSvg.tsx`·`export/dxf.ts` 변경.
+- **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html`. 검증: build·smoke·mount·dxf-check·build:single·check-single·render-preview 통과.
+
 ## ⏳ 대기 (2026-07-01 — 클라이언트 전용, dist 스왑)
 - **연결 드래그 앞·뒤 양쪽** — 화살표를 막대 **앞(start)·뒤(end) 양 끝**에서 시작하고 대상 막대의 **앞/뒤** 어디에든 붙일 수 있게(끝점 조합으로 FS/SS/FF/SF 자동 결정). `ChartSvg`(앵커 ● 2개)·`ChartCanvas`(fromEdge/toEdge→type)·`Inspector`·`HelpDialog` 변경. routing/store 무변경(이미 4유형 지원).
 - **막대 드래그 시 지연(lag) 자동 갱신(위치↔지연 양방향)** — 연결된 막대를 옮기면 그 위치에 맞춰 지연(일)이 자동 역산(snapSuccessor의 역방향). 신규 `scheduling.ts linkLagFromPositions` + store `relinkIncoming`(setTaskStartLive/setTasksStartLive/setTaskSpanLive/updateTask). 막대가 옛 제약으로 튕기던 것도 해소.
