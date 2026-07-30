@@ -13,20 +13,18 @@ g.window = w
 g.document = w.document
 g.localStorage = w.localStorage
 g.sessionStorage = w.sessionStorage
-// Simulate a returning user (단계 already chosen) who navigated to the heavy
-// 공정관리(schedule) module — the chart/sidebar this test guards against blank-
-// screen regressions. typeChosen='1' is required: the first-entry gate forces the
-// dashboard on boot until a 사업 단계 is picked (shell.initialModule).
-w.localStorage.setItem('hydronet:typeChosen', '1')
-w.localStorage.setItem('hydronet:module', 'schedule')
+// 마일스톤 편집기 단일 루트. AuthGate는 서버 미탐지 시 '로컬 모드'로 우회하므로,
+// 아래 fetch 스텁이 /api/health 를 실패로 응답해 로그인 게이트 없이 편집기가 바로 렌더된다.
 g.HTMLElement = w.HTMLElement
 g.Element = w.Element
 g.Node = w.Node
 g.getComputedStyle = w.getComputedStyle
 g.requestAnimationFrame = (cb: FrameRequestCallback) => setTimeout(() => cb(Date.now()), 0)
 g.cancelAnimationFrame = (id: number) => clearTimeout(id)
-g.fetch = async () =>
-  ({ ok: true, status: 200, json: async () => [], text: async () => '' }) as unknown as Response
+g.fetch = async (url: unknown) =>
+  (String(url).includes('/api/health')
+    ? { ok: false, status: 0, json: async () => null }
+    : { ok: true, status: 200, json: async () => [], text: async () => '' }) as unknown as Response
 
 const errors: string[] = []
 const origError = console.error

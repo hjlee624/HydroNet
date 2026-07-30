@@ -1,0 +1,115 @@
+// 인증 저장소 인터페이스 + 메모리(JSON 파일) 어댑터.
+// 운영은 pgRepo.js(Postgres)가 같은 인터페이스를 구현 → 라우트/로직은 어댑터 무관.
+//
+// 인터페이스(모두 async):
+//   users:    getUser(id) · listUsers() · upsertUser(u) · setUserPassword(id, hash)
+//   projects: listProjects() · getProject(id) · upsertProject(p) · setProjectAccessCode(id, hash) · deleteProject(id)
+//   members:  getMembership(projectId, userId) · listMembershipsForUser(userId)
+//             · listMembers(projectId) · addMember(projectId, userId, role, by) · removeMember(projectId, userId)
+//   u  = { id, name, role, passwordHash?, active }
+//   p  = { id, name, accessCodeHash?, createdBy }
+//   m  = { projectId, userId, role('pm'|'user'), addedBy }
+import fs from 'node:fs'
+import path from 'node:path'
+
+/** 메모리 어댑터 — file(JSON)로 로드/영속(재시작 보존). 운영엔 pgRepo 사용. */
+export function createMemoryRepo(file) {
+  const state = { users: {}, projects: {}, members: [] }
+  if (file && fs.existsSync(file)) {
+    try {
+      Object.assign(state, JSON.parse(fs.readFileSync(file, 'utf8')))
+      state.users ??= {}
+      state.projects ??= {}
+      state.members ??= []
+    } catch {
+      /* 손상 시 빈 상태로 시작 */
+    }
+  }
+  const save = () => {
+    if (!file) return
+    try {
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      const tmp = `${file}.${process.pid}.${Date.now()}.tmp`
+      fs.writeFileSync(tmp, JSON.stringify(state, null, 2))
+      fs.renameSync(tmp, file)
+    } catch {
+      /* best-effort */
+    }
+  }
+  const clone = (o) => (o ? JSON.parse(JSON.stringify(o)) : o)
+
+  return {
+    backend: 'memory',
+    async getUser(id) {
+      return clone(state.users[id]) ?? null
+    },
+    async listUsers() {
+      return Object.values(state.users).map(clone)
+    },
+    async upsertUser(u) {
+      const prev = state.users[u.id] ?? {}
+      state.users[u.id] = {
+        id: u.id,
+        name: u.name ?? prev.name ?? '',
+        role: u.role ?? prev.role ?? 'user',
+        passwordHash: u.passwordHash ?? prev.passwordHash ?? null,
+        active: u.active ?? prev.active ?? true,
+      }
+      save()
+      return clone(state.users[u.id])
+    },
+    async setUserPassword(id, hash) {
+      if (state.users[id]) {
+        state.users[id].passwordHash = hash
+        save()
+      }
+    },
+    async listProjects() {
+      return Object.values(state.projects).map(clone)
+    },
+    async getProject(id) {
+      return clone(state.projects[id]) ?? null
+    },
+    async upsertProject(p) {
+      const prev = state.projects[p.id] ?? {}
+      state.projects[p.id] = {
+        id: p.id,
+        name: p.name ?? prev.name ?? '',
+        accessCodeHash: p.accessCodeHash ?? prev.accessCodeHash ?? null,
+        createdBy: p.createdBy ?? prev.createdBy ?? null,
+      }
+      save()
+      return clone(state.projects[p.id])
+    },
+    async setProjectAccessCode(id, hash) {
+      if (state.projects[id]) {
+        state.projects[id].accessCodeHash = hash
+        save()
+      }
+    },
+    async deleteProject(id) {
+      delete state.projects[id]
+      state.members = state.members.filter((m) => m.projectId !== id)
+      save()
+    },
+    async getMembership(projectId, userId) {
+      return clone(state.members.find((m) => m.projectId === projectId && m.userId === userId)) ?? null
+    },
+    async listMembershipsForUser(userId) {
+      return state.members.filter((m) => m.userId === userId).map(clone)
+    },
+    async listMembers(projectId) {
+      return state.members.filter((m) => m.projectId === projectId).map(clone)
+    },
+    async addMember(projectId, userId, role, by) {
+      const ex = state.members.find((m) => m.projectId === projectId && m.userId === userId)
+      if (ex) ex.role = role
+      else state.members.push({ projectId, userId, role, addedBy: by ?? null })
+      save()
+    },
+    async removeMember(projectId, userId) {
+      state.members = state.members.filter((m) => !(m.projectId === projectId && m.userId === userId))
+      save()
+    },
+  }
+}

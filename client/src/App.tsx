@@ -1,13 +1,16 @@
-// HydroNet = 마일스톤(공정) 편집 전용 앱. 예전의 건설사업관리 패키지 셸(ModuleRail +
-// 대시보드·기록형 모듈들)은 SYNC-BUILD로 이관·제거됨 → 이제 마일스톤 편집기 단일 루트.
+// HydroNet = 마일스톤(공정) 편집 전용 앱. 서버가 있으면 로그인→프로젝트 선택→접속코드
+// 게이트(AuthGate), 오프라인 단일 HTML/서버 없음이면 곧장 편집기(로컬 모드). ADR-002.
 import { ScheduleModule } from './components/ScheduleModule'
+import { AuthGate } from './components/auth/AuthGate'
 
 export default function App() {
   return (
-    <div className="shell">
-      <main className="shell__content">
-        <ScheduleModule />
-      </main>
-    </div>
+    <AuthGate>
+      <div className="shell">
+        <main className="shell__content">
+          <ScheduleModule />
+        </main>
+      </div>
+    </AuthGate>
   )
 }

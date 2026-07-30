@@ -2,6 +2,9 @@
 
 > **목적**: `dev`(4020)에는 있지만 **운영 `D:\2026\PROGRAM\HydroNet`(브랜치 `main`, 포트 4000)** 에 아직 반영 안 된 변경을 추적한다. 전무님이 4000 서버를 사용 중 → 사용자 요청 시 한 번에 배포.
 
+## 🚫 운영 반영 보류 (2026-07-30 — 팀 협업/인증 착수 · 클라+서버 · **아직 4000 금지**)
+- **인증·접속코드·3역할 RBAC 1차 슬라이스**(ADR-002) — 서버(`server/src/auth/*` + `index.js` 배선·`pg/jose/xlsx` 의존 추가) + 클라(`state/authStore.ts`·`components/auth/AuthGate.tsx`·App 게이트). **서버 있으면 로그인 게이트가 켜짐** → 운영 4000에 그냥 올리면 전무님이 로그인 없이 못 씀. **CRDT 협업 전체(P1~P5)와 함께 준비·인증DB(Postgres)·계정 시드·내부 TLS 확정 후 일괄 배포 전까지 4000 미반영.** 오프라인 단일 HTML·서버 없음 환경은 자동 '로컬 모드'(로그인 없이 편집)라 기존 사용엔 무영향. 검증: server auth-smoke(16/16)·client build·mount·build:single·check-single 통과.
+
 ## ⏳ 대기 (2026-07-30c — 클라이언트 전용, dist 스왑 · **대규모: 마일스톤 전용화**)
 - **HydroNet 마일스톤 편집 전용 축소** — 공정(마일스톤) 편집을 제외한 **비-공정(CM) 기능 전량 제거**. 대시보드·모듈레일·진척·보고서·기록·플레이스홀더·새사업 프리셋 UI + KPI/EVM 엔진·모듈 카탈로그·셸 상태 삭제. `App.tsx`가 `ScheduleModule` 단일 루트로 축소. 제거 파일: `components/{Dashboard,ModuleRail,ProgressModule,ReportModule,RecordModule,ModulePlaceholder,ProjectTypeChooser}.tsx`·`engine/kpis.ts`·`data/modules.ts`·`state/shell.ts`. `store.ts` CM 액션 6종(addModuleRecord류·setTaskProgress·captureBaseline/clearBaseline) 삭제, `model.ts` CM 타입(ModuleRecord·Baseline·Project.modules/baseline) 제거(**Task.progress는 optional 잔존 — 구버전 .json 데이터 안전**). smoke의 KPI 검사·mount의 대시보드/레일 체크 제거. **비-공정 코드는 SYNC-BUILD `migration/hydronet-cm/`로 이관(보존)** — 통합은 SYNC-BUILD 후속(`INTEGRATION_PLAN.md`).
 - **반영 방법**: `cd client && npm run build` → `client/dist` 스왑(robocopy /E, 백업). 서버 재시작 불필요. 단일 HTML은 새 `HydroNet.html`. 검증: build·smoke·mount·build:single·check-single 통과. **주의: 운영 반영 시 대시보드·모듈 기능이 사라짐(의도된 제품 분리)**. README/CLAUDE.md 제품 설명은 후속 갱신 필요.

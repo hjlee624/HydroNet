@@ -1469,3 +1469,34 @@ textarea.input {
   margin-top: 6px;
   line-height: 1.5;
 }
+
+/* ── 인증 게이트(AuthGate) — 로그인 / 프로젝트 선택 / 접속코드 (ADR-002) ── */
+.auth-screen { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; background: var(--cream); padding: 24px; overflow: auto; }
+.auth-card { width: 100%; max-width: 400px; background: var(--canvas); border: 1px solid var(--hairline); border-radius: 16px; padding: 32px 30px; box-shadow: 0 8px 30px rgba(0,0,0,.06); display: flex; flex-direction: column; gap: 12px; }
+.auth-card--slim { max-width: 320px; text-align: center; color: var(--slate); }
+.auth-card--wide { max-width: 520px; }
+.auth-brand { font-weight: 800; font-size: 22px; color: var(--primary); }
+.auth-title { font-weight: 800; font-size: 20px; color: var(--ink); }
+.auth-sub { margin: 0 0 6px; font-size: 13px; color: var(--slate); }
+.auth-field { display: flex; flex-direction: column; gap: 5px; font-size: 12px; font-weight: 700; color: var(--steel); }
+.auth-field input { border: 1px solid var(--hairline-strong); border-radius: 10px; padding: 11px 13px; font: inherit; font-size: 15px; color: var(--ink); background: var(--canvas); }
+.auth-field input:focus { outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px var(--cream-deeper); }
+.auth-error { background: #f7e4e0; border: 1px solid #e6c4bb; color: #8e1b14; border-radius: 9px; padding: 9px 12px; font-size: 12.5px; }
+.auth-primary { margin-top: 6px; background: var(--primary); color: #fff; border: none; border-radius: 10px; padding: 12px; font: inherit; font-weight: 800; font-size: 15px; cursor: pointer; }
+.auth-primary:disabled { opacity: .5; cursor: not-allowed; }
+.auth-primary:hover:not(:disabled) { background: var(--primary-deep); }
+.auth-link { background: none; border: none; color: var(--steel); font: inherit; font-size: 12.5px; cursor: pointer; text-decoration: underline; align-self: center; margin-top: 4px; }
+.auth-empty { color: var(--stone); font-size: 13px; text-align: center; padding: 18px; }
+.proj-list { list-style: none; margin: 6px 0; padding: 0; display: flex; flex-direction: column; gap: 8px; max-height: 52vh; overflow: auto; }
+.proj-item { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; border: 1px solid var(--hairline-strong); background: var(--canvas); border-radius: 12px; padding: 14px 16px; cursor: pointer; font: inherit; text-align: left; }
+.proj-item:hover { border-color: var(--primary); background: var(--cream-soft); }
+.proj-name { font-weight: 700; font-size: 15px; color: var(--ink); }
+.proj-meta { font-size: 11.5px; color: var(--steel); white-space: nowrap; }
+.auth-app { display: flex; flex-direction: column; height: 100%; }
+.auth-app__body { flex: 1 1 auto; min-height: 0; }
+.authbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--ink); color: var(--on-dark, #FBF4E6); font-size: 12.5px; }
+.authbar__proj { font-weight: 700; }
+.authbar__spacer { flex: 1; }
+.authbar__user em { color: var(--stone); font-style: normal; }
+.authbar__btn { background: rgba(255,255,255,.12); color: inherit; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
+.authbar__btn:hover { background: rgba(255,255,255,.22); }

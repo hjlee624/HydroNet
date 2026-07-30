@@ -13,6 +13,9 @@ import fssync from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
 import { fileURLToPath } from 'node:url'
+import { createMemoryRepo } from './auth/repo.js'
+import { createPgRepo } from './auth/pgRepo.js'
+import { createAuthRouter, bootstrapDeveloper } from './auth/routes.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..', '..')
@@ -67,8 +70,28 @@ process.on('unhandledRejection', (r) =>
 
 // ── app ──────────────────────────────────────────────────────────────────────
 const app = express()
-app.use(cors())
+// LAN 협업 전제: 자격증명(쿠키) 동반 요청 허용을 위해 same-origin 우선. 개발 편의로 origin 반영+credentials.
+app.use(cors({ origin: true, credentials: true }))
 app.use(express.json({ limit: '12mb' }))
+
+// ── 인증/RBAC (ADR-002) — 서버가 있을 때 로그인 게이트. 오프라인 단일 HTML은 클라가 로컬 모드로 우회. ──
+const AUTH_ENABLED = process.env.AUTH_ENABLED !== '0'
+const AUTH_BACKEND = process.env.AUTH_BACKEND || 'memory'
+const authRepo =
+  AUTH_BACKEND === 'pg' && process.env.DATABASE_URL
+    ? createPgRepo(process.env.DATABASE_URL)
+    : createMemoryRepo(path.join(DATA_DIR, 'auth.json'))
+const secureCookie = process.env.AUTH_SECURE_COOKIE === '1' || process.env.NODE_ENV === 'production'
+const { router: authRouter, requireAuth, requireProjectToken } = createAuthRouter(authRepo, { secure: secureCookie })
+const listGate = AUTH_ENABLED ? requireAuth : (_req, _res, next) => next()
+const projectGate = AUTH_ENABLED ? requireProjectToken : (_req, _res, next) => next()
+if (AUTH_ENABLED) {
+  app.use('/api', authRouter)
+  bootstrapDeveloper(authRepo)
+    .then((b) => b && appendLog('info', `부트스트랩 개발자 계정: ${b.id} (초기 비밀번호는 AUTH_BOOTSTRAP_PASSWORD로 지정 권장)`))
+    .catch((e) => appendLog('error', 'auth bootstrap', { message: e.message }))
+  appendLog('info', `인증 활성(backend=${authRepo.backend}). 오프라인/단일HTML은 클라 로컬 모드로 우회.`)
+}
 
 const idOk = (id) => /^[A-Za-z0-9_-]{1,80}$/.test(id)
 const fileFor = (id) => path.join(DATA_DIR, `${id}.json`)
@@ -113,6 +136,7 @@ app.post(
 
 app.get(
   '/api/projects',
+  listGate,
   asyncRoute(async (_req, res) => {
     const files = (await fs.readdir(DATA_DIR)).filter((f) => f.endsWith('.json'))
     const summaries = []
@@ -131,6 +155,7 @@ app.get(
 
 app.get(
   '/api/projects/:id',
+  projectGate,
   asyncRoute(async (req, res) => {
     const { id } = req.params
     if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
@@ -146,6 +171,7 @@ app.get(
 
 app.put(
   '/api/projects/:id',
+  projectGate,
   asyncRoute(async (req, res) => {
     const { id } = req.params
     if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
@@ -169,6 +195,7 @@ app.put(
 
 app.delete(
   '/api/projects/:id',
+  projectGate,
   asyncRoute(async (req, res) => {
     const { id } = req.params
     if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })

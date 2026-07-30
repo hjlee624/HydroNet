@@ -3,9 +3,10 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "description": "Thin file-based persistence + centralized error logging for HydroNet",
+  "description": "HydroNet backend — file/CRDT persistence, error logging, 인증/RBAC(ADR-002)",
   "scripts": {
-    "start": "node src/index.js"
+    "start": "node src/index.js",
+    "auth-smoke": "node scripts/auth-smoke.mjs"
   },
   "engines": {
     "node": ">=24 <25",
@@ -14,6 +15,9 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.2",
-    "nanoid": "^5.0.9"
+    "jose": "^6.2.5",
+    "nanoid": "^5.0.9",
+    "pg": "^8.22.0",
+    "xlsx": "^0.18.5"
   }
 }
