@@ -2,17 +2,9 @@
 
 > 댐과 양수발전 건설 현장의 공종별 흐름(Flow)을 그물망(Network)처럼 연결하여, 시공부터 시운전까지의 마일스톤을 직관적으로 편집하고 A4~A0 대형 도면으로 깨짐 없이 출력하는 건설사업관리 프로그램.
 
-![HydroNet 실행 화면](DESIGN/init.png)
+![HydroNet 실행 화면](DESIGN/mile_sam_screen.png)
 
 HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 마일스톤`)는 `DESIGN/milestone sample.png`와 동일한 형태의 마일스톤 공정표로 렌더링·편집·출력됩니다.
-
-## ▶️ 데모 (약 25초)
-
-처음 실행 시 **새 사업 설정**(사업명·설계 단계·시설물 유형) → 공정관리 **예정공정표 → 시공 마일스톤** → **공종 추가 · 막대 이동 · 화살표 추가/삭제**까지, 실제 작성 과정입니다.
-
-![HydroNet 데모](DESIGN/HydroNet-demo.gif)
-
-<sub>위 GIF는 GitHub에서 자동 재생됩니다 · 고화질 영상: ▶ [MP4 다운로드/재생](DESIGN/HydroNet-demo.mp4)</sub>
 
 ---
 
