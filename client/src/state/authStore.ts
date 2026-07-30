@@ -36,6 +36,8 @@ interface AuthState {
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshProjects: () => Promise<void>
+  /** 새 프로젝트 생성(개발자·PM). 성공 시 목록 갱신. */
+  createProject: (name: string, accessCode?: string) => Promise<boolean>
   select: (p: ProjectSummary) => Promise<void>
   enter: (code: string) => Promise<void>
   exitProject: () => void
@@ -115,6 +117,21 @@ export const useAuth = create<AuthState>((set, get) => ({
   refreshProjects: async () => {
     const r = await j('/api/auth/projects')
     if (r.ok && Array.isArray(r.data)) set({ projects: r.data as unknown as ProjectSummary[] })
+  },
+
+  createProject: async (name, accessCode) => {
+    set({ loading: true, error: null })
+    try {
+      const r = await post('/api/auth/projects', { name, ...(accessCode ? { accessCode } : {}) })
+      if (!r.ok) throw new Error((r.data?.error as string) || '프로젝트 생성에 실패했습니다.')
+      await get().refreshProjects()
+      return true
+    } catch (e) {
+      set({ error: e instanceof Error ? e.message : '프로젝트 생성 오류' })
+      return false
+    } finally {
+      set({ loading: false })
+    }
   },
 
   select: async (p) => {

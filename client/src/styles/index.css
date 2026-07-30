@@ -1492,6 +1492,13 @@ textarea.input {
 .proj-item:hover { border-color: var(--primary); background: var(--cream-soft); }
 .proj-name { font-weight: 700; font-size: 15px; color: var(--ink); }
 .proj-meta { font-size: 11.5px; color: var(--steel); white-space: nowrap; }
+.proj-create__toggle { margin-top: 6px; width: 100%; border: 1px dashed var(--hairline-strong); background: var(--cream-soft); color: var(--primary-deep, var(--primary)); border-radius: 12px; padding: 12px; font: inherit; font-weight: 700; font-size: 13.5px; cursor: pointer; }
+.proj-create__toggle:hover { border-color: var(--primary); background: var(--cream); }
+.proj-create { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding: 14px; border: 1px solid var(--hairline-strong); border-radius: 12px; background: var(--cream-soft); }
+.proj-create .auth-field span em { color: var(--stone); font-style: normal; font-weight: 400; font-size: 11px; }
+.proj-create__actions { display: flex; align-items: center; gap: 10px; }
+.proj-create__actions .auth-primary { flex: 1; margin-top: 0; }
+.proj-create__actions .auth-link { margin-top: 0; }
 .auth-app { display: flex; flex-direction: column; height: 100%; }
 .auth-app__body { flex: 1 1 auto; min-height: 0; }
 .authbar { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 6px 14px; background: var(--ink); color: var(--on-dark, #FBF4E6); font-size: 12.5px; }

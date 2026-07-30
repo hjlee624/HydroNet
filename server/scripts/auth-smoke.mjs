@@ -83,6 +83,27 @@ ok(r.status === 200 && r.data.length === 2, 'PM 멤버 조회(2명)')
 r = await call('POST', '/auth/projects/projA/enter', {})
 ok(r.status === 200, 'PM: 담당 프로젝트 코드 면제 입장')
 
+// PM 프로젝트 생성 — 자기 프로젝트 PM으로 자동 등록 + 코드 면제 입장
+r = await call('POST', '/auth/projects', { name: 'PM새프로젝트' })
+ok(r.status === 201 && !!r.data.project?.id, 'PM 새 프로젝트 생성(201)')
+const pmProj = r.data?.project?.id
+r = await call('GET', '/auth/projects')
+ok(r.status === 200 && r.data.some((p) => p.id === pmProj && p.role === 'pm'), 'PM 생성 프로젝트가 목록에 pm으로 노출')
+r = await call('POST', `/auth/projects/${pmProj}/enter`, {})
+ok(r.status === 200 && !!r.data.token, 'PM 생성 프로젝트 코드 면제 입장')
+
+// user 는 프로젝트 생성 불가(403)
+r = await call('POST', '/auth/login', { username: 'u1', password: 'pw-u' })
+ok(r.status === 200, 'user 재로그인')
+r = await call('POST', '/auth/projects', { name: '금지' })
+ok(r.status === 403, 'user 프로젝트 생성 거부(403)')
+
+// developer 프로젝트 생성(201)
+r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
+ok(r.status === 200, '개발자 재로그인')
+r = await call('POST', '/auth/projects', { name: 'DEV프로젝트' })
+ok(r.status === 201 && !!r.data.project?.id, '개발자 새 프로젝트 생성(201)')
+
 // 비로그인 차단
 cookie = ''
 r = await call('GET', '/auth/me')

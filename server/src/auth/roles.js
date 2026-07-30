@@ -35,6 +35,11 @@ export function canManageProject(user, membership) {
   return isDeveloper(user) || membership?.role === 'pm'
 }
 
+/** 새 프로젝트 생성 권한(개발자 · 프로젝트 관리자). 일반 사용자는 불가. */
+export function canCreateProject(user) {
+  return isDeveloper(user) || user?.role === 'pm'
+}
+
 /** 사용자 계정·프로젝트 생성 등 시스템 관리(개발자 전용). */
 export function canAdmin(user) {
   return isDeveloper(user)

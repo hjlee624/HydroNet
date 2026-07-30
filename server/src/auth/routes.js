@@ -1,9 +1,10 @@
 // 인증/RBAC 라우터 — 로그인·세션·프로젝트 목록·접속코드 입장·관리(엑셀 업로드·멤버). ADR-002.
 import express from 'express'
+import { nanoid } from 'nanoid'
 import { hashSecret, verifySecret, signSession, signProjectToken, verifyToken } from './crypto.js'
 import { importUsers } from './importUsers.js'
 import {
-  canAccessAll, canEnterProject, accessCodeExempt, canManageProject, canAdmin, isRole, PROJECT_ROLES,
+  canAccessAll, canEnterProject, accessCodeExempt, canManageProject, canCreateProject, canAdmin, isRole, PROJECT_ROLES,
 } from './roles.js'
 
 const COOKIE = 'hn_session'
@@ -101,6 +102,20 @@ export function createAuthRouter(repo, opts = {}) {
       })
     }
     res.json(list)
+  }))
+
+  // ── 프로젝트 생성(개발자·PM) ── 서버가 id 생성. PM이 만들면 그 프로젝트 PM으로 자동 등록.
+  router.post('/auth/projects', authMw, wrap(async (req, res) => {
+    if (!canCreateProject(req.user)) throw fail(403, '프로젝트 생성 권한(개발자·프로젝트 관리자)이 필요합니다.')
+    const name = String((req.body || {}).name || '').trim()
+    if (!name) throw fail(400, '프로젝트 이름을 입력하세요.')
+    const accessCode = (req.body || {}).accessCode
+    const id = `p_${nanoid(10)}`
+    const accessCodeHash = accessCode ? await hashSecret(String(accessCode)) : undefined
+    await repo.upsertProject({ id, name, createdBy: req.user.id, ...(accessCodeHash ? { accessCodeHash } : {}) })
+    // 개발자는 전체 접근이라 멤버십 불필요. PM(관리자)이 만들면 그 프로젝트의 PM으로 등록 → 목록 노출·코드 면제 입장.
+    if (!canAccessAll(req.user)) await repo.addMember(id, req.user.id, 'pm', req.user.id)
+    res.status(201).json({ ok: true, project: { id, name } })
   }))
 
   // ── 프로젝트 입장(접속코드 검증 → 프로젝트 토큰) ──

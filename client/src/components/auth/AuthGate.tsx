@@ -94,6 +94,7 @@ function ProjectSelectScreen() {
   const error = useAuth((s) => s.error)
   const logout = useAuth((s) => s.logout)
   const user = useAuth((s) => s.user)
+  const canCreate = user?.role === 'developer' || user?.role === 'pm'
   return (
     <div className="auth-screen">
       <div className="auth-card auth-card--wide">
@@ -104,7 +105,11 @@ function ProjectSelectScreen() {
         </p>
         {error && <div className="auth-error">{error}</div>}
         {projects.length === 0 ? (
-          <div className="auth-empty">접근 가능한 프로젝트가 없습니다. 관리자에게 문의하세요.</div>
+          <div className="auth-empty">
+            {canCreate
+              ? '아직 프로젝트가 없습니다. 아래에서 새로 만드세요.'
+              : '접근 가능한 프로젝트가 없습니다. 관리자에게 문의하세요.'}
+          </div>
         ) : (
           <ul className="proj-list">
             {projects.map((p) => (
@@ -120,9 +125,56 @@ function ProjectSelectScreen() {
             ))}
           </ul>
         )}
+        {canCreate && <ProjectCreate />}
         <button className="auth-link" onClick={logout}>로그아웃</button>
       </div>
     </div>
+  )
+}
+
+// 새 프로젝트 생성(개발자·PM). 접속코드는 선택 — 비우면 코드 없이 입장.
+function ProjectCreate() {
+  const createProject = useAuth((s) => s.createProject)
+  const loading = useAuth((s) => s.loading)
+  const [open, setOpen] = useState(false)
+  const [name, setName] = useState('')
+  const [code, setCode] = useState('')
+  const close = () => {
+    setOpen(false)
+    setName('')
+    setCode('')
+  }
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!name.trim()) return
+    if (await createProject(name.trim(), code.trim() || undefined)) close()
+  }
+  if (!open) {
+    return (
+      <button className="proj-create__toggle" type="button" onClick={() => setOpen(true)}>
+        ＋ 새 프로젝트 만들기
+      </button>
+    )
+  }
+  return (
+    <form className="proj-create" onSubmit={submit}>
+      <label className="auth-field">
+        <span>프로젝트 이름</span>
+        <input autoFocus value={name} onChange={(e) => setName(e.target.value)} placeholder="예: 양수발전 1호기" />
+      </label>
+      <label className="auth-field">
+        <span>
+          접속코드 <em>· 선택(사용자 입장 시 필요, 비우면 코드 없음)</em>
+        </span>
+        <input type="password" value={code} onChange={(e) => setCode(e.target.value)} placeholder="비워두면 코드 없음" />
+      </label>
+      <div className="proj-create__actions">
+        <button className="auth-primary" type="submit" disabled={loading || !name.trim()}>
+          {loading ? '생성 중…' : '생성'}
+        </button>
+        <button className="auth-link" type="button" onClick={close}>취소</button>
+      </div>
+    </form>
   )
 }
 
