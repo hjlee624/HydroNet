@@ -706,7 +706,7 @@ function ProjectInspector() {
         <input
           type="range"
           min={1}
-          max={6}
+          max={20}
           step={0.5}
           value={project.view.yearLineWidth ?? 2.5}
           disabled={project.view.showYearLine === false}
@@ -716,8 +716,8 @@ function ProjectInspector() {
         />
       </div>
       <p className="note" style={{ marginTop: 0 }}>
-        해가 바뀌는 자리에 세로선을 진하게 그어 <b>연 단위 구획</b>을 강조합니다(월 격자와 별개). 두께를
-        조절하거나 끌 수 있습니다.
+        해가 바뀌는 자리의 <b>세로선</b>과 <b>제목↔연도 가로 구분선</b>을 함께 진하게 그어 연 단위 구획을
+        강조합니다(월 격자와 별개). 두께(최대 20px)를 조절하거나 끌 수 있습니다.
       </p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />

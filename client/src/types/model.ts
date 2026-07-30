@@ -181,9 +181,9 @@ export interface ViewSettings {
   mirrorPlan?: boolean
   /** 미러로 가져온 예정 공정 중 '마일스톤에서만' 숨긴 공정 id들(예정 원본은 불변). */
   mirrorHidden?: ID[]
-  /** 연도 경계 세로 구분선 표시 여부(기본 ON). 월 격자(showGrid)와 독립. */
+  /** 연도 경계 세로 구분선 + 제목↔연도 가로 구분선 표시 여부(기본 ON). 월 격자(showGrid)와 독립. */
   showYearLine?: boolean
-  /** 연도 구분선 두께(px, 기본 2.5). 월 격자보다 굵게 연 단위 구획을 강조. 사용자 조절 가능. */
+  /** 연도 구분선(세로 + 제목↔연도 가로) 두께(px, 기본 2.5, 1~20 사용자 조절). 월 격자보다 굵게 연 구획 강조. */
   yearLineWidth?: number
 }
 

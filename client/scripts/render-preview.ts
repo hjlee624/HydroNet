@@ -19,7 +19,9 @@ project.tasks = migrateSubNameToParentId(project.tasks) // 앱과 동일하게 s
 const sched = computeSchedule(project.tasks, project.links)
 // HN_FONTSCALE lets us eyeball that bigger fonts grow their boxes (no clipping).
 const fontScale = Number(process.env.HN_FONTSCALE) || 1
-const sp = { ...project, tasks: sched.tasks, view: { ...project.view, fontScale } }
+// HN_YEARLINE lets us eyeball the 연도 구분선 두께(세로선 + 제목↔연도 가로선) at any px.
+const yearLineWidth = Number(process.env.HN_YEARLINE) || project.view.yearLineWidth
+const sp = { ...project, tasks: sched.tasks, view: { ...project.view, fontScale, yearLineWidth } }
 const model = computeLayout(sp)
 const routed = routeLinks(model, sp.links)
 

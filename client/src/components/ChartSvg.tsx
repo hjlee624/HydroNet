@@ -328,13 +328,15 @@ function ChartSvgBase({
       {titleHeight > 0 && (
         <g>
           <rect x={0} y={0} width={contentWidth} height={titleHeight} fill={colors.cream} />
+          {/* 제목↔연도 가로 구분선 — 연도 구분선 설정을 함께 따른다(켜짐: 진한 yearLine·조절 두께,
+              꺼짐: 기본 얇은 테두리 유지). */}
           <line
             x1={0}
             y1={titleHeight}
             x2={contentWidth}
             y2={titleHeight}
-            stroke={colors.beigeDeep}
-            strokeWidth={1}
+            stroke={showYearLine ? colors.yearLine : colors.beigeDeep}
+            strokeWidth={showYearLine ? yearLineW : 1}
           />
           <text
             x={contentWidth / 2}
