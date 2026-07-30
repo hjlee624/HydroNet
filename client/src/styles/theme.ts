@@ -45,6 +45,7 @@ export const colors = {
   critical: '#E12D1B',
   gridLine: '#EFE9DD',
   gridLineStrong: '#E2D9C7',
+  yearLine: '#A89B85', // 연도 구분선 — 월/레인 격자보다 진하게(연 단위 주 구획 강조)
   milestone: '#1B1712',
   bar: '#7C93A8',
   barBorder: '#5A6E82',

@@ -264,8 +264,8 @@ function ChartSvgBase({
               y1={headerTop}
               x2={y.x}
               y2={chartBottom}
-              stroke={colors.gridLineStrong}
-              strokeWidth={1}
+              stroke={colors.yearLine}
+              strokeWidth={1.5}
             />
           ))}
           {model.categories.map((c) => (
@@ -363,8 +363,8 @@ function ChartSvgBase({
                 y1={0}
                 x2={y.x}
                 y2={headerHeight}
-                stroke={colors.beigeDeep}
-                strokeWidth={1}
+                stroke={colors.yearLine}
+                strokeWidth={1.5}
               />
             )}
             {/* 연/월 클릭 = 표시 기간 설정 팝업(요구사항 1). 축 텍스트 스타일은 속성 패널의
