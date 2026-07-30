@@ -6,7 +6,7 @@
 import { Fragment, useRef, useState } from 'react'
 import type { DragEvent as RDragEvent, MouseEvent as RMouseEvent } from 'react'
 import { useEditor, filterActive } from '../state/store'
-import type { Category } from '../types/model'
+import { PALETTE_MAX, type Category } from '../types/model'
 import { planMirrorView, type MirrorRow } from '../engine/mirror'
 
 /** Small ON/OFF switch controlling whether a lane/activity shows in the chart. */
@@ -183,6 +183,8 @@ function CategoryNode({
   const filter = useEditor((s) => s.filter)
   const selectedCatIds = useEditor((s) => s.selectedCategoryIds)
   const catAnchor = useEditor((s) => s.selectedCategoryId)
+  // 공종 색상 팝오버가 쓰는 공용 즐겨찾기 팔레트(공정 속성 Palette와 동일한 project.palette).
+  const palette = useEditor((s) => s.project.palette)
   const catSelected = selectedCatIds.includes(cat.id)
   const tasks = allTasks.filter((t) => {
     if (t.categoryId !== cat.id) return false
@@ -204,6 +206,8 @@ function CategoryNode({
   const [editTask, setEditTask] = useState<{ id: string; text: string } | null>(null)
   // 행별 ➕ 삽입 메뉴가 열린 공정 id(그 행 바로 아래에 공정/세부공정/마일스톤 삽입).
   const [insertAt, setInsertAt] = useState<string | null>(null)
+  // 공종 색상 편집 팝오버(스와치 클릭 → 컬러맵 + 공용 팔레트) 열림 여부.
+  const [colorOpen, setColorOpen] = useState(false)
   const nameDone = useRef(false)
   const taskDone = useRef(false)
   // While a filter is active the lane list is a SUBSET, so an insertion position
@@ -558,29 +562,94 @@ function CategoryNode({
         >
           {cat.collapsed ? '▸' : '▾'}
         </button>
-        {/* 색상 스와치 = 공종 색상 편집기. 바꾸면 이 공종의 모든 공정 색도 함께 바뀐다(요구). */}
-        <label
-          className="cat__swatch"
-          style={{ background: cat.color, cursor: 'pointer', position: 'relative' }}
-          title="클릭하여 공종 색상 변경 — 하위 공정 색도 모두 함께 바뀝니다"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <input
-            type="color"
-            value={/^#[0-9a-f]{6}$/i.test(cat.color) ? cat.color : '#7c93a8'}
-            onChange={(e) => a().setCategoryColor(cat.id, e.target.value)}
-            style={{
-              position: 'absolute',
-              inset: 0,
-              width: '100%',
-              height: '100%',
-              opacity: 0,
-              border: 'none',
-              padding: 0,
-              cursor: 'pointer',
+        {/* 색상 스와치 클릭 → 컬러맵 + 공용 팔레트 팝오버. 고르면 이 공종의 모든 공정 색도 함께 바뀐다. */}
+        <div style={{ position: 'relative', display: 'inline-flex' }}>
+          <button
+            type="button"
+            className="cat__swatch"
+            style={{ background: cat.color, cursor: 'pointer', border: 'none', padding: 0 }}
+            title="클릭하여 공종 색상 변경 — 하위 공정 색도 모두 함께 바뀝니다"
+            onClick={(e) => {
+              e.stopPropagation()
+              setColorOpen((v) => !v)
             }}
           />
-        </label>
+          {colorOpen && (
+            <>
+              <div
+                style={{ position: 'fixed', inset: 0, zIndex: 40 }}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setColorOpen(false)
+                }}
+              />
+              <div
+                className="cat-colorpop"
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                  position: 'absolute',
+                  top: '100%',
+                  left: 0,
+                  marginTop: 4,
+                  zIndex: 41,
+                  width: 176,
+                  background: 'var(--canvas)',
+                  border: '1px solid var(--hairline-strong)',
+                  borderRadius: 8,
+                  padding: 10,
+                  boxShadow: '0 6px 20px rgba(0,0,0,0.16)',
+                }}
+              >
+                <div style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 6 }}>공종 색상</div>
+                <input
+                  type="color"
+                  value={/^#[0-9a-f]{6}$/i.test(cat.color) ? cat.color : '#7c93a8'}
+                  onChange={(e) => a().setCategoryColor(cat.id, e.target.value)}
+                  style={{
+                    width: '100%',
+                    height: 30,
+                    padding: 0,
+                    border: 'none',
+                    background: 'none',
+                    cursor: 'pointer',
+                  }}
+                />
+                <div style={{ fontSize: 11, color: 'var(--slate)', margin: '8px 0 4px' }}>
+                  즐겨찾기 (공정 속성과 공유)
+                </div>
+                <div className="palette">
+                  {Array.from({ length: PALETTE_MAX }).map((_, i) => {
+                    const c = (palette ?? [])[i]
+                    return c ? (
+                      <button
+                        key={i}
+                        type="button"
+                        className="palette__sw"
+                        style={{ background: c }}
+                        title={`${c} · 클릭 적용 / 우클릭 삭제`}
+                        onClick={() => a().setCategoryColor(cat.id, c)}
+                        onContextMenu={(e) => {
+                          e.preventDefault()
+                          a().removePaletteColor(i)
+                        }}
+                      />
+                    ) : (
+                      <button
+                        key={i}
+                        type="button"
+                        className="palette__sw palette__sw--empty"
+                        title="현재 공종 색을 즐겨찾기에 추가"
+                        onClick={() => a().addPaletteColor(cat.color)}
+                      >
+                        ＋
+                      </button>
+                    )
+                  })}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         {editName !== null ? (
           <input
             className="cat__edit"

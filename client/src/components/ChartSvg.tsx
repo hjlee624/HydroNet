@@ -601,11 +601,16 @@ function ChartSvgBase({
           const emphasizeCrit = mirror ? false : colorMode === 'critical' ? lt.critical : crit
           const selected = !mirror && selSet.has(t.id)
           const isDummy = !!t.isDummy && !lt.isMilestone
-          const baseFill = emphasizeCrit
-            ? colors.critical
-            : colorMode === 'critical'
-              ? '#CFC8B8' // muted so the critical spine pops
-              : (t.color ?? laneColor(model, lt.categoryId))
+          // 사용자가 공정 색을 지정하면 주공정(빨강 채움)보다 그 색을 우선한다 — 색을 바꿔도 주공정이
+          // '해제'되지 않게(빨강 테두리·이름·화살표의 주공정 표시는 그대로 유지). 단 '주공정 강조'
+          // 색상 모드에서는 스포트라이트 유지를 위해 지정색을 무시한다.
+          const userColor = mirror ? undefined : t.color
+          const baseFill =
+            colorMode === 'critical'
+              ? emphasizeCrit
+                ? colors.critical
+                : '#CFC8B8' // muted so the critical spine pops
+              : (userColor ?? (emphasizeCrit ? colors.critical : laneColor(model, lt.categoryId)))
           // DUMMY 공정은 항상 공종색을 60% 투명(0.4)으로 칠한다.
           const fill = isDummy ? laneColor(model, lt.categoryId) : baseFill
           if (lt.isMilestone) {
