@@ -15,6 +15,9 @@ client/public/fonts/*.otf
 # 정식 배포본 HydroNet.html 은 저장소에 포함(다운로드 배포용). 날짜 스냅샷만 무시.
 /HydroNet_*.html
 
+# 과거 백업 스냅샷(개인 로컬 보관용) — VCS에 올리지 않음. 2026-07-30 추적 해제.
+@bak/
+
 # Logs (ABS_RULE: program logs live in error.log; keep them local, not in VCS)
 error.log
 *.log
