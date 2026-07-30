@@ -1306,12 +1306,22 @@ export const useEditor = create<EditorState>()((set, get) => {
           newIds.push(nid)
           newCats.push({ ...clone(c), id: nid, order: 0 }) // order는 아래에서 일괄 재부여
         }
+        // 1차: 모든 공정에 새 id를 부여해 taskMap을 먼저 채운다(세부공정 parentId 재매핑용 —
+        //      세부공정이 배열상 상위 공정보다 먼저 올 수 있어 2패스 필요).
+        const pasted: Task[] = []
         for (const t of clip.tasks) {
           const cat = catMap.get(t.categoryId)
           if (!cat) continue
           const nid = `t-${nanoid(8)}`
           taskMap.set(t.id, nid)
-          p.tasks.push({ ...clone(t), id: nid, categoryId: cat })
+          pasted.push({ ...clone(t), id: nid, categoryId: cat })
+        }
+        // 2차: 세부공정의 상위 공정 참조(parentId)를 새 id로 재배선한 뒤 삽입한다.
+        //      (재매핑 누락 시 세부공정이 원본 상위 공정을 가리켜 하위 공정·세부공정이 깨졌음.)
+        //      복사 묶음 밖을 가리키면(정상적으론 없음) 세부공정 관계를 해제한다.
+        for (const nt of pasted) {
+          if (nt.parentId) nt.parentId = taskMap.get(nt.parentId)
+          p.tasks.push(nt)
         }
         for (const l of clip.links) {
           const from = taskMap.get(l.from),
