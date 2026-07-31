@@ -6,6 +6,7 @@
   "description": "HydroNet backend — file/CRDT persistence, error logging, 인증/RBAC(ADR-002)",
   "scripts": {
     "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
     "auth-smoke": "node scripts/auth-smoke.mjs"
   },
   "engines": {
