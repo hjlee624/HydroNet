@@ -8,24 +8,36 @@
 
 import express from 'express'
 import cors from 'cors'
+import http from 'node:http'
 import fs from 'node:fs/promises'
 import fssync from 'node:fs'
 import path from 'node:path'
 import os from 'node:os'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createMemoryRepo } from './auth/repo.js'
 import { createPgRepo } from './auth/pgRepo.js'
 import { createAuthRouter, bootstrapDeveloper } from './auth/routes.js'
+import { verifyToken } from './auth/crypto.js'
+import { canAccessAll, canAdmin, canEnterProject } from './auth/roles.js'
+import { attachCollaborationServer } from './collab/index.js'
+import {
+  createBoundedRateLimiter,
+  createHttpOriginPolicy,
+  normalizeClientLogEntries,
+  resolveAuthBackendConfig,
+} from './security.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..', '..')
-const DATA_DIR = path.resolve(__dirname, '..', 'data')
+const DATA_DIR = path.resolve(process.env.HN_DATA_DIR || path.resolve(__dirname, '..', 'data'))
 const CLIENT_DIST = path.resolve(ROOT, 'client', 'dist')
 const PUBLIC_FONTS = path.resolve(ROOT, 'client', 'public', 'fonts')
-const ERROR_LOG = path.resolve(ROOT, 'error.log')
-const PORT = process.env.PORT || 4020
+const ERROR_LOG = path.resolve(process.env.HN_ERROR_LOG || path.resolve(ROOT, 'error.log'))
+const PORT = Number(process.env.PORT || 4020)
 // Bind all interfaces by default so other PCs on the LAN can connect.
 const HOST = process.env.HOST || '0.0.0.0'
+const AUTH_ENABLED = process.env.AUTH_ENABLED !== '0'
+const { backend: AUTH_BACKEND, databaseUrl: DATABASE_URL } = resolveAuthBackendConfig(process.env)
 
 /** Non-internal IPv4 addresses (for printing LAN URLs). */
 function lanAddresses() {
@@ -70,21 +82,54 @@ process.on('unhandledRejection', (r) =>
 
 // ── app ──────────────────────────────────────────────────────────────────────
 const app = express()
-// LAN 협업 전제: 자격증명(쿠키) 동반 요청 허용을 위해 same-origin 우선. 개발 편의로 origin 반영+credentials.
-app.use(cors({ origin: true, credentials: true }))
+// Apply exactly the same explicit/same-origin LAN policy as the WebSocket upgrade.
+const isAllowedHttpOrigin = createHttpOriginPolicy(process.env.COLLAB_ALLOWED_ORIGINS)
+app.use((req, res, next) => {
+  if (isAllowedHttpOrigin(req)) return next()
+  res.status(403).json({ error: 'Origin is not allowed.' })
+})
+app.use(
+  cors({
+    origin: (origin, callback) => callback(null, Boolean(origin)),
+    credentials: true,
+  }),
+)
+// The client log funnel has a much smaller parsing budget than project snapshots.
+app.use('/api/log', express.json({ limit: '32kb' }))
 app.use(express.json({ limit: '12mb' }))
+app.use((error, _req, res, next) => {
+  if (error?.type === 'entity.too.large') {
+    return res.status(413).json({ error: 'Request body is too large.' })
+  }
+  if (error instanceof SyntaxError && error.status === 400) {
+    return res.status(400).json({ error: 'Invalid JSON body.' })
+  }
+  next(error)
+})
 
 // ── 인증/RBAC (ADR-002) — 서버가 있을 때 로그인 게이트. 오프라인 단일 HTML은 클라가 로컬 모드로 우회. ──
-const AUTH_ENABLED = process.env.AUTH_ENABLED !== '0'
-const AUTH_BACKEND = process.env.AUTH_BACKEND || 'memory'
 const authRepo =
-  AUTH_BACKEND === 'pg' && process.env.DATABASE_URL
-    ? createPgRepo(process.env.DATABASE_URL)
+  AUTH_BACKEND === 'pg'
+    ? createPgRepo(DATABASE_URL)
     : createMemoryRepo(path.join(DATA_DIR, 'auth.json'))
+if (authRepo.backend !== AUTH_BACKEND) {
+  throw new Error(`Auth repository backend mismatch: configured=${AUTH_BACKEND}, actual=${authRepo.backend}`)
+}
 const secureCookie = process.env.AUTH_SECURE_COOKIE === '1' || process.env.NODE_ENV === 'production'
-const { router: authRouter, requireAuth, requireProjectToken } = createAuthRouter(authRepo, { secure: secureCookie })
+const { router: authRouter, requireAuth } = createAuthRouter(authRepo, { secure: secureCookie })
 const listGate = AUTH_ENABLED ? requireAuth : (_req, _res, next) => next()
-const projectGate = AUTH_ENABLED ? requireProjectToken : (_req, _res, next) => next()
+const logGate = AUTH_ENABLED
+  ? requireAuth
+  : (_req, res) => res.status(404).json({ error: 'Client logging is disabled.' })
+const clientLogLimiter = createBoundedRateLimiter({ limit: 30, windowMs: 60_000, maxTracked: 5_000 })
+const clientLogRateGate = (req, res, next) => {
+  const actor = req.user?.id || 'anonymous'
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown'
+  const result = clientLogLimiter.consume(`${ip}\0${actor}`)
+  if (result.allowed) return next()
+  res.setHeader('Retry-After', String(result.retryAfter))
+  res.status(429).json({ error: 'Client log rate limit exceeded.' })
+}
 if (AUTH_ENABLED) {
   app.use('/api', authRouter)
   bootstrapDeveloper(authRepo)
@@ -93,8 +138,61 @@ if (AUTH_ENABLED) {
   appendLog('info', `인증 활성(backend=${authRepo.backend}). 오프라인/단일HTML은 클라 로컬 모드로 우회.`)
 }
 
-const idOk = (id) => /^[A-Za-z0-9_-]{1,80}$/.test(id)
+const idOk = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id)
 const fileFor = (id) => path.join(DATA_DIR, `${id}.json`)
+
+const sessionCookie = (req) => {
+  for (const part of String(req.headers.cookie || '').split(';')) {
+    const [name, ...value] = part.trim().split('=')
+    if (name === 'hn_session') return decodeURIComponent(value.join('='))
+  }
+  return null
+}
+
+async function resolveProjectAccess(req, projectId) {
+  if (!AUTH_ENABLED) return { user: null, projectId, projRole: 'local' }
+  if (!idOk(projectId)) return null
+
+  const project = await authRepo.getProject(projectId)
+  if (!project) return null
+
+  const cookie = sessionCookie(req)
+  if (cookie) {
+    const session = await verifyToken(cookie, 'session').catch(() => null)
+    const user = session?.sub ? await authRepo.getUser(String(session.sub)) : null
+    if (user && user.active !== false && canAccessAll(user)) {
+      return { user, projectId, projRole: 'developer' }
+    }
+  }
+
+  const authorization = String(req.headers.authorization || '')
+  const token = authorization.startsWith('Bearer ') ? authorization.slice(7) : null
+  const grant = token ? await verifyToken(token, 'project').catch(() => null) : null
+  if (!grant?.sub || grant.projectId !== projectId) return null
+
+  const user = await authRepo.getUser(String(grant.sub))
+  if (!user || user.active === false) return null
+  const membership = canAccessAll(user)
+    ? { projectId, userId: user.id, role: 'developer' }
+    : await authRepo.getMembership(projectId, user.id)
+  if (!canEnterProject(user, membership)) return null
+  return { user, projectId, projRole: canAccessAll(user) ? 'developer' : membership.role }
+}
+
+const projectDeniedStatus = (req) =>
+  sessionCookie(req) || String(req.headers.authorization || '').startsWith('Bearer ') ? 403 : 401
+
+const projectGate = async (req, res, next) => {
+  try {
+    const access = await resolveProjectAccess(req, req.params.id)
+    if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+    req.user = access.user
+    req.projectGrant = access
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
 
 // Per-id write serialization. Concurrent PUTs for the same project (multiple
 // tabs, auto-save racing a manual save, client retries) are chained so their
@@ -124,11 +222,17 @@ app.get('/api/health', (_req, res) =>
 // Client error funnel → error.log
 app.post(
   '/api/log',
+  logGate,
+  clientLogRateGate,
   asyncRoute(async (req, res) => {
-    const entries = Array.isArray(req.body?.entries) ? req.body.entries : [req.body]
-    for (const e of entries) {
-      if (!e) continue
-      appendLog(e.level || 'info', `[client] ${e.message ?? ''}`, e.stack || e.context)
+    let entries
+    try {
+      entries = normalizeClientLogEntries(req.body)
+    } catch (error) {
+      return res.status(400).json({ error: error.message })
+    }
+    for (const entry of entries) {
+      appendLog(entry.level, `[client:${req.user.role}] ${entry.message}`, entry.detail)
     }
     res.json({ ok: true, count: entries.length })
   }),
@@ -137,12 +241,17 @@ app.post(
 app.get(
   '/api/projects',
   listGate,
-  asyncRoute(async (_req, res) => {
+  asyncRoute(async (req, res) => {
     const files = (await fs.readdir(DATA_DIR)).filter((f) => f.endsWith('.json'))
     const summaries = []
     for (const f of files) {
       try {
         const p = JSON.parse(await fs.readFile(path.join(DATA_DIR, f), 'utf8'))
+        if (!idOk(p.id)) continue
+        if (AUTH_ENABLED && !canAccessAll(req.user)) {
+          const membership = await authRepo.getMembership(p.id, req.user.id)
+          if (!membership) continue
+        }
         summaries.push({ id: p.id, name: p.name, updatedAt: p.meta?.updatedAt ?? null })
       } catch (e) {
         appendLog('warn', `손상된 프로젝트 파일 건너뜀: ${f}`, { message: e.message })
@@ -153,10 +262,7 @@ app.get(
   }),
 )
 
-app.get(
-  '/api/projects/:id',
-  projectGate,
-  asyncRoute(async (req, res) => {
+const sendProjectSnapshot = asyncRoute(async (req, res) => {
     const { id } = req.params
     if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
     try {
@@ -166,31 +272,21 @@ app.get(
       if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
       throw e
     }
-  }),
-)
+  })
+
+app.get('/api/projects/:id', projectGate, sendProjectSnapshot)
+app.get('/api/projects/:id/snapshot', projectGate, sendProjectSnapshot)
 
 app.put(
   '/api/projects/:id',
   projectGate,
-  asyncRoute(async (req, res) => {
-    const { id } = req.params
-    if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
-    const project = req.body
-    if (!project || project.id !== id) return res.status(400).json({ error: 'ID 불일치' })
-    // Unique temp + per-id serialization: atomic against crashes AND safe against
-    // concurrent same-id writers (no shared temp path, no interleaving).
-    await serializeWrite(id, async () => {
-      const tmp = `${fileFor(id)}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
-      try {
-        await fs.writeFile(tmp, JSON.stringify(project, null, 2), 'utf8')
-        await fs.rename(tmp, fileFor(id))
-      } catch (e) {
-        await fs.unlink(tmp).catch(() => {}) // clean up the orphan temp on failure
-        throw e
-      }
+  (_req, res) => {
+    res.setHeader('Allow', 'GET')
+    res.status(405).json({
+      error: '전체 JSON PUT 저장은 종료되었습니다. 실시간 편집은 /collab을 사용하고 백업은 snapshot GET을 사용하세요.',
+      snapshot: '/api/projects/:id/snapshot',
     })
-    res.json({ ok: true, id })
-  }),
+  },
 )
 
 app.delete(
@@ -199,6 +295,9 @@ app.delete(
   asyncRoute(async (req, res) => {
     const { id } = req.params
     if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
+    if (AUTH_ENABLED && !canAdmin(req.user)) {
+      return res.status(403).json({ error: '프로젝트 삭제는 개발자 권한이 필요합니다.' })
+    }
     try {
       await fs.unlink(fileFor(id))
       res.json({ ok: true })
@@ -250,7 +349,8 @@ function safeName(name) {
 
 app.get(
   '/api/autosave',
-  asyncRoute(async (_req, res) => {
+  listGate,
+  asyncRoute(async (req, res) => {
     let files = []
     try {
       files = (await fs.readdir(AUTOSAVE_DIR)).filter((f) => f.endsWith('.json'))
@@ -263,6 +363,11 @@ app.get(
         const full = path.join(AUTOSAVE_DIR, f)
         const stat = await fs.stat(full)
         const p = JSON.parse(await fs.readFile(full, 'utf8'))
+        if (AUTH_ENABLED && !canAccessAll(req.user)) {
+          if (!idOk(p.id)) continue
+          const membership = await authRepo.getMembership(p.id, req.user.id)
+          if (!membership) continue
+        }
         items.push({
           file: f.replace(/\.json$/, ''),
           name: p.name ?? f,
@@ -284,6 +389,9 @@ app.get(
     const name = safeName(req.params.name)
     try {
       const raw = await fs.readFile(path.join(AUTOSAVE_DIR, `${name}.json`), 'utf8')
+      const project = JSON.parse(raw)
+      const access = idOk(project?.id) ? await resolveProjectAccess(req, project.id) : null
+      if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
       res.type('application/json').send(raw)
     } catch (e) {
       if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
@@ -296,8 +404,10 @@ app.post(
   '/api/autosave',
   asyncRoute(async (req, res) => {
     const project = req.body
-    if (!project || typeof project !== 'object')
+    if (!project || typeof project !== 'object' || !idOk(project.id))
       return res.status(400).json({ error: '잘못된 본문' })
+    const access = await resolveProjectAccess(req, project.id)
+    if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
     const name = safeName(project.name)
     const file = path.join(AUTOSAVE_DIR, `${name}.json`)
     await serializeWrite(`autosave:${name}`, async () => {
@@ -319,7 +429,11 @@ app.delete(
   asyncRoute(async (req, res) => {
     const name = safeName(req.params.name)
     try {
-      await fs.unlink(path.join(AUTOSAVE_DIR, `${name}.json`))
+      const file = path.join(AUTOSAVE_DIR, `${name}.json`)
+      const project = JSON.parse(await fs.readFile(file, 'utf8'))
+      const access = idOk(project?.id) ? await resolveProjectAccess(req, project.id) : null
+      if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+      await fs.unlink(file)
       res.json({ ok: true })
     } catch (e) {
       if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
@@ -347,17 +461,74 @@ if (fssync.existsSync(CLIENT_DIST)) {
 }
 
 const served = fssync.existsSync(CLIENT_DIST)
-app.listen(PORT, HOST, () => {
+export { app, authRepo }
+
+export async function startServer(options = {}) {
+  const port = Number(options.port ?? PORT)
+  const host = options.host ?? HOST
+  const server = http.createServer(app)
+  const collab = attachCollaborationServer(server, {
+    repo: authRepo,
+    authBackend: authRepo.backend,
+    dataDir: DATA_DIR,
+    allowedOrigins: options.allowedOrigins,
+    timeout: options.collabTimeout,
+    logger: {
+      error(message, error) {
+        appendLog('error', message, { message: error?.message, stack: error?.stack })
+      },
+    },
+  })
+
+  await new Promise((resolve, reject) => {
+    server.once('error', reject)
+    server.listen(port, host, resolve)
+  })
+  const actualPort = server.address().port
   appendLog(
     'info',
-    `HydroNet 서버 시작 (host ${HOST}, port ${PORT}, client=${served ? 'dist' : 'api-only'})`,
+    `HydroNet 서버 시작 (host ${host}, port ${actualPort}, client=${served ? 'dist' : 'api-only'})`,
   )
   console.log('\nHydroNet server listening on all interfaces:')
   console.log(
-    `  Local:  http://127.0.0.1:${PORT}/${served ? '' : '  (API only — run "npm run build" to serve the app)'}`,
+    `  Local:  http://127.0.0.1:${actualPort}/${served ? '' : '  (API only — run "npm run build" to serve the app)'}`,
   )
-  for (const ip of lanAddresses()) console.log(`  LAN:    http://${ip}:${PORT}/`)
+  for (const ip of lanAddresses()) console.log(`  LAN:    http://${ip}:${actualPort}/`)
   console.log(
-    `\n다른 PC에서 LAN URL이 안 열리면 Windows Defender 방화벽에서 TCP ${PORT} 포트를 허용하세요.\n`,
+    `\n다른 PC에서 LAN URL이 안 열리면 Windows Defender 방화벽에서 TCP ${actualPort} 포트를 허용하세요.\n`,
   )
-})
+
+  let closePromise
+  return {
+    app,
+    server,
+    collab,
+    authRepo,
+    port: actualPort,
+    close() {
+      closePromise ??= (async () => {
+        const httpClosed = new Promise((resolve, reject) => {
+          server.close((error) => (error ? reject(error) : resolve()))
+        })
+        await collab.destroy()
+        await httpClosed
+      })()
+      return closePromise
+    },
+  }
+}
+
+const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href
+if (isMain) {
+  const runtime = await startServer()
+  let stopping = false
+  const stop = async () => {
+    if (stopping) return
+    stopping = true
+    await runtime.close()
+    if (authRepo.pool) await authRepo.pool.end()
+  }
+  process.once('SIGINT', stop)
+  process.once('SIGQUIT', stop)
+  process.once('SIGTERM', stop)
+}

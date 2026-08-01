@@ -1507,3 +1507,119 @@ textarea.input {
 .authbar__user em { color: var(--stone); font-style: normal; }
 .authbar__btn { background: rgba(255,255,255,.12); color: inherit; border: 1px solid rgba(255,255,255,.2); border-radius: 7px; padding: 4px 10px; font: inherit; font-size: 12px; cursor: pointer; }
 .authbar__btn:hover { background: rgba(255,255,255,.22); }
+
+/* ── 프로젝트 목록 리스트 아이템(멤버 버튼 포함) ── */
+.proj-list__item { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.proj-list__item > .proj-item { flex: 1; }
+.proj-members-btn { position: absolute; right: 0; top: 0; height: 100%; padding: 0 14px; background: none; border: none; border-left: 1px solid var(--hairline); cursor: pointer; font-size: 18px; color: var(--slate); border-radius: 0 12px 12px 0; transition: background .15s; }
+.proj-members-btn:hover { background: var(--cream); color: var(--primary); }
+
+/* ── 멤버 패널 ── */
+.member-panel { margin-top: 4px; border: 1px solid var(--hairline-strong); border-radius: 12px; background: var(--cream-soft); padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; }
+.member-panel__header { display: flex; align-items: center; justify-content: space-between; }
+.member-panel__title { font-weight: 700; font-size: 13px; color: var(--ink); }
+.member-panel__close { background: none; border: none; cursor: pointer; color: var(--slate); font-size: 13px; padding: 2px 6px; border-radius: 6px; }
+.member-panel__close:hover { background: var(--hairline); }
+.member-panel__error { background: #f7e4e0; border: 1px solid #e6c4bb; color: #8e1b14; border-radius: 8px; padding: 7px 10px; font-size: 12px; }
+.member-panel__loading { font-size: 12px; color: var(--stone); padding: 4px 0; }
+.member-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.member-item { display: flex; align-items: center; gap: 8px; padding: 6px 10px; background: var(--canvas); border-radius: 8px; border: 1px solid var(--hairline); font-size: 13px; }
+.member-role-badge { padding: 2px 8px; border-radius: 20px; font-size: 10.5px; font-weight: 700; }
+.member-role-badge--pm { background: #e3f0ff; color: #1558b0; }
+.member-role-badge--user { background: #f0f0f0; color: #555; }
+.member-name { flex: 1; font-weight: 600; color: var(--ink); }
+.member-id { font-size: 11px; color: var(--stone); }
+.member-remove-btn { background: none; border: none; cursor: pointer; color: var(--stone); font-size: 12px; padding: 2px 6px; border-radius: 6px; margin-left: auto; }
+.member-remove-btn:hover { background: #fde8e6; color: #c0392b; }
+.member-empty { font-size: 12px; color: var(--stone); text-align: center; padding: 8px; }
+.member-add-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: flex-end; padding: 10px; background: var(--canvas); border: 1px solid var(--hairline-strong); border-radius: 10px; }
+.member-add-select, .member-add-role { padding: 7px 10px; border: 1px solid var(--hairline-strong); border-radius: 8px; font: inherit; font-size: 13px; background: var(--canvas); color: var(--ink); }
+.member-add-select { flex: 1; min-width: 160px; }
+.member-add-btn { padding: 7px 14px; border-radius: 8px; font: inherit; font-weight: 700; font-size: 12.5px; cursor: pointer; border: 1px solid var(--hairline-strong); background: var(--cream-soft); color: var(--ink); }
+.member-add-btn--confirm { background: var(--primary); color: #fff; border-color: transparent; }
+.member-add-btn--confirm:disabled { opacity: .45; cursor: not-allowed; }
+.member-add-toggle { background: none; border: 1px dashed var(--hairline-strong); border-radius: 8px; padding: 7px 12px; font: inherit; font-size: 12.5px; font-weight: 700; color: var(--primary-deep, var(--primary)); cursor: pointer; width: 100%; }
+.member-add-toggle:hover { border-color: var(--primary); background: var(--cream); }
+
+/* ── 관리자 도구 열기 버튼(프로젝트 선택 화면 하단) ── */
+.admin-open-btn { margin-top: 8px; width: 100%; border: 1px solid var(--hairline-strong); background: transparent; color: var(--steel); border-radius: 10px; padding: 10px; font: inherit; font-size: 12.5px; font-weight: 700; cursor: pointer; }
+.admin-open-btn:hover { background: var(--cream); color: var(--ink); }
+
+/* ── 관리자 패널 오버레이 ── */
+.admin-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 1000; display: flex; align-items: flex-start; justify-content: center; padding: 40px 16px; overflow: auto; }
+.admin-panel { width: 100%; max-width: 820px; background: var(--canvas); border-radius: 18px; box-shadow: 0 16px 60px rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 14px; padding: 28px 28px 24px; }
+.admin-panel__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.admin-panel__title { font-weight: 800; font-size: 20px; color: var(--ink); }
+.admin-panel__sub { font-size: 12.5px; color: var(--slate); margin-top: 3px; }
+.admin-close { background: none; border: none; font-size: 20px; cursor: pointer; color: var(--stone); padding: 4px 8px; border-radius: 8px; }
+.admin-close:hover { background: var(--hairline); }
+.admin-toolbar { display: flex; gap: 8px; flex-wrap: wrap; }
+.admin-btn { padding: 8px 16px; border: 1px solid var(--hairline-strong); background: var(--cream-soft); color: var(--ink); border-radius: 9px; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.admin-btn:hover { background: var(--cream); }
+.admin-btn--primary { background: var(--primary); color: #fff; border-color: transparent; }
+.admin-btn--primary:hover { background: var(--primary-deep, var(--primary)); }
+.admin-add-form { border: 1px solid var(--hairline-strong); border-radius: 12px; padding: 16px; background: var(--cream-soft); display: flex; flex-direction: column; gap: 10px; }
+.admin-add-form__row { display: flex; gap: 10px; flex-wrap: wrap; }
+.admin-add-form__actions { display: flex; gap: 8px; }
+.admin-field { display: flex; flex-direction: column; gap: 4px; font-size: 12px; font-weight: 700; color: var(--steel); flex: 1; min-width: 140px; }
+.admin-field em { font-weight: 400; font-style: normal; color: var(--stone); }
+.admin-field input, .admin-field select { border: 1px solid var(--hairline-strong); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; color: var(--ink); background: var(--canvas); }
+.admin-field input:focus, .admin-field select:focus { outline: none; border-color: var(--primary); }
+.admin-error { background: #f7e4e0; border: 1px solid #e6c4bb; color: #8e1b14; border-radius: 8px; padding: 8px 12px; font-size: 12px; }
+.admin-msg { border-radius: 8px; padding: 8px 12px; font-size: 12.5px; }
+.admin-msg--ok { background: #e6f5ea; border: 1px solid #b2d8bb; color: #1a6b2f; }
+.admin-msg--err { background: #f7e4e0; border: 1px solid #e6c4bb; color: #8e1b14; }
+.admin-loading { font-size: 13px; color: var(--stone); padding: 8px; }
+.admin-table-wrap { overflow-x: auto; border: 1px solid var(--hairline); border-radius: 12px; }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.admin-table th { background: var(--cream-soft); padding: 10px 14px; text-align: left; font-size: 11.5px; font-weight: 700; color: var(--steel); border-bottom: 1px solid var(--hairline); }
+.admin-table td { padding: 10px 14px; border-bottom: 1px solid var(--hairline); color: var(--ink); vertical-align: middle; }
+.admin-row:last-child td { border-bottom: none; }
+.admin-row:hover td { background: var(--cream-soft); }
+.admin-row--busy td { opacity: .6; pointer-events: none; }
+.admin-cell-id { font-family: monospace; font-size: 12px; color: var(--slate); }
+.admin-empty { color: var(--stone); }
+.admin-empty-row { text-align: center; color: var(--stone); padding: 20px; }
+.admin-role-select { padding: 4px 6px; border: 1px solid var(--hairline-strong); border-radius: 6px; font: inherit; font-size: 12px; background: var(--canvas); margin-right: 6px; }
+.admin-badge { display: inline-block; padding: 2px 8px; border-radius: 20px; font-size: 10.5px; font-weight: 700; }
+.admin-badge--dev { background: #fdf0e0; color: #b06000; }
+.admin-badge--pm { background: #e3f0ff; color: #1558b0; }
+.admin-badge--user { background: #f0f0f0; color: #555; }
+.admin-toggle { padding: 3px 10px; border-radius: 20px; font: inherit; font-size: 11.5px; font-weight: 700; cursor: pointer; border: none; }
+.admin-toggle--on { background: #e6f5ea; color: #1a6b2f; }
+.admin-toggle--off { background: #f5f0f0; color: #888; }
+.admin-pw-set { font-size: 11.5px; color: var(--slate); }
+.admin-pw-none { font-size: 11.5px; color: #c0392b; }
+
+/* ── 새 도면 2단계 템플릿 ── */
+.tpl-steps { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; font-size: 13px; color: var(--stone); }
+.tpl-step { display: flex; align-items: center; gap: 5px; }
+.tpl-step--active { color: var(--primary); font-weight: 700; }
+.tpl-step--done { color: var(--slate); }
+.tpl-step__num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; border-radius: 50%; background: var(--hairline); font-size: 11px; font-weight: 800; }
+.tpl-step--active .tpl-step__num { background: var(--primary); color: #fff; }
+.tpl-step--done .tpl-step__num { background: var(--slate); color: #fff; }
+.tpl-step__chosen { font-weight: 400; font-style: normal; color: var(--slate); margin-left: 2px; }
+.tpl-step__sep { color: var(--stone); font-size: 16px; }
+.tpl-kind-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.tpl-kind-card { border: 1.5px solid var(--hairline-strong); border-radius: 14px; background: var(--canvas); padding: 18px 14px; cursor: pointer; display: flex; flex-direction: column; gap: 6px; text-align: left; transition: border-color .15s, box-shadow .15s; }
+.tpl-kind-card:hover { border-color: var(--primary); box-shadow: 0 4px 18px rgba(0,0,0,.08); }
+.tpl-kind-card__icon { font-size: 26px; line-height: 1; }
+.tpl-kind-card__label { font-weight: 800; font-size: 14px; color: var(--ink); }
+.tpl-kind-card__desc { font-size: 11.5px; color: var(--slate); line-height: 1.4; }
+.tpl-kind-card__points { margin: 4px 0 0 12px; padding: 0; font-size: 11px; color: var(--stone); line-height: 1.7; }
+.tpl-back-btn { background: none; border: none; color: var(--primary); font: inherit; font-size: 13px; cursor: pointer; text-decoration: underline; margin-bottom: 4px; padding: 0; }
+.tpl-facility-group { margin-bottom: 14px; }
+.tpl-facility-group__label { font-size: 11.5px; font-weight: 700; color: var(--steel); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 8px; }
+.tpl-facility-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+.tpl-facility-card { border: 1.5px solid var(--hairline-strong); border-radius: 12px; background: var(--canvas); padding: 12px 10px; cursor: pointer; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; transition: border-color .15s; }
+.tpl-facility-card:hover { border-color: var(--primary); }
+.tpl-facility-card--selected { border-color: var(--primary); background: var(--cream); box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 15%, transparent); }
+.tpl-facility-card__icon { font-size: 20px; }
+.tpl-facility-card__name { font-weight: 700; font-size: 12.5px; color: var(--ink); }
+.tpl-facility-card__desc { font-size: 10.5px; color: var(--stone); line-height: 1.4; }
+.tpl-confirm-bar { display: flex; justify-content: flex-end; padding-top: 10px; border-top: 1px solid var(--hairline); margin-top: 4px; }
+.tpl-confirm-btn { padding: 11px 22px; background: var(--primary); color: #fff; border: none; border-radius: 10px; font: inherit; font-weight: 800; font-size: 14px; cursor: pointer; }
+.tpl-confirm-btn:disabled { opacity: .45; cursor: not-allowed; background: var(--slate); }
+.tpl-confirm-btn:hover:not(:disabled) { background: var(--primary-deep, var(--primary)); }
+

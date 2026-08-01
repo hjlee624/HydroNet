@@ -9,6 +9,7 @@
 // 으로 폴백한다. AbortError(사용자 취소)는 조용히 무시한다.
 
 import type { Project } from '../types/model'
+import { canonicalProjectSnapshot } from './crdt'
 
 // File System Access API는 ES2021 DOM 타입에 없을 수 있어 최소한으로 선언한다.
 declare global {
@@ -32,7 +33,7 @@ const isAbort = (e: unknown): boolean => (e as { name?: string } | null)?.name =
 /** 파일명에 못 쓰는 문자를 정리한 안전한 기본 파일명. */
 function safeFileName(name: string): string {
   const base = (name || 'HydroNet').replace(/[\\/:*?"<>|]+/g, '_').trim()
-  return (base || 'HydroNet') + '.json'
+  return `${base || 'HydroNet'}.json`
 }
 
 const PICK_TYPES = [
@@ -41,7 +42,9 @@ const PICK_TYPES = [
 
 /** 프로젝트를 사용자가 고른 경로의 .json으로 저장. 저장하면 true, 사용자가 취소하면 false. */
 export async function saveProjectToFile(project: Project): Promise<boolean> {
-  const json = JSON.stringify(project, null, 2)
+  // A .json file is a portable authoritative snapshot, never a dump of the
+  // scheduled zustand view (which also contains CPM/mirror-only fields).
+  const json = JSON.stringify(canonicalProjectSnapshot(project), null, 2)
   const suggestedName = safeFileName(project.name)
 
   if (typeof window !== 'undefined' && typeof window.showSaveFilePicker === 'function') {
@@ -99,7 +102,7 @@ function pickFileTextViaInput(): Promise<string | null> {
     input.type = 'file'
     input.accept = '.json,application/json'
     input.onchange = async () => {
-      const f = input.files && input.files[0]
+      const f = input.files?.[0]
       resolve(f ? await f.text() : null)
     }
     input.click()

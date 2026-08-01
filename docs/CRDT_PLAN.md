@@ -1,52 +1,55 @@
-# CRDT(실시간 협업) 도입 계획 — 0단계 경계 정의
+# CRDT 협업 구조
 
-> 상태: **0단계(비파괴 명문화)만 반영됨.** 1단계 이상(실제 Y.Doc 도입)은 전문가 검토(이슈: `docs/ISSUE_CRDT.md`) 후 착수한다.
-> 전문가 피드백 ⑥⑦ 반영. 상세 분석·근거는 리서치 보고서(`EXPERT_FEEDBACK_REVIEW_2026-07-06.html`) 참고.
+> 구현 기준: P0 경계, 로컬 Y.Doc/y-indexeddb, Y.UndoManager, LAN Hocuspocus 서버, 바이너리 영속, `.json` 호환 경로가 코드에 반영되어 있다. 프레즌스 UI와 운영 배포 구성은 별도 검증 대상이다.
 
-## 왜 0단계가 먼저인가
+## 권위 데이터 경계
 
-CRDT의 최대 함정은 **파생 계산값을 협업 상태에 써 넣어 사용자끼리 서로 덮어쓰는 것**이다.
-HydroNet은 다행히 이미 "사용자 입력값"과 "계산 결과"가 코드상 분리돼 있으므로, 그 경계를
-**문서로 못 박아 두면** 이후 어떤 CRDT(Yjs 등)를 붙이든 안전하게 진행할 수 있다.
+Y.Doc과 사용자가 저장하는 `.json`에는 사용자 입력값만 기록한다.
 
-## 권위(authoritative) 데이터 vs 파생(derived) 캐시
+- 포함: 프로젝트 메타, 용지·보기·브랜딩·팔레트, 공종·공정·연결·우기, 전체 시트의 사용자 입력 필드
+- 제외: `es`, `ef`, `ls`, `lf`, `totalFloat`, `critical`, `__mirror`
+- 제외: cascade가 계산한 중간·출력 전용 상태
+- 예외: `forceCritical`과 사용자가 직접 드래그·입력한 `start`는 권위 데이터다.
 
-CRDT/동기화/저장의 **진실원본**은 아래 "권위 데이터"뿐이다. "파생 캐시"는 각 클라이언트가
-`withSchedule`/`applyCascade`/`mirror`로 **로컬 재계산**하며, **CRDT·동기화·`.json` 저장 어디에도 진실로 기록하지 않는다.**
+CPM, mirror, layout, KPI와 cascade 결과는 각 클라이언트가 평면 뷰를 만들 때 재계산한다. 이 경계는 `client/src/state/crdt.ts`와 `server/src/collab/seed.js` 양쪽에서 적용한다.
 
-### ✅ 권위 데이터 (동기화/저장 대상)
-- `Project`: `id`, `name`, `kind`, `facility`, `startDate`, `paper`, `view`, `branding`, `palette`, `commissioningEnabled`
-- `categories[]`: 각 공종의 `id`, `name`, `color`, `order`, `hidden`, …
-- `tasks[]`: 각 공정의 `id`, `categoryId`, `name`, `subName`, `start`, `duration`, `durationLabel`, `row`, `progress`, `forceCritical`, `isDummy`, `hidden`, `milestone` 등 **사용자가 실제 입력/드래그한 값**
-- `links[]`: `id`, `from`, `to`, `type`(FS/SS/FF/SF), `lag`, `style` — **의존성 존재와 파라미터**
-- `rainySeasons[]`, `sheets[]`(비활성 시트 데이터), `modules`, `baseline`
+## 현재 데이터 모델
 
-### ⛔ 파생 캐시 (동기화/저장 금지 — 로컬 재계산)
-- `Task.es / ef / ls / lf / totalFloat / critical` — `scheduling.ts`의 CPM 산출(단, `forceCritical`은 권위)
-- `Task.__mirror` 및 mirror 관련 표시 필드 — `mirror.ts`가 예정공정표↔마일스톤 연동으로 생성
-- `applyCascade`가 밀어낸 `start` — **주의**: cascade 결과로 바뀐 start는 파생이지만, 사용자가 직접 드래그한 start는 권위.
-  → 1단계 구현 시 "사용자 제스처가 만든 start"만 CRDT 트랜잭션으로 기록하고, cascade는 관찰자(local)에서 재적용한다.
-- `computeLayout`/`kpis.ts`(EVM·SPI/CPI)/`routing.ts` 산출물 — 전부 렌더 시 계산, 저장 안 함(이미 그러함)
+- 프로젝트당 Y.Doc 1개, room 이름은 project id다.
+- 안정된 top-level named Y type(`root/meta`, `root/tasks` 등)을 사용한다.
+- id 기반 컬렉션은 `Y.Map<id, Y.Map>`이며 `$position` fractional key로 순서를 유지한다.
+- 모든 시트는 문서 안에 상주하고, 활성 시트 선택은 로컬 뷰 포인터로 취급한다.
+- zustand는 렌더 호환용 평면 뷰이며 Y.Doc이 권위 원본이다.
+- undo/redo는 `Y.UndoManager`가 `LOCAL_ORIGIN`만 추적한다.
 
-## 붙일 지점 (요약)
+## 오프라인과 LAN
 
-| # | 위치 | 무엇을 | 난이도 |
-|---|------|--------|--------|
-| 1 | `state/store.ts` `commit()` / `project` | 유일한 쓰기 관문. project를 Y.Doc로, `mutate(draft)`를 `doc.transact` 요소변형으로 | 높음 |
-| 2 | `state/store.ts` `past`/`future` | `Y.UndoManager`(trackedOrigins=로컬)로 대체 | 중간 |
-| 3 | `server/src/index.js` | y-websocket provider(room=projectId) 부착, 오프라인은 미부착(옵션화) | 높음 |
-| 4 | `state/api.ts` · `fileIO.ts` | `.json`(평면) ↔ Y.Doc 스냅샷 어댑터(schemaVersion 분기) | 중간 |
+오프라인·단일 HTML은 provider를 연결하지 않고 `y-indexeddb`로 같은 project id의 Y.Doc을 복원한다. IndexedDB hydration이 끝난 뒤 문서가 비었을 때만 샘플을 시드해 기존 로컬 변경을 덮지 않는다.
 
-## 로드맵
+LAN 모드는 기존 Express HTTP 서버와 같은 포트의 `/collab`에 Hocuspocus를 붙인다.
 
-- **0. 경계 고정(비파괴) — 본 문서. ✅ 반영.**
-- 1. 로컬 데이터모델 CRDT화(provider 없음) + y-indexeddb. → build/smoke/mount 통과가 수용 기준.
-- 2. undo/redo → `Y.UndoManager`.
-- 3. provider(y-websocket) 서버 동기, 전체-파일 PUT 강등.
-- 4. 프레즌스(awareness) — 원격 커서·선택.
-- 5. 배포/호환 마감 — `.json`↔Y.Doc 무손실, LWW PUT 제거.
+1. 로그인 세션으로 프로젝트에 입장해 project grant를 받는다.
+2. `POST /api/auth/projects/:id/collab-ticket`으로 5분 ticket을 교환한다.
+3. provider가 ticket을 Hocuspocus 인증 메시지로 보낸다. URL query에 토큰을 넣지 않는다.
+4. 서버는 ticket claim뿐 아니라 현재 사용자·프로젝트·멤버십을 다시 조회한다.
 
-## 라이브러리 결론
+현재 역할 정책은 developer, PM, user 모두 담당 프로젝트를 편집할 수 있다. developer는 전체 접근, PM과 user는 현재 멤버십이 필요하다.
 
-**Yjs 1순위**(순수 JS → 단일 HTML/IIFE·file://·Electron 상성, y-indexeddb 오프라인, `Y.UndoManager`).
-성능/재정렬 정확성이 병목으로 판명되면 **Loro 2순위** 승격 검토. Automerge는 변경 이력이 제품 기능일 때만.
+## 저장과 마이그레이션
+
+- memory 인증 백엔드: `server/data/auth.json`, Y.Doc은 `server/data/ydocs/<projectId>.bin`
+- PostgreSQL 인증 백엔드: 계정/RBAC와 Y.Doc binary를 PostgreSQL에 저장
+- 레거시 `server/data/<projectId>.json`이 있고 binary가 없으면 서버가 최초 fetch에서 한 번만 canonical Y.Doc update로 변환한다.
+- 동시에 여러 연결이 들어와도 seed lock/원자적 write로 binary 하나만 생성한다.
+- 이후 레거시 JSON은 다시 import하지 않는다.
+- `PUT /api/projects/:id`는 405이며, 백업 조회는 `GET /api/projects/:id/snapshot`을 사용한다.
+
+## 배포 제약
+
+- 개발·검증 포트는 4020 또는 테스트 임시 포트다. 4000 운영 인스턴스는 건드리지 않는다.
+- private-LAN/same-origin Origin 검사는 브라우저 출처 제한일 뿐 TLS 대체물이 아니다.
+- 운영은 reverse proxy에서 HTTPS/WSS와 내부 CA를 적용한다.
+- Electron 패키징은 선택 과제이며 현재 구현되지 않았다.
+- Vite 8 마이그레이션은 이번 CRDT 도입 범위 밖이다.
+
+실행·검증·운영 절차는 [`DEPLOY_CRDT.md`](DEPLOY_CRDT.md)를 따른다.

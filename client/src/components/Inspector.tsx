@@ -2,16 +2,16 @@
 // a chart text is selected, else the selected activity / link editor, else the
 // project / paper / 우기 settings.
 
-import { useEffect, useMemo, useState } from 'react'
 import type { ChangeEvent } from 'react'
-import { useEditor } from '../state/store'
-import type { InspectorTab } from '../state/store'
-import { dateToDay, dayToDate, daysInMonth, parseISO, toISO } from '../engine/dates'
+import { useEffect, useMemo, useState } from 'react'
+import { dateToDay, daysInMonth, dayToDate, parseISO, toISO } from '../engine/dates'
 import { computeLayout, fitToPaperView } from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
-import { PALETTE_MAX } from '../types/model'
+import type { InspectorTab } from '../state/store'
+import { useEditor } from '../state/store'
+import { FONT_FAMILY_OPTIONS, TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS } from '../styles/theme'
 import type { LinkStyle, LinkType, PaperSize, TextRole } from '../types/model'
-import { TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS, FONT_FAMILY_OPTIONS } from '../styles/theme'
+import { PALETTE_MAX } from '../types/model'
 
 /** 4개 속성 탭(요구사항 3) — 도면·프로젝트 / 텍스트 / 공정 / 연결. SAMPLE.png 형태,
  *  색은 현 HydroNET 크림/오렌지. 차트에서 항목을 클릭하면 해당 탭으로 자동 전환된다. */
@@ -379,7 +379,8 @@ function TaskInspector({ id }: { id: string }) {
       </div>
       {multiSel && (
         <p className="note" style={{ marginTop: 0 }}>
-          공정 <b>{selectedTaskIds.length}개</b>가 선택되어 있어 색상은 선택된 공정 전체에 적용됩니다.
+          공정 <b>{selectedTaskIds.length}개</b>가 선택되어 있어 색상은 선택된 공정 전체에
+          적용됩니다.
         </p>
       )}
 
@@ -542,8 +543,8 @@ function LinkInspector({ id }: { id: string }) {
         연결 음영(DUMMY) 표시
       </label>
       <p className="note" style={{ marginTop: 0 }}>
-        같은 줄에서 연결된 두 공정 <b>사이 빈 구간</b>을 공종색 옅게 채우는 음영입니다. 끄면 그 구간을
-        비웁니다(다른 줄로 이어지는 연결에는 영향 없음).
+        같은 줄에서 연결된 두 공정 <b>사이 빈 구간</b>을 공종색 옅게 채우는 음영입니다. 끄면 그
+        구간을 비웁니다(다른 줄로 이어지는 연결에는 영향 없음).
       </p>
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteLink(id)}>
         연결 삭제
@@ -574,6 +575,7 @@ function ProjectInspector() {
     a().beginGesture()
     a().setPaper(patch)
     a().fitToPaper()
+    a().endGesture()
   }
   const rainy = project.rainySeasons[0]
   const logos = project.branding?.logos ?? []
@@ -683,6 +685,7 @@ function ProjectInspector() {
             onClick={() => {
               a().beginGesture()
               a().fitToPaper()
+              a().endGesture()
             }}
           >
             ⤢ 여백 없이 시트에 맞추기
@@ -767,7 +770,9 @@ function ProjectInspector() {
       </div>
 
       {/* 월 구분선 */}
-      <div style={{ fontWeight: 600, fontSize: 12, color: 'var(--charcoal)', margin: '14px 0 6px' }}>
+      <div
+        style={{ fontWeight: 600, fontSize: 12, color: 'var(--charcoal)', margin: '14px 0 6px' }}
+      >
         월 구분선
       </div>
       <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
@@ -798,8 +803,8 @@ function ProjectInspector() {
         />
       </div>
       <p className="note" style={{ marginTop: 0 }}>
-        공사기간을 세로선으로 나눕니다. <b>연도 구분선</b>은 해 경계(+제목↔연도 가로선), <b>월 구분선</b>은 달
-        경계에 긋습니다. 각각 표시/두께(최대 20px)를 조절할 수 있습니다.
+        공사기간을 세로선으로 나눕니다. <b>연도 구분선</b>은 해 경계(+제목↔연도 가로선),{' '}
+        <b>월 구분선</b>은 달 경계에 긋습니다. 각각 표시/두께(최대 20px)를 조절할 수 있습니다.
       </p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />

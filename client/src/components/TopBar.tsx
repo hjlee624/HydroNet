@@ -2,9 +2,10 @@
 // commissioning toggle and the export entry point.
 
 import { useEffect, useState } from 'react'
-import { useEditor } from '../state/store'
 import { openProjectFromFile } from '../state/fileIO'
 import { logWarn } from '../state/logger'
+import { useAuth } from '../state/authStore'
+import { useEditor } from '../state/store'
 import { HelpDialog } from './HelpDialog'
 import { TemplateDialog } from './TemplateDialog'
 
@@ -21,11 +22,20 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const commissioning = useEditor((s) => s.project.commissioningEnabled)
   const autoCascade = useEditor((s) => s.autoCascade)
   const uiMode = useEditor((s) => s.uiMode)
-  const canUndo = useEditor((s) => s.past.length > 0)
-  const canRedo = useEditor((s) => s.future.length > 0)
+  const canUndo = useEditor((s) => s.canUndo)
+  const canRedo = useEditor((s) => s.canRedo)
 
   const a = useEditor.getState
   const pro = uiMode === 'pro'
+
+  // 새 도면 권한: 로컬 모드이거나 개발자이거나 프로젝트 PM인 경우만 허용.
+  const authMode = useAuth((s) => s.mode)
+  const authUser = useAuth((s) => s.user)
+  const enteredRole = useAuth((s) => s.entered?.projRole)
+  const canCreateNew =
+    authMode === 'local' ||
+    authUser?.role === 'developer' ||
+    enteredRole === 'pm'
 
   const [helpOpen, setHelpOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
@@ -74,13 +84,15 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       />
 
       <div className="topbar__actions">
-        <button
-          className="btn btn--sm btn--ghost"
-          title="템플릿을 골라 새 도면 시작"
-          onClick={() => setNewOpen(true)}
-        >
-          ＋ 새 도면
-        </button>
+        {canCreateNew && (
+          <button
+            className="btn btn--sm btn--ghost"
+            title="템플릿을 골라 새 도면 시작"
+            onClick={() => setNewOpen(true)}
+          >
+            ＋ 새 도면
+          </button>
+        )}
         <button
           className="btn btn--sm"
           title="작업 파일(.json)을 원하는 경로에 저장 (Ctrl+S)"

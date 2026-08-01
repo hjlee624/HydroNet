@@ -10,7 +10,8 @@ export function createPgRepo(connectionString) {
     r && { id: r.id, name: r.name, role: r.role, passwordHash: r.password_hash, active: r.active }
   const projRow = (r) =>
     r && { id: r.id, name: r.name, accessCodeHash: r.access_code_hash, createdBy: r.created_by }
-  const memRow = (r) => r && { projectId: r.project_id, userId: r.user_id, role: r.role, addedBy: r.added_by }
+  const memRow = (r) =>
+    r && { projectId: r.project_id, userId: r.user_id, role: r.role, addedBy: r.added_by }
 
   return {
     backend: 'pg',
@@ -61,8 +62,12 @@ export function createPgRepo(connectionString) {
     async getMembership(projectId, userId) {
       return (
         memRow(
-          (await q('SELECT * FROM project_members WHERE project_id=$1 AND user_id=$2', [projectId, userId]))
-            .rows[0],
+          (
+            await q('SELECT * FROM project_members WHERE project_id=$1 AND user_id=$2', [
+              projectId,
+              userId,
+            ])
+          ).rows[0],
         ) ?? null
       )
     },
@@ -70,7 +75,9 @@ export function createPgRepo(connectionString) {
       return (await q('SELECT * FROM project_members WHERE user_id=$1', [userId])).rows.map(memRow)
     },
     async listMembers(projectId) {
-      return (await q('SELECT * FROM project_members WHERE project_id=$1', [projectId])).rows.map(memRow)
+      return (await q('SELECT * FROM project_members WHERE project_id=$1', [projectId])).rows.map(
+        memRow,
+      )
     },
     async addMember(projectId, userId, role, by) {
       await q(
@@ -81,6 +88,26 @@ export function createPgRepo(connectionString) {
     },
     async removeMember(projectId, userId) {
       await q('DELETE FROM project_members WHERE project_id=$1 AND user_id=$2', [projectId, userId])
+    },
+    async fetchYDoc(name) {
+      const row = (await q('SELECT data FROM ydocs WHERE name=$1', [name])).rows[0]
+      return row?.data ?? null
+    },
+    async storeYDoc(name, data) {
+      await q(
+        `INSERT INTO ydocs (name,data) VALUES ($1,$2)
+         ON CONFLICT (name) DO UPDATE SET data=EXCLUDED.data, updated_at=now()`,
+        [name, Buffer.from(data)],
+      )
+    },
+    async seedYDoc(name, data) {
+      const inserted = await q(
+        `INSERT INTO ydocs (name,data) VALUES ($1,$2)
+         ON CONFLICT (name) DO NOTHING RETURNING data`,
+        [name, Buffer.from(data)],
+      )
+      if (inserted.rows[0]) return inserted.rows[0].data
+      return (await q('SELECT data FROM ydocs WHERE name=$1', [name])).rows[0]?.data ?? null
     },
   }
 }

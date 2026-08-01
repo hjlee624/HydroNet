@@ -26,6 +26,17 @@ logs/
 # Runtime project data (file-based storage)
 server/data/*.json
 !server/data/.gitkeep
+# Runtime CRDT authority: room Y.Doc binaries are regenerated from the legacy JSON
+# seed / live edits and must never be committed (server/data is runtime-only).
+server/data/ydocs/
+
+# Local sample & reference exports dropped into the repo (personal project data,
+# not part of the app). Root milestone JSON exports and the SAMPLE/ drop folder.
+/SAMPLE/
+/*마일스톤*.json
+
+# Local personnel rosters contain names/phone numbers and must never be committed.
+DB/*.xlsx
 
 # Environment / editor / tooling
 .env

@@ -2,8 +2,10 @@
 
 > **노력**: 중간 (5-8인일)
 
+> **완료 범위(2026-07-31)**: 단일 HTML과 LAN 서버를 정식 배포 경로로 검증한다. 아래 Electron 패키징 스모크는 명시된 선택 과제이며, 스캐폴드가 없는 현재 저장소의 완료 게이트에는 포함하지 않는다.
+
 ## 목표
-기존 .json 저장/불러오기를 무손실로 유지하면서 CRDT를 정식 진실원본으로 확정하고, 세 배포 형태(단일HTML·LAN서버·Electron)를 안정화한다.
+기존 .json 저장/불러오기를 무손실로 유지하면서 CRDT를 정식 진실원본으로 확정하고, 단일 HTML·LAN 서버 배포를 안정화한다. Electron은 별도 선택 과제로 남긴다.
 
 ## 작업 (Tasks)
 - .json(평면)↔Y.Doc 스냅샷 왕복 어댑터 완성(schemaVersion 분기, api.ts/fileIO.ts)
@@ -16,7 +18,7 @@
 ## 산출물 (Deliverables)
 - 무손실 .json↔Y.Doc 변환기
 - 시드 배포 절차
-- 최종 배포 3형태
+- 검증된 배포 2형태(단일 HTML·LAN 서버)와 Electron 선택 과제 결정 기록
 - README/DEPLOY 문서 갱신
 
 ## 검증 (Verification)

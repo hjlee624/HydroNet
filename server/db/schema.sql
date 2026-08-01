@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS project_members (
 );
 CREATE INDEX IF NOT EXISTS idx_members_user ON project_members(user_id);
 
--- 향후 P3(ADR-001): CRDT Y.Doc 바이너리 영속(room = projectId = documentName)
+-- P3(ADR-001): CRDT Y.Doc 바이너리 영속(room = projectId = documentName)
 CREATE TABLE IF NOT EXISTS ydocs (
   name        TEXT PRIMARY KEY,
   data        BYTEA NOT NULL,

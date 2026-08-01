@@ -6,14 +6,15 @@
 // zooms centred on the cursor; in 'pan' a drag scrolls the view. Editing
 // gestures (move/resize/link/select) only run in 'edit'. Esc returns to edit.
 
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
-import { useEditor, filterActive } from '../state/store'
-import type { LinkType } from '../types/model'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { dateToDay, daysInMonth, dayToDate, toISO } from '../engine/dates'
 import { computeLayout, type LayoutModel } from '../engine/layout'
 import { augmentForMirror } from '../engine/mirror'
 import { routeLinks } from '../engine/routing'
-import { dateToDay, dayToDate, daysInMonth, toISO } from '../engine/dates'
+import { publishPresenceCursor, usePresence } from '../state/collaboration'
+import { filterActive, useEditor } from '../state/store'
+import type { LinkType } from '../types/model'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
 import { Modal } from './Modal'
 
@@ -49,6 +50,7 @@ export function ChartCanvas() {
   const linking = useEditor((s) => s.linking)
   const filter = useEditor((s) => s.filter)
   const colorMode = useEditor((s) => s.colorMode)
+  const remotePresences = usePresence((s) => s.remote)
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null)
@@ -84,6 +86,8 @@ export function ChartCanvas() {
     null,
   )
   const marqueeRef = useRef<{ x0: number; y0: number } | null>(null)
+
+  useEffect(() => () => publishPresenceCursor(null), [])
 
   // Layout is computed at base scale; zoom is applied as a uniform CSS
   // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
@@ -491,6 +495,7 @@ export function ChartCanvas() {
       setGhost(null)
       setReorderHint(null)
       if (drag.kind === 'link') useEditor.getState().cancelLinking()
+      else if ('started' in drag && drag.started) useEditor.getState().endGesture()
       return
     }
     lastClient.current = { x: e.clientX, y: e.clientY }
@@ -566,6 +571,9 @@ export function ChartCanvas() {
             history: false,
           })
       }
+    }
+    if (drag.kind !== 'link' && 'started' in drag && drag.started) {
+      useEditor.getState().endGesture()
     }
     if (drag.kind === 'link') {
       const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null
@@ -689,6 +697,11 @@ export function ChartCanvas() {
               transform: `scale(${zoom})`,
             }}
             onPointerDown={onPaperPointerDown}
+            onPointerMove={(event) => {
+              const { x, y } = toContent(event.clientX, event.clientY)
+              publishPresenceCursor({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 })
+            }}
+            onPointerLeave={() => publishPresenceCursor(null)}
             onClick={(e) => e.stopPropagation()}
             onDoubleClick={onPaperDoubleClick}
           >
@@ -705,6 +718,7 @@ export function ChartCanvas() {
               colorMode={colorMode}
               todayX={todayX}
               linkingGhost={linking ? ghost : null}
+              remotePresences={remotePresences}
               onTaskPointerDown={onTaskPointerDown}
               onAnchorPointerDown={onAnchorPointerDown}
               onBarResizePointerDown={onBarResizePointerDown}

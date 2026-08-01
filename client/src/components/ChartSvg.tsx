@@ -7,13 +7,14 @@
 // applied via inline `style` (not a presentation attribute) so it beats the
 // exporter's injected `text{font-family:…}` rule.
 
-import { memo } from 'react'
 import type { CSSProperties, MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
-import type { Project, TextRole } from '../types/model'
-import type { LayoutModel, LaidTask } from '../engine/layout'
-import type { RoutedLink } from '../engine/routing'
-import { colors, fonts, resolveTextStyle } from '../styles/theme'
+import { memo } from 'react'
 import { dayToDate, toISO } from '../engine/dates'
+import type { LaidTask, LayoutModel } from '../engine/layout'
+import type { RoutedLink } from '../engine/routing'
+import type { RemotePresence } from '../state/collaboration'
+import { colors, fonts, resolveTextStyle } from '../styles/theme'
+import type { Project, TextRole } from '../types/model'
 
 export interface LinkingGhost {
   x1: number
@@ -38,6 +39,7 @@ interface Props {
   /** X (content coords) of the "오늘" line; null/undefined = not drawn. */
   todayX?: number | null
   linkingGhost: LinkingGhost | null
+  remotePresences: RemotePresence[]
   onTaskPointerDown: (e: RPointerEvent, id: string) => void
   /** 의존성 연결 드래그 시작 — `edge`는 막대의 앞(start)·뒤(end) 중 어느 끝에서 출발하는지. */
   onAnchorPointerDown: (e: RPointerEvent, id: string, edge: 'start' | 'end') => void
@@ -74,6 +76,7 @@ function ChartSvgBase({
   colorMode = 'category',
   todayX,
   linkingGhost,
+  remotePresences,
   onTaskPointerDown,
   onAnchorPointerDown,
   onBarResizePointerDown,
@@ -151,7 +154,11 @@ function ChartSvgBase({
         const gap = cur.startX - prev.endX
         const [a, b] =
           prev.task.id < cur.task.id ? [prev.task.id, cur.task.id] : [cur.task.id, prev.task.id]
-        if (gap > 1.5 && linkedPairs.has(`${a}|${b}`) && dummyShownByPair.get(`${a}|${b}`) !== false)
+        if (
+          gap > 1.5 &&
+          linkedPairs.has(`${a}|${b}`) &&
+          dummyShownByPair.get(`${a}|${b}`) !== false
+        )
           gapRects.push({
             x: prev.endX,
             y: prev.y,
@@ -912,6 +919,122 @@ function ChartSvgBase({
           markerEnd="url(#hn-arrow-crit)"
         />
       )}
+
+      {/* Awareness is transient, untrusted UI state. This entire overlay is excluded from export. */}
+      <g data-export-hide="1" pointerEvents="none">
+        {remotePresences.map((presence) => {
+          const selectedTasks = new Set(presence.selection.selectedTaskIds)
+          const selectedCategories = new Set(presence.selection.selectedCategoryIds)
+          const selectedLink = presence.selection.selectedLinkId
+          const firstTask = model.tasks.find((task) => selectedTasks.has(task.task.id))
+          const firstCategory = model.categories.find((category) =>
+            selectedCategories.has(category.id),
+          )
+          const labelX = presence.cursor?.x ?? firstTask?.x ?? (firstCategory ? labelWidth : 8)
+          const labelY = presence.cursor?.y ?? firstTask?.y ?? firstCategory?.y ?? 8
+          return (
+            <g key={`presence-${presence.clientId}`}>
+              {model.categories.map((category) =>
+                selectedCategories.has(category.id) ? (
+                  <rect
+                    key={`presence-category-${presence.clientId}-${category.id}`}
+                    x={1.5}
+                    y={category.y + 1.5}
+                    width={contentWidth - 3}
+                    height={Math.max(0, category.height - 3)}
+                    fill="none"
+                    stroke={presence.user.color}
+                    strokeWidth={3}
+                    strokeDasharray="7 4"
+                    opacity={0.75}
+                  />
+                ) : null,
+              )}
+              {routed.map((route) =>
+                selectedLink === route.id ? (
+                  <path
+                    key={`presence-link-${presence.clientId}-${route.id}`}
+                    d={route.d}
+                    fill="none"
+                    stroke={presence.user.color}
+                    strokeWidth={5}
+                    strokeLinecap="round"
+                    opacity={0.72}
+                  />
+                ) : null,
+              )}
+              {model.tasks.map((task) => {
+                if (!selectedTasks.has(task.task.id)) return null
+                return task.isMilestone ? (
+                  <polygon
+                    key={`presence-task-${presence.clientId}-${task.task.id}`}
+                    points={diamond(task.cx, task.cy, milestoneR + 5)}
+                    fill="none"
+                    stroke={presence.user.color}
+                    strokeWidth={3}
+                    opacity={0.82}
+                  />
+                ) : (
+                  <rect
+                    key={`presence-task-${presence.clientId}-${task.task.id}`}
+                    x={task.x - 3}
+                    y={task.y - 3}
+                    width={task.w + 6}
+                    height={task.h + 6}
+                    rx={5}
+                    fill="none"
+                    stroke={presence.user.color}
+                    strokeWidth={3}
+                    opacity={0.82}
+                  />
+                )
+              })}
+              {presence.cursor && (
+                <>
+                  <circle
+                    cx={presence.cursor.x}
+                    cy={presence.cursor.y}
+                    r={5}
+                    fill={presence.user.color}
+                    stroke="#fff"
+                    strokeWidth={1.5}
+                  />
+                  <line
+                    x1={presence.cursor.x - 9}
+                    y1={presence.cursor.y}
+                    x2={presence.cursor.x + 9}
+                    y2={presence.cursor.y}
+                    stroke={presence.user.color}
+                    strokeWidth={1.5}
+                  />
+                  <line
+                    x1={presence.cursor.x}
+                    y1={presence.cursor.y - 9}
+                    x2={presence.cursor.x}
+                    y2={presence.cursor.y + 9}
+                    stroke={presence.user.color}
+                    strokeWidth={1.5}
+                  />
+                </>
+              )}
+              <g transform={`translate(${labelX + 9} ${labelY + 9})`}>
+                <rect
+                  x={0}
+                  y={-13}
+                  width={Math.max(44, presence.user.name.length * 9 + 12)}
+                  height={20}
+                  rx={4}
+                  fill={presence.user.color}
+                  opacity={0.94}
+                />
+                <text x={6} y={1} fill="#fff" fontSize={11} fontWeight={700}>
+                  {presence.user.name}
+                </text>
+              </g>
+            </g>
+          )
+        })}
+      </g>
     </svg>
   )
 }

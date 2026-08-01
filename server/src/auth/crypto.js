@@ -1,7 +1,7 @@
 // 비밀번호·접속코드 해시(Node 내장 scrypt, 네이티브 의존 0) + 세션/프로젝트 JWT(jose HS256).
 import { scrypt as _scrypt, randomBytes, timingSafeEqual } from 'node:crypto'
 import { promisify } from 'node:util'
-import { SignJWT, jwtVerify } from 'jose'
+import { jwtVerify, SignJWT } from 'jose'
 
 const scrypt = promisify(_scrypt)
 const KEYLEN = 32
@@ -54,6 +54,21 @@ export function signProjectToken(userId, projectId, projRole, ttl = '12h') {
     .setSubject(userId)
     .setIssuer(ISS)
     .setAudience('project')
+    .setIssuedAt()
+    .setExpirationTime(ttl)
+    .sign(secret())
+}
+
+/**
+ * 협업 WebSocket 연결에만 쓰는 단수명 티켓.
+ * 장기 project grant를 소켓에 직접 전달하지 않고, aud/typ가 분리된 5분 토큰으로 교환한다.
+ */
+export function signCollabToken(userId, projectId, projRole, ttl = '5m') {
+  return new SignJWT({ projectId, projRole, typ: 'collab' })
+    .setProtectedHeader({ alg: 'HS256' })
+    .setSubject(userId)
+    .setIssuer(ISS)
+    .setAudience('collab')
     .setIssuedAt()
     .setExpirationTime(ttl)
     .sign(secret())

@@ -6,8 +6,20 @@
 // 누를 때만 파일로 저장된다(state/fileIO.ts) — 편집은 dirty 플래그로만 표시.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { create } from 'zustand'
 import { nanoid } from 'nanoid'
+import { create } from 'zustand'
+import { createSampleProject } from '../data/sampleProject'
+import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
+import { fitToPaperView } from '../engine/layout'
+import { paperMm } from '../engine/paper'
+import {
+  applyCascade,
+  computeSchedule,
+  linkConstrainedStart,
+  linkLagFromPositions,
+  reschedule,
+} from '../engine/scheduling'
+import { DEFAULT_PALETTE } from '../styles/theme'
 import type {
   Category,
   ID,
@@ -17,7 +29,6 @@ import type {
   PaperSettings,
   Project,
   RainySeason,
-  Sheet,
   Task,
   TextRole,
   TextStyle,
@@ -25,21 +36,19 @@ import type {
 } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
 import {
-  applyCascade,
-  computeSchedule,
-  linkConstrainedStart,
-  linkLagFromPositions,
-  reschedule,
-} from '../engine/scheduling'
-import { fitToPaperView } from '../engine/layout'
-import { paperMm } from '../engine/paper'
-import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
-import { createSampleProject } from '../data/sampleProject'
-import { DEFAULT_PALETTE } from '../styles/theme'
+  activateProjectCrdtRuntime,
+  applyProjectToYDoc,
+  createProjectCrdtRuntime,
+  createUnseededProjectCrdtRuntime,
+  LOCAL_ORIGIN,
+  type ProjectCrdtRuntime,
+  projectFromYDoc,
+  projectYDocIsEmpty,
+  seedProjectYDocIfEmpty,
+  UNTRACKED_ORIGIN,
+} from './crdt'
 import { saveProjectToFile } from './fileIO'
 import { logInfo, logWarn } from './logger'
-
-const HISTORY_LIMIT = 50
 
 interface LinkingState {
   fromId: ID
@@ -86,44 +95,21 @@ function lsSet(key: string, value: string): void {
   }
 }
 
-// ── 마지막 작업 자동복원(수동 파일 저장/불러오기와 별개) ────────────────────────
-// 편집할 때마다 전체 프로젝트를 localStorage에 (디바운스로) 캐시해 두고, 앱을 다시
-// 열면 샘플 대신 그 프로젝트를 복원한다. 파일 저장 여부(dirty)도 함께 담아 '● 미저장'
-// 배지가 재시작 후에도 정확하게 유지된다. 자동저장이 아니라 어디까지나 임시 캐시라,
-// 실제 보관은 여전히 사용자가 '저장'으로 .json에 해야 한다(파일 형식은 순수 Project).
-const AUTOSAVE_KEY = 'hydronet:autosave'
-interface Autosave {
-  project: Project
-  dirty: boolean
-}
+// P1 이전 버전의 전체-project localStorage 캐시는 신규 Y.Doc의 1회 마이그레이션
+// seed로만 읽는다. 이후 편집 영속은 y-indexeddb가 담당하며 여기에 다시 쓰지 않는다.
+const LEGACY_AUTOSAVE_KEY = 'hydronet:autosave'
 
-/** localStorage 캐시에서 마지막 프로젝트를 읽는다. 없거나 형식이 깨졌으면 null. */
-function loadAutosave(): Autosave | null {
+function loadLegacyAutosave(): Project | null {
   try {
-    const raw = typeof localStorage !== 'undefined' && localStorage.getItem(AUTOSAVE_KEY)
+    const raw = typeof localStorage !== 'undefined' && localStorage.getItem(LEGACY_AUTOSAVE_KEY)
     if (!raw) return null
-    const obj = JSON.parse(raw) as { project?: unknown; dirty?: unknown }
+    const obj = JSON.parse(raw) as { project?: unknown }
     const p = obj?.project as Project | undefined
     if (!p || !Array.isArray(p.tasks) || !Array.isArray(p.categories)) return null
-    return { project: p, dirty: !!obj.dirty }
+    return p
   } catch {
     return null
   }
-}
-
-let autosaveTimer: ReturnType<typeof setTimeout> | null = null
-/** 프로젝트 변경 시 캐시 저장을 살짝(400ms) 미뤄 연속 편집에서 과도한 직렬화를 피한다.
- *  용량 초과(대형 CI 이미지 등)나 비브라우저 환경은 조용히 무시한다. */
-function persistAutosaveSoon(project: Project, dirty: boolean): void {
-  if (typeof localStorage === 'undefined') return
-  if (autosaveTimer) clearTimeout(autosaveTimer)
-  autosaveTimer = setTimeout(() => {
-    try {
-      localStorage.setItem(AUTOSAVE_KEY, JSON.stringify({ project, dirty }))
-    } catch {
-      /* 용량 초과 등 — 자동복원은 최선노력, 실패해도 파일 저장이 진짜 보관 */
-    }
-  }, 400)
 }
 
 /** One task whose start moved during a 재계산 / 일정 정렬 pass. */
@@ -150,6 +136,20 @@ export interface RecalcReport {
   totalMoved: number
   /** Project start date (ISO) so the modal can render absolute dates. */
   startDate: string
+}
+
+interface SelectionSnapshot {
+  selectedTaskId: ID | null
+  selectedTaskIds: ID[]
+  selectedLinkId: ID | null
+  selectedCategoryId: ID | null
+  selectedCategoryIds: ID[]
+  selectedTextRole: TextRole | null
+  inspectorTab: InspectorTab
+}
+
+interface UndoStackItemLike {
+  meta: Map<unknown, unknown>
 }
 
 export interface EditorState {
@@ -185,9 +185,13 @@ export interface EditorState {
   recalcReport: RecalcReport | null
   past: Project[]
   future: Project[]
+  canUndo: boolean
+  canRedo: boolean
 
   // lifecycle
   setProject: (p: Project) => void
+  /** Attach provider/IndexedDB state without independently importing a JSON seed. */
+  openCollaborativeProject: (projectId: string, name?: string) => void
   newProject: () => void
   loadSample: () => void
   /** Switch the active 공정표 시트(예정공정표 ↔ 마일스톤) within the 사업. */
@@ -316,6 +320,7 @@ export interface EditorState {
 
   // history & persistence
   beginGesture: () => void
+  endGesture: () => void
   undo: () => void
   redo: () => void
   save: () => Promise<void>
@@ -396,6 +401,20 @@ export function migrateSubNameToParentId(tasks: Task[]): Task[] {
   return result
 }
 
+/**
+ * Legacy load adapter: expand `subName` groups into explicit parent tasks exactly once,
+ * at an import boundary (file load / initial sample). It must never run on the Y.Doc→view
+ * derive path: `migrateSubNameToParentId` mints `nanoid` parent ids, and two collaborating
+ * peers deriving the same server state would each invent *different* ids, so the shared
+ * document would never converge. `layout.ts` renders raw `subName` natively, so leaving
+ * server-authoritative tasks unmigrated is safe.
+ */
+function migrateProject(project: Project): Project {
+  const input = project.tasks ?? []
+  const tasks = migrateSubNameToParentId(input)
+  return tasks === input ? project : { ...project, tasks }
+}
+
 function normalize(project: Project): Project {
   const palette =
     Array.isArray(project.palette) && project.palette.length
@@ -404,7 +423,7 @@ function normalize(project: Project): Project {
   return {
     ...project,
     kind: project.kind ?? 'construction',
-    tasks: migrateSubNameToParentId(project.tasks ?? []),
+    tasks: project.tasks ?? [],
     branding: { logos: normalizeLogos(project.branding?.logos) },
     rainySeasons: (project.rainySeasons ?? []).map((r) => ({
       ...r,
@@ -500,42 +519,364 @@ function relinkIncoming(p: Project, toId: ID): void {
   }
 }
 
+const FRACTION_EPSILON = 1e-9
+
+function fractionalMidpoint(before: number | undefined, after: number | undefined): number | null {
+  if (before === undefined && after === undefined) return 0
+  if (before === undefined) return (after as number) - 1
+  if (after === undefined) return before + 1
+  if (after - before <= FRACTION_EPSILON) return null
+  const value = before + (after - before) / 2
+  return value > before && value < after ? value : null
+}
+
+/** Assign one fractional key per moved item; returns false only when space is exhausted. */
+function assignFractionalBlock<T>(
+  items: T[],
+  before: number | undefined,
+  after: number | undefined,
+  assign: (item: T, value: number) => void,
+): boolean {
+  if (!items.length) return true
+  if (before !== undefined && after !== undefined) {
+    const step = (after - before) / (items.length + 1)
+    if (step <= FRACTION_EPSILON) return false
+    items.forEach((item, index) => {
+      assign(item, before + step * (index + 1))
+    })
+    return true
+  }
+  if (before === undefined && after !== undefined) {
+    items.forEach((item, index) => {
+      assign(item, after - (items.length - index))
+    })
+    return true
+  }
+  const start = (before ?? -1) + 1
+  items.forEach((item, index) => {
+    assign(item, start + index)
+  })
+  return true
+}
+
+function moveTaskFractionally(
+  project: Project,
+  id: ID,
+  targetCategoryId: ID,
+  anchorId: ID | null,
+  mode: 'merge' | 'above' | 'below',
+): void {
+  const moving = project.tasks.find((task) => task.id === id)
+  if (!moving) return
+  moving.categoryId = targetCategoryId
+  const lane = project.tasks.filter(
+    (task) => task.categoryId === targetCategoryId && task.id !== id,
+  )
+  let auto = 0
+  const rowOf = new Map<ID, number>()
+  for (const task of lane) rowOf.set(task.id, typeof task.row === 'number' ? task.row : auto++)
+  let rows = [...new Set(lane.map((task) => rowOf.get(task.id) ?? 0))].sort((a, b) => a - b)
+  let anchorIndex = anchorId == null ? -1 : rows.indexOf(rowOf.get(anchorId) ?? Number.NaN)
+
+  if (mode === 'merge' && anchorIndex >= 0) {
+    const anchorRow = rows[anchorIndex]
+    const overlaps = lane
+      .filter((task) => rowOf.get(task.id) === anchorRow)
+      .some(
+        (task) =>
+          task.start < moving.start + moving.duration && moving.start < task.start + task.duration,
+      )
+    if (!overlaps) moving.row = anchorRow
+    else mode = 'below'
+  }
+
+  if (mode !== 'merge' || anchorIndex < 0) {
+    let insertion = anchorIndex < 0 ? rows.length : anchorIndex + (mode === 'below' ? 1 : 0)
+    let before = insertion > 0 ? rows[insertion - 1] : undefined
+    let after = insertion < rows.length ? rows[insertion] : undefined
+    let row = fractionalMidpoint(before, after)
+    if (row === null) {
+      // Precision exhaustion is exceptional: rebalance only this target lane.
+      rows.forEach((oldRow, index) => {
+        const nextRow = (index + 1) * 1024
+        lane.forEach((task) => {
+          if (rowOf.get(task.id) === oldRow) task.row = nextRow
+        })
+      })
+      rows = rows.map((_, index) => (index + 1) * 1024)
+      anchorIndex =
+        anchorId == null ? -1 : rows.indexOf(lane.find((t) => t.id === anchorId)?.row ?? Number.NaN)
+      insertion = anchorIndex < 0 ? rows.length : anchorIndex + (mode === 'below' ? 1 : 0)
+      before = insertion > 0 ? rows[insertion - 1] : undefined
+      after = insertion < rows.length ? rows[insertion] : undefined
+      row = fractionalMidpoint(before, after)
+    }
+    moving.row = row ?? (before ?? 0) + 1
+  }
+
+  const oldIndex = project.tasks.findIndex((task) => task.id === id)
+  if (oldIndex >= 0) project.tasks.splice(oldIndex, 1)
+  const anchorIndexInTasks = anchorId ? project.tasks.findIndex((task) => task.id === anchorId) : -1
+  const insertAt =
+    anchorIndexInTasks < 0 ? project.tasks.length : anchorIndexInTasks + (mode === 'above' ? 0 : 1)
+  project.tasks.splice(insertAt, 0, moving)
+}
+
+function reorderCategoriesFractionally(project: Project, ids: ID[], beforeId: ID | null): void {
+  const selected = new Set(ids)
+  const sorted = [...project.categories].sort(
+    (a, b) => a.order - b.order || a.id.localeCompare(b.id),
+  )
+  const moving = sorted.filter((category) => selected.has(category.id))
+  if (!moving.length) return
+  const remaining = sorted.filter((category) => !selected.has(category.id))
+  let insertion = remaining.length
+  if (beforeId) {
+    const requestedIndex = sorted.findIndex((category) => category.id === beforeId)
+    const anchor = sorted
+      .slice(Math.max(0, requestedIndex))
+      .find((category) => !selected.has(category.id))
+    const anchorIndex = anchor ? remaining.findIndex((category) => category.id === anchor.id) : -1
+    if (anchorIndex >= 0) insertion = anchorIndex
+  }
+
+  let before = insertion > 0 ? remaining[insertion - 1].order : undefined
+  let after = insertion < remaining.length ? remaining[insertion].order : undefined
+  if (
+    !assignFractionalBlock(moving, before, after, (category, order) => (category.order = order))
+  ) {
+    // Rebalance only this category list when fractional precision is exhausted.
+    remaining.forEach((category, index) => {
+      category.order = (index + 1) * 1024
+    })
+    before = insertion > 0 ? remaining[insertion - 1].order : undefined
+    after = insertion < remaining.length ? remaining[insertion].order : undefined
+    assignFractionalBlock(moving, before, after, (category, order) => (category.order = order))
+  }
+}
+
 export const useEditor = create<EditorState>()((set, get) => {
-  /** Apply a mutation to the project with history + reschedule + autosave. */
+  const legacySeed = loadLegacyAutosave()
+  const initialNormalized = normalize(migrateProject(legacySeed ?? createSampleProject()))
+  let runtime: ProjectCrdtRuntime = createProjectCrdtRuntime(initialNormalized)
+  let activeSheetId = initialNormalized.activeSheet?.id
+  let observing = true
+  let runtimeReady = runtime.persistence === null
+  let gestureActive = false
+  let scheduleDerivation: 'cascade' | 'reschedule' | null = null
+  let authoritativeShadow = initialNormalized
+  let pendingWrites: Array<{
+    mutate: (project: Project) => void
+    origin: unknown
+    updatedAt: string
+    cascade: boolean
+  }> = []
+
+  const deriveProject = (authoritative: Project): { project: Project; warnings: string[] } => {
+    let derived = authoritative
+    if (scheduleDerivation === 'cascade') {
+      derived = { ...derived, tasks: applyCascade(derived.tasks, derived.links).tasks }
+    } else if (scheduleDerivation === 'reschedule') {
+      derived = { ...derived, tasks: reschedule(derived.tasks, derived.links).tasks }
+    }
+    return withSchedule(derived)
+  }
+
+  const readRuntimeProject = (): { project: Project; warnings: string[] } => {
+    authoritativeShadow = normalize(projectFromYDoc(runtime.doc, activeSheetId))
+    return deriveProject(authoritativeShadow)
+  }
+
+  const syncDerivedView = (dirty = true): void => {
+    if (!observing || !runtimeReady) return
+    const scheduled = readRuntimeProject()
+    if (scheduled.warnings.length) {
+      scheduled.warnings.forEach((warning) => {
+        logWarn(warning)
+      })
+    }
+    set({ project: scheduled.project, warnings: scheduled.warnings, dirty })
+  }
+
+  function finishRuntimeHydration(target: ProjectCrdtRuntime, dirty: boolean): void {
+    if (runtime !== target) return
+    observing = false
+    // Empty rooms are seeded only after IndexedDB and the provider (when used)
+    // have both had their first chance to supply authority.
+    seedProjectYDocIfEmpty(target.doc, authoritativeShadow)
+    runtimeReady = true
+    authoritativeShadow = normalize(projectFromYDoc(target.doc, activeSheetId))
+    for (const pending of pendingWrites) {
+      const replay = clone(authoritativeShadow)
+      replay.meta = { ...replay.meta, updatedAt: pending.updatedAt }
+      pending.mutate(replay)
+      authoritativeShadow = replay
+      if (pending.cascade) scheduleDerivation = 'cascade'
+      applyProjectToYDoc(target.doc, replay, pending.origin)
+    }
+    pendingWrites = []
+    observing = true
+    syncDerivedView(dirty)
+  }
+
+  const observeRoot = (): (() => void) => {
+    const listener = (): void => {
+      syncDerivedView(true)
+    }
+    const observed = [
+      runtime.types.meta,
+      runtime.types.view,
+      runtime.types.paper,
+      runtime.types.branding,
+      runtime.types.palette,
+      runtime.types.categories,
+      runtime.types.tasks,
+      runtime.types.links,
+      runtime.types.rainySeasons,
+      runtime.types.sheets,
+    ]
+    observed.forEach((type) => {
+      type.observeDeep(listener)
+    })
+    return () => {
+      observed.forEach((type) => {
+        type.unobserveDeep(listener)
+      })
+    }
+  }
+  let unobserveRoot = observeRoot()
+  activateProjectCrdtRuntime(runtime)
+
+  const selectionBeforeKey = 'hydronet:selection-before'
+  const selectionAfterKey = 'hydronet:selection-after'
+  const captureSelection = (): SelectionSnapshot => {
+    const state = get()
+    return {
+      selectedTaskId: state.selectedTaskId,
+      selectedTaskIds: [...state.selectedTaskIds],
+      selectedLinkId: state.selectedLinkId,
+      selectedCategoryId: state.selectedCategoryId,
+      selectedCategoryIds: [...state.selectedCategoryIds],
+      selectedTextRole: state.selectedTextRole,
+      inspectorTab: state.inspectorTab,
+    }
+  }
+  const restoreSelection = (selection: SelectionSnapshot | undefined): void => {
+    if (!selection) return
+    set({ ...selection })
+  }
+  const bindUndoManager = (target: ProjectCrdtRuntime): (() => void) => {
+    const refresh = (): void => {
+      if (runtime !== target) return
+      set({
+        canUndo: target.undoManager.undoStack.length > 0,
+        canRedo: target.undoManager.redoStack.length > 0,
+      })
+    }
+    const onAdded = (event: {
+      stackItem: UndoStackItemLike
+      origin: unknown
+      type: 'undo' | 'redo'
+    }) => {
+      if (
+        event.type === 'undo' &&
+        event.origin === LOCAL_ORIGIN &&
+        !event.stackItem.meta.has(selectionBeforeKey)
+      ) {
+        event.stackItem.meta.set(selectionBeforeKey, captureSelection())
+      }
+      refresh()
+    }
+    target.undoManager.on('stack-item-added', onAdded)
+    target.undoManager.on('stack-item-updated', onAdded)
+    target.undoManager.on('stack-item-popped', refresh)
+    target.undoManager.on('stack-cleared', refresh)
+    return () => {
+      target.undoManager.off('stack-item-added', onAdded)
+      target.undoManager.off('stack-item-updated', onAdded)
+      target.undoManager.off('stack-item-popped', refresh)
+      target.undoManager.off('stack-cleared', refresh)
+    }
+  }
+  let unbindUndoManager = bindUndoManager(runtime)
+
+  const armRuntimeReady = (target: ProjectCrdtRuntime, dirty: boolean): void => {
+    void target.hydrated.then(() => {
+      if (runtime !== target) return
+      finishRuntimeHydration(target, dirty)
+    })
+  }
+
+  const replaceRuntime = (
+    project: Project,
+    dirty: boolean,
+    replacement?: ProjectCrdtRuntime,
+  ): void => {
+    const normalized = normalize(migrateProject(project))
+    const previous = runtime
+    observing = false
+    unobserveRoot()
+    unbindUndoManager()
+    runtime = replacement ?? createProjectCrdtRuntime(normalized)
+    activeSheetId = normalized.activeSheet?.id
+    runtimeReady = !projectYDocIsEmpty(runtime.types)
+    gestureActive = false
+    scheduleDerivation = null
+    authoritativeShadow = normalized
+    pendingWrites = []
+    unobserveRoot = observeRoot()
+    unbindUndoManager = bindUndoManager(runtime)
+    activateProjectCrdtRuntime(runtime)
+    previous.destroy()
+    observing = true
+    const scheduled = runtimeReady ? readRuntimeProject() : deriveProject(normalized)
+    set({
+      project: scheduled.project,
+      warnings: scheduled.warnings,
+      past: [],
+      future: [],
+      canUndo: false,
+      canRedo: false,
+      dirty,
+    })
+    armRuntimeReady(runtime, dirty)
+  }
+
+  /** Apply a mutation to the Y.Doc truth, then derive the zustand render view. */
   function commit(
     mutate: (p: Project) => void,
-    opts: { history?: boolean; cascade?: boolean } = {},
+    opts: { history?: boolean; cascade?: boolean; origin?: unknown } = {},
   ) {
     const { history = true, cascade = false } = opts
     const state = get()
-    const prev = state.project
-    const draft = clone(prev)
-    draft.meta = { ...draft.meta, updatedAt: new Date().toISOString() }
+    const draft = clone(authoritativeShadow)
+    const updatedAt = new Date().toISOString()
+    draft.meta = { ...draft.meta, updatedAt }
     mutate(draft)
+    authoritativeShadow = draft
+    if (cascade && state.autoCascade) scheduleDerivation = 'cascade'
 
-    let next = draft
-    if (cascade && state.autoCascade) {
-      const r = applyCascade(next.tasks, next.links)
-      next = { ...next, tasks: r.tasks }
+    if (history) {
+      runtime.undoManager.stopCapturing()
+      gestureActive = false
     }
-    const scheduled = withSchedule(next)
-    if (scheduled.warnings.length) {
-      scheduled.warnings.forEach((w) => logWarn(w))
-    }
+    const origin = opts.origin ?? (history || gestureActive ? LOCAL_ORIGIN : UNTRACKED_ORIGIN)
+    if (runtimeReady) applyProjectToYDoc(runtime.doc, draft, origin)
+    else pendingWrites.push({ mutate, origin, updatedAt, cascade: cascade && state.autoCascade })
 
-    set((s) => ({
-      project: scheduled.project,
-      dirty: true,
-      warnings: scheduled.warnings,
-      past: history ? [...s.past, prev].slice(-HISTORY_LIMIT) : s.past,
-      future: history ? [] : s.future,
-    }))
+    if (runtimeReady) syncDerivedView(true)
+    else {
+      const scheduled = deriveProject(authoritativeShadow)
+      set({ project: scheduled.project, warnings: scheduled.warnings, dirty: true })
+    }
   }
 
   // 재시작 시 마지막 작업 복원 — localStorage 캐시가 있으면 그걸, 없으면 샘플로 시작.
-  const cached = loadAutosave()
-  const initial = withSchedule(normalize(cached?.project ?? createSampleProject())).project
-  const initialDirty = cached?.dirty ?? false
+  const initial = runtimeReady
+    ? readRuntimeProject().project
+    : deriveProject(initialNormalized).project
+  const initialDirty = false
+  armRuntimeReady(runtime, initialDirty)
 
   return {
     project: initial,
@@ -561,32 +902,43 @@ export const useEditor = create<EditorState>()((set, get) => {
     recalcReport: null,
     past: [],
     future: [],
+    canUndo: false,
+    canRedo: false,
 
-    setProject: (p) =>
-      set({ project: withSchedule(normalize(p)).project, past: [], future: [], dirty: false }),
+    setProject: (p) => replaceRuntime(p, false),
+    openCollaborativeProject: (projectId, name = '협업 프로젝트') => {
+      const placeholder = normalize(createSampleProject())
+      placeholder.id = projectId
+      placeholder.name = name
+      placeholder.categories = []
+      placeholder.tasks = []
+      placeholder.links = []
+      placeholder.rainySeasons = []
+      placeholder.sheets = undefined
+      placeholder.activeSheet = undefined
+      const collaborative = createUnseededProjectCrdtRuntime(projectId)
+      replaceRuntime(placeholder, false, collaborative)
+      set({
+        selectedTaskId: null,
+        selectedTaskIds: [],
+        selectedLinkId: null,
+        selectedCategoryId: null,
+        selectedCategoryIds: [],
+      })
+    },
     newProject: () => {
       const blank = createSampleProject()
       blank.id = `proj-${nanoid(8)}`
       blank.name = '새 프로젝트'
       blank.tasks = []
       blank.links = []
-      set({
-        project: withSchedule(blank).project,
-        past: [],
-        future: [],
-        dirty: true,
-        selectedTaskId: null,
-      })
+      replaceRuntime(blank, true)
+      set({ selectedTaskId: null })
       logInfo('새 프로젝트를 생성했습니다.')
     },
     loadSample: () => {
-      set({
-        project: withSchedule(normalize(createSampleProject())).project,
-        past: [],
-        future: [],
-        dirty: false,
-        selectedTaskId: null,
-      })
+      replaceRuntime(createSampleProject(), false)
+      set({ selectedTaskId: null })
       logInfo('샘플 프로젝트를 불러왔습니다.')
     },
     switchSheet: (id) => {
@@ -594,35 +946,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (!p.sheets || !p.activeSheet || id === p.activeSheet.id) return
       const target = p.sheets.find((s) => s.id === id)
       if (!target) return
-      // Stash the current active sheet back into the list, load the target into
-      // the editable top-level fields (the active sheet always lives at top level).
-      const current: Sheet = {
-        id: p.activeSheet.id,
-        role: p.activeSheet.role,
-        name: p.activeSheet.name,
-        categories: p.categories,
-        tasks: p.tasks,
-        links: p.links,
-        rainySeasons: p.rainySeasons,
-      }
-      const sheets = p.sheets.filter((s) => s.id !== id).concat(current)
-      const next: Project = {
-        ...p,
-        categories: clone(target.categories),
-        tasks: clone(target.tasks),
-        links: clone(target.links),
-        rainySeasons: clone(target.rainySeasons),
-        sheets,
-        activeSheet: { id: target.id, role: target.role, name: target.name },
-      }
+      activeSheetId = id
+      runtime.undoManager.clear()
+      const scheduled = readRuntimeProject()
       set({
-        project: withSchedule(next).project,
-        past: [],
-        future: [],
+        project: scheduled.project,
+        warnings: scheduled.warnings,
         selectedTaskId: null,
+        selectedTaskIds: [],
         selectedLinkId: null,
         selectedTextRole: null,
-        dirty: true,
       })
       logInfo(`공정표 전환: ${target.name}`)
     },
@@ -771,50 +1104,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         if (t) t.isDummy = !t.isDummy
       }),
     moveTaskToRow: (id, targetCategoryId, anchorId, mode, opts) => {
-      commit(
-        (p) => {
-          const moving = p.tasks.find((t) => t.id === id)
-          if (!moving) return
-          moving.categoryId = targetCategoryId
-          // Existing rows of the target lane (excluding the moving task). An explicit
-          // Task.row wins; tasks without one fall back to a running index, matching the
-          // layout engine — so a lane never touched still reads one-task-per-row.
-          const lane = p.tasks.filter((t) => t.categoryId === targetCategoryId && t.id !== id)
-          let auto = 0
-          const rawOf = new Map<ID, number>()
-          for (const t of lane) rawOf.set(t.id, typeof t.row === 'number' ? t.row : auto++)
-          const distinct = [...new Set(lane.map((t) => rawOf.get(t.id)!))].sort((a, b) => a - b)
-          const rows: Task[][] = distinct.map((rv) => lane.filter((t) => rawOf.get(t.id) === rv))
-          const anchorRow =
-            anchorId != null && rawOf.has(anchorId) ? distinct.indexOf(rawOf.get(anchorId)!) : -1
-          if (mode === 'merge' && anchorRow >= 0) {
-            // 같은 줄에 시간이 겹치는 공정을 합치면 막대가 포개진다 → 겹치면 합치지 말고
-            // 그 줄 바로 아래 새 줄로 보낸다.
-            const overlaps = rows[anchorRow].some(
-              (t) =>
-                t.start < moving.start + moving.duration && moving.start < t.start + t.duration,
-            )
-            if (overlaps) rows.splice(anchorRow + 1, 0, [moving])
-            else rows[anchorRow].push(moving)
-          } else if (anchorRow >= 0)
-            rows.splice(mode === 'above' ? anchorRow : anchorRow + 1, 0, [moving])
-          else rows.push([moving]) // no usable anchor → new last row
-          // Renumber rows densely and order each row left→right by start; rewrite the
-          // lane's tasks in (row, start) order so the sidebar list mirrors the chart.
-          const newOrder: Task[] = []
-          rows.forEach((rt, i) => {
-            rt.sort((x, y) => x.start - y.start)
-            for (const t of rt) {
-              t.row = i
-              newOrder.push(t)
-            }
-          })
-          const laneSet = new Set(newOrder.map((t) => t.id))
-          let k = 0
-          p.tasks = p.tasks.map((t) => (laneSet.has(t.id) ? newOrder[k++] : t))
-        },
-        { history: opts?.history ?? true, cascade: false },
-      )
+      commit((project) => moveTaskFractionally(project, id, targetCategoryId, anchorId, mode), {
+        history: opts?.history ?? true,
+        cascade: false,
+      })
       set({ selectedTaskId: id, selectedLinkId: null })
     },
     addCategory: (partial) => {
@@ -879,29 +1172,12 @@ export const useEditor = create<EditorState>()((set, get) => {
         const idx = sorted.findIndex((c) => c.id === id)
         const swap = idx + dir
         if (idx < 0 || swap < 0 || swap >= sorted.length) return
-        const a = sorted[idx],
-          b = sorted[swap]
-        const ao = a.order
-        a.order = b.order
-        b.order = ao
+        const beforeId = dir < 0 ? sorted[swap].id : (sorted[idx + 2]?.id ?? null)
+        reorderCategoriesFractionally(p, [id], beforeId)
       }),
     reorderCategory: (id, beforeId) => {
       if (beforeId === id) return // 자기 자신 앞으로 = 무동작
-      commit((p) => {
-        const sorted = [...p.categories].sort((a, b) => a.order - b.order)
-        const moving = sorted.find((c) => c.id === id)
-        if (!moving) return
-        const without = sorted.filter((c) => c.id !== id)
-        let insertAt = without.length // beforeId 없음 → 맨 끝
-        if (beforeId) {
-          const bi = without.findIndex((c) => c.id === beforeId)
-          if (bi >= 0) insertAt = bi
-        }
-        without.splice(insertAt, 0, moving)
-        without.forEach((c, i) => {
-          c.order = i
-        }) // order를 0..n-1로 정규화
-      })
+      commit((p) => reorderCategoriesFractionally(p, [id], beforeId))
       set({ selectedCategoryId: id, selectedCategoryIds: [id] })
     },
     reorderCategories: (ids, beforeId) => {
@@ -910,29 +1186,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         get().reorderCategory(ids[0], beforeId)
         return
       }
-      commit((p) => {
-        const sorted = [...p.categories].sort((a, b) => a.order - b.order)
-        const moving = sorted.filter((c) => idset.has(c.id)) // 상대순서 유지
-        if (!moving.length) return
-        // beforeId가 선택집합 멤버여도, 표시 순서상 그 위치 이후의 첫 '비선택' 공종을
-        // 앵커로 삼아 사용자가 가리킨 위치에 그룹을 삽입한다(맨 끝 점프 방지).
-        let anchorIdx = sorted.length
-        if (beforeId) {
-          const si = sorted.findIndex((c) => c.id === beforeId)
-          if (si >= 0) anchorIdx = si
-        }
-        const anchorId = sorted.slice(anchorIdx).find((c) => !idset.has(c.id))?.id ?? null
-        const without = sorted.filter((c) => !idset.has(c.id))
-        let insertAt = without.length // 기본 = 맨 끝
-        if (anchorId) {
-          const bi = without.findIndex((c) => c.id === anchorId)
-          if (bi >= 0) insertAt = bi
-        }
-        without.splice(insertAt, 0, ...moving)
-        without.forEach((c, i) => {
-          c.order = i
-        })
-      })
+      commit((p) => reorderCategoriesFractionally(p, ids, beforeId))
       set({ selectedCategoryIds: ids, selectedCategoryId: ids[ids.length - 1] ?? null })
     },
 
@@ -1215,23 +1469,25 @@ export const useEditor = create<EditorState>()((set, get) => {
     recompute: () => set((s) => ({ project: withSchedule(s.project).project })),
     cascadeNow: () => {
       const before = new Map(get().project.tasks.map((t) => [t.id, t.start]))
-      commit((p) => {
-        const r = applyCascade(p.tasks, p.links)
-        p.tasks = r.tasks
-      })
+      scheduleDerivation = 'cascade'
+      const scheduled = deriveProject(authoritativeShadow)
+      set({ project: scheduled.project, warnings: scheduled.warnings })
       set({ recalcReport: buildRecalcReport('cascade', before, get().project) })
       logInfo('연쇄 일정 정렬을 적용했습니다.')
     },
     rescheduleNow: () => {
       const before = new Map(get().project.tasks.map((t) => [t.id, t.start]))
-      commit((p) => {
-        const r = reschedule(p.tasks, p.links)
-        p.tasks = r.tasks
-      })
+      scheduleDerivation = 'reschedule'
+      const scheduled = deriveProject(authoritativeShadow)
+      set({ project: scheduled.project, warnings: scheduled.warnings })
       set({ recalcReport: buildRecalcReport('reschedule', before, get().project) })
       logInfo('전체 일정을 최조기(最早期)로 재계산했습니다.')
     },
-    setAutoCascade: (v) => set({ autoCascade: v }),
+    setAutoCascade: (v) => {
+      if (!v && scheduleDerivation === 'cascade') scheduleDerivation = null
+      const scheduled = deriveProject(authoritativeShadow)
+      set({ autoCascade: v, project: scheduled.project, warnings: scheduled.warnings })
+    },
     closeRecalcReport: () => set({ recalcReport: null }),
 
     selectTask: (id) =>
@@ -1292,7 +1548,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     pasteCategories: () => {
       const clip = get().categoryClipboard
-      if (!clip || !clip.categories.length) return
+      if (!clip?.categories.length) return
       // 붙여넣기 기준 = 현재 선택된 공종 바로 뒤(없으면 맨 끝). 무조건 맨 아래로 붙던 동작 교체.
       const anchorId = get().selectedCategoryId
       const newIds: ID[] = []
@@ -1366,49 +1622,47 @@ export const useEditor = create<EditorState>()((set, get) => {
       set({ uiMode: m })
     },
 
-    beginGesture: () =>
-      set((s) => ({ past: [...s.past, clone(s.project)].slice(-HISTORY_LIMIT), future: [] })),
+    beginGesture: () => {
+      runtime.undoManager.stopCapturing()
+      gestureActive = true
+    },
+    endGesture: () => {
+      if (!gestureActive) return
+      runtime.undoManager.stopCapturing()
+      gestureActive = false
+    },
     undo: () => {
-      const { past, project, future } = get()
-      if (!past.length) return
-      const prev = past[past.length - 1]
-      set({
-        project: withSchedule(prev).project,
-        past: past.slice(0, -1),
-        future: [project, ...future].slice(0, HISTORY_LIMIT),
-        dirty: true,
-      })
+      if (!runtimeReady) return
+      runtime.undoManager.stopCapturing()
+      gestureActive = false
+      const stackItem = runtime.undoManager.undoStack[runtime.undoManager.undoStack.length - 1]
+      if (stackItem && !stackItem.meta.has(selectionAfterKey)) {
+        stackItem.meta.set(selectionAfterKey, captureSelection())
+      }
+      runtime.undoManager.undo()
+      restoreSelection(stackItem?.meta.get(selectionBeforeKey) as SelectionSnapshot | undefined)
+      syncDerivedView(true)
     },
     redo: () => {
-      const { past, project, future } = get()
-      if (!future.length) return
-      const next = future[0]
-      set({
-        project: withSchedule(next).project,
-        past: [...past, project].slice(-HISTORY_LIMIT),
-        future: future.slice(1),
-        dirty: true,
-      })
+      if (!runtimeReady) return
+      runtime.undoManager.stopCapturing()
+      gestureActive = false
+      const stackItem = runtime.undoManager.redoStack[runtime.undoManager.redoStack.length - 1]
+      runtime.undoManager.redo()
+      restoreSelection(stackItem?.meta.get(selectionAfterKey) as SelectionSnapshot | undefined)
+      syncDerivedView(true)
     },
 
     // 사용자가 명시적으로 "저장"을 누르거나 Ctrl+S 했을 때만 동작 — 사용자가 고른
     // 경로의 .json으로 저장한다(state/fileIO.ts). 자동저장은 없다.
     save: async () => {
       try {
-        const ok = await saveProjectToFile(get().project)
+        const snapshot = runtimeReady ? projectFromYDoc(runtime.doc, activeSheetId) : get().project
+        const ok = await saveProjectToFile(snapshot)
         if (ok) set({ dirty: false }) // 사용자가 취소하면 dirty 유지
       } catch (e) {
         logWarn('저장 실패', e)
       }
     },
-  }
-})
-
-// 프로젝트(또는 파일 저장 상태 dirty)가 바뀔 때마다 마지막 작업을 localStorage에 캐시한다.
-// 어느 경로(commit/undo/setProject/save…)로 바뀌든 한 곳에서 잡는다. save()는 project ref를
-// 안 바꾸고 dirty만 내리므로 dirty 변화도 함께 감시해야 배지가 정확히 캐시된다.
-useEditor.subscribe((s, prev) => {
-  if (s.project !== prev.project || s.dirty !== prev.dirty) {
-    persistAutosaveSoon(s.project, s.dirty)
   }
 })

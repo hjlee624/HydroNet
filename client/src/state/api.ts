@@ -1,8 +1,9 @@
-// Persistence client. Talks to the thin Express backend for file-based storage,
-// and transparently falls back to localStorage when the server isn't running
-// (standalone client / future offline Electron build).
+// Snapshot/backup client. Live edits flow only through the Y.Doc providers;
+// this module never performs a whole-project server write.
 
 import type { Project } from '../types/model'
+import { useAuth } from './authStore'
+import { canonicalProjectSnapshot } from './crdt'
 import { logWarn } from './logger'
 
 export interface ProjectSummary {
@@ -15,6 +16,11 @@ const LS_PREFIX = 'hydronet:project:'
 const LS_INDEX = 'hydronet:index'
 
 let serverOk = true
+
+function projectHeaders(projectId?: string): HeadersInit {
+  const entered = useAuth.getState().entered
+  return projectId && entered?.id === projectId ? { authorization: `Bearer ${entered.token}` } : {}
+}
 
 async function tryServer<T>(fn: () => Promise<T>): Promise<T | null> {
   if (!serverOk) return null
@@ -50,7 +56,10 @@ export async function listProjects(): Promise<ProjectSummary[]> {
 
 export async function loadProject(id: string): Promise<Project | null> {
   const r = await tryServer(async () => {
-    const res = await fetch(`/api/projects/${encodeURIComponent(id)}`)
+    const res = await fetch(`/api/projects/${encodeURIComponent(id)}/snapshot`, {
+      credentials: 'include',
+      headers: projectHeaders(id),
+    })
     if (res.status === 404) return null
     if (!res.ok) throw new Error(`load failed ${res.status}`)
     return (await res.json()) as Project
@@ -61,18 +70,10 @@ export async function loadProject(id: string): Promise<Project | null> {
 }
 
 export async function saveProject(project: Project): Promise<void> {
-  const r = await tryServer(async () => {
-    const res = await fetch(`/api/projects/${encodeURIComponent(project.id)}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(project),
-    })
-    if (!res.ok) throw new Error(`save failed ${res.status}`)
-    return true
-  })
-  if (r) return
-  // fallback
-  localStorage.setItem(LS_PREFIX + project.id, JSON.stringify(project))
+  // Portable local backup only. The server deliberately rejects legacy PUT
+  // because a last-writer-wins JSON body could overwrite concurrent CRDT edits.
+  const snapshot = canonicalProjectSnapshot(project)
+  localStorage.setItem(LS_PREFIX + project.id, JSON.stringify(snapshot))
   const list = lsList().filter((p) => p.id !== project.id)
   list.unshift({ id: project.id, name: project.name, updatedAt: project.meta.updatedAt })
   lsSaveIndex(list)
@@ -80,7 +81,11 @@ export async function saveProject(project: Project): Promise<void> {
 
 export async function deleteProject(id: string): Promise<void> {
   const r = await tryServer(async () => {
-    const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const res = await fetch(`/api/projects/${encodeURIComponent(id)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: projectHeaders(id),
+    })
     if (!res.ok && res.status !== 404) throw new Error(`delete failed ${res.status}`)
     return true
   })
@@ -104,8 +109,9 @@ export async function autosaveProject(project: Project): Promise<void> {
   try {
     await fetch('/api/autosave', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(project),
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', ...projectHeaders(project.id) },
+      body: JSON.stringify(canonicalProjectSnapshot(project)),
     })
   } catch {
     /* offline / endpoint missing — the by-id save + localStorage already cover persistence */
@@ -114,7 +120,7 @@ export async function autosaveProject(project: Project): Promise<void> {
 
 export async function listAutosaves(): Promise<{ dir: string; items: AutosaveItem[] }> {
   try {
-    const res = await fetch('/api/autosave')
+    const res = await fetch('/api/autosave', { credentials: 'include' })
     if (res.ok) {
       const data = await res.json()
       if (data && Array.isArray(data.items)) return data as { dir: string; items: AutosaveItem[] }
@@ -132,7 +138,11 @@ export async function listAutosaves(): Promise<{ dir: string; items: AutosaveIte
 
 export async function loadAutosave(file: string): Promise<Project | null> {
   try {
-    const res = await fetch(`/api/autosave/file/${encodeURIComponent(file)}`)
+    const entered = useAuth.getState().entered
+    const res = await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, {
+      credentials: 'include',
+      headers: projectHeaders(entered?.id),
+    })
     if (res.ok) return (await res.json()) as Project
   } catch {
     /* fall through */
@@ -143,7 +153,12 @@ export async function loadAutosave(file: string): Promise<Project | null> {
 
 export async function deleteAutosave(file: string): Promise<void> {
   try {
-    await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, { method: 'DELETE' })
+    const entered = useAuth.getState().entered
+    await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, {
+      method: 'DELETE',
+      credentials: 'include',
+      headers: projectHeaders(entered?.id),
+    })
   } catch {
     /* best-effort */
   }
