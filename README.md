@@ -46,8 +46,9 @@ HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 �
 - 장마철 구간을 회색 음영 밴드로 연도별 자동 표시 (댐 공사 일정 검토용)
 - **일(日) 단위 설정** — 시작/종료를 월+일로 지정. 도면에서 **밴드 양 끝을 드래그**해 조절하며, 한 해를 바꾸면 모든 해의 우기가 동일하게 변동
 
-### ⑥ 저장 · 불러오기 (수동 — 경로 직접 지정)
-- **자동저장 없음 · 수동 저장** — 상단바 `저장`(또는 `Ctrl/⌘ + S`)을 눌렀을 때만 저장됩니다. 저장하지 않은 변경이 있으면 상단에 **`● 미저장`**, 저장 후엔 `저장됨`으로 표시됩니다
+### ⑥ 저장 · 불러오기 (수동 파일 + 로컬 복원)
+- **파일 저장은 수동** — 상단바 `저장`(또는 `Ctrl/⌘ + S`)을 눌렀을 때만 휴대 가능한 `.json` 파일을 만듭니다. 저장하지 않은 변경이 있으면 상단에 **`● 미저장`**, 저장 후엔 `저장됨`으로 표시됩니다
+- **브라우저 로컬 복원** — 편집 중 Y.Doc은 `y-indexeddb`에 자동 보존되어 같은 브라우저에서 다시 열 때 복원됩니다. 이 캐시는 공유·백업 파일을 대신하지 않으므로 전달·장기 보관은 반드시 `저장`으로 만든 `.json`을 사용합니다
 - **원하는 경로에 저장** — `저장`을 누르면 **저장 위치·파일명을 직접 고르는 창**이 뜹니다(크롬·엣지 등 폴더 선택 지원 브라우저·localhost·https). 단일 HTML(`file://`)이나 LAN(http)처럼 폴더 선택이 막힌 환경에서는 **다운로드**로 저장됩니다(브라우저 설정에서 "다운로드 시 저장 위치 확인"을 켜면 경로 선택 가능)
 - **원하는 경로에서 불러오기** — 상단바 `불러오기` 버튼으로 **파일 선택창**을 열어 어느 폴더의 `.json`이든 불러옵니다
 - **형식** — 순수 JSON(`.json`)으로 저장해 의존성 없이 가장 빠르게 로딩. 프로젝트 전체(공정표 시트 포함)가 한 파일에 직렬화됩니다
@@ -77,12 +78,14 @@ HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 �
 | 영역 | 선택 | 비고 |
 |---|---|---|
 | 프론트엔드 | **React 18 + Vite + TypeScript** | 모든 핵심 로직(엔진·렌더·출력)을 클라이언트에서 수행 |
-| 상태 관리 | **zustand** | 경량(undo/redo·수동 파일 저장) |
+| 협업 상태 | **Yjs + y-indexeddb + Y.UndoManager** | Y.Doc이 권위 원본, zustand는 렌더용 평면 뷰 |
 | 다이어그램 | **SVG 직접 렌더링** | 외부 차트 라이브러리 미사용 → 번들 경량 |
 | 출력 | **Canvas + jsPDF** | SVG→고해상도 PNG/JPG/PDF |
-| 백엔드 | **Express (Node)** | 파일 기반 저장 + 중앙 `error.log` |
+| 백엔드 | **Express + Hocuspocus** | 같은 4020 서버의 `/collab`, 인증/RBAC, 파일·PostgreSQL Y.Doc 영속 |
 
-> **경량 설계** — 모든 무거운 연산은 브라우저에서 수행하고 백엔드는 파일 저장/로깅만 담당합니다. 추후 **Electron** 으로 감싸 인터넷이 없는 오지 현장에서도 단독 실행되는 `.exe` 배포가 가능하도록 설계했습니다.
+> **권위 경계** — `es/ef/ls/lf/totalFloat/critical`, `__mirror`, cascade 전용 결과는 Y.Doc과 `.json`의 진실원본에 넣지 않고 각 클라이언트가 재계산합니다. `forceCritical`과 사용자가 직접 변경한 입력값만 공유합니다.
+
+> **배포 선택** — LAN 서버와 단일 HTML이 현재 배포 경로입니다. Electron은 선택 과제로 남아 있으며 현재 저장소에는 패키징 스캐폴드가 없습니다. Vite 8 마이그레이션도 이번 범위에 포함하지 않습니다.
 
 > **글꼴** — 화면·공정표에 **KoPubWorld Dotum_Pro**(제목·공종 **Bold**, 나머지 **Medium**). 폰트는 서버가 아니라 **접속한 각 PC(브라우저)** 에서 렌더링됩니다.
 > - **LAN 화면 적용**: `KoPubWorld Dotum_Pro Medium.otf` · `KoPubWorld Dotum_Pro Bold.otf` 2개를 `client/public/fonts/`에 넣고 **서버만 재시작**하면(서버가 `/fonts`를 직접 서빙 → 재빌드 불필요) 모든 LAN 클라이언트 화면에 자동 적용됩니다.
@@ -96,35 +99,43 @@ HydroNet 실행 화면 — 기본 샘플 프로젝트(`OO댐 시공·시운전 �
 
 ```mermaid
 flowchart TD
-    subgraph Client["Client — React + Vite (모든 핵심 로직)"]
+    subgraph Client["Client — React + Vite"]
         UI["components/ (ChartSvg · ChartCanvas · TopBar · Sidebar · Inspector)"]
-        Store["state/store.ts — zustand 단일 문서 · undo/redo"]
+        Store["state/store.ts — zustand 렌더 뷰"]
+        YDoc["state/crdt.ts — Y.Doc · Y.UndoManager"]
+        IDB["y-indexeddb — 오프라인 영속"]
         Engine["engine/ 순수 로직 — CPM · 레이아웃 · 라우팅 · KPI"]
-        FileIO["state/fileIO.ts — File System Access API"]
+        FileIO["state/fileIO.ts — 권위 필드 .json 왕복"]
         Export["export/ — SVG · PNG · JPG · PDF · DXF"]
-        Logger["state/logger.ts"]
     end
 
-    subgraph Server["Server — Express (경량)"]
-        Express["src/index.js — /fonts 글꼴 · SPA 정적호스팅 · /api/log 수신"]
+    subgraph Server["LAN Server — Express + Hocuspocus :4020"]
+        Auth["세션 → 12시간 project grant → 5분 collab ticket"]
+        WS["/collab — Origin 검사 · 현재 RBAC 재확인 · awareness"]
+        Snapshot["GET snapshot · legacy PUT 405"]
     end
 
     subgraph Storage["저장소"]
-        JsonFile["사용자가 고른 .json 파일"]
-        Local["localStorage — 재시작 복원 캐시"]
-        ErrLog["error.log"]
+        JsonFile["사용자가 고른 .json 백업"]
+        Binary["server/data/ydocs/*.bin 또는 PostgreSQL bytea"]
+        AuthDB["server/data/auth.json 또는 PostgreSQL"]
     end
 
     UI <--> Store
+    Store <--> YDoc
+    YDoc <--> IDB
+    Store -->|"HTTP · collab ticket 발급"| Auth
+    YDoc <-->|"인증된 WebSocket"| WS
     Store --> Engine
     Engine --> UI
     Store --> Export
-    Store -->|저장·불러오기| FileIO
+    YDoc -->|"정규 스냅샷"| FileIO
     FileIO --> JsonFile
-    Store -->|편집 시 자동 캐시| Local
-    Logger -->|POST /api/log| Express
-    Express --> ErrLog
-    UI -.->|글꼴 /fonts| Express
+    Auth --> WS
+    WS <--> Binary
+    Auth <--> AuthDB
+    Binary --> Snapshot
+    Snapshot --> JsonFile
 ```
 
 ---
@@ -144,13 +155,14 @@ HydroNet/
 │  │  │  └─ dates.ts        #  · 날짜 ↔ Day offset 변환
 │  │  ├─ components/        # ChartSvg, ChartCanvas, TopBar, Sidebar, Inspector …
 │  │  ├─ export/            # exporter.ts(SVG/PNG/JPG/PDF) · dxf.ts(DXF/캐드)
-│  │  ├─ state/             # store.ts(zustand)·logger.ts·fileIO.ts(파일 저장/열기)
+│  │  ├─ state/             # crdt.ts(Y.Doc)·store.ts(zustand 뷰)·fileIO.ts·인증
 │  │  ├─ data/              # sampleProject.ts·templates.ts·facilities.ts(시설물 9종)·ciLogo.ts
 │  │  └─ styles/            # 디자인 토큰 + 전역 CSS
 │  └─ scripts/              # smoke.ts·mount-test.ts(빈화면 회귀)·build-single.ts·check-single.ts·dxf-check.ts·render-preview.ts
-├─ server/                  # Express 백엔드 (파일 저장 + error.log)
-│  ├─ src/index.js
-│  └─ data/                 # 프로젝트 JSON 저장소
+├─ server/                  # Express + Hocuspocus 인증 협업 백엔드
+│  ├─ src/auth/             # 계정·역할·프로젝트 권한
+│  ├─ src/collab/           # /collab 인증·Origin·시드·바이너리 저장
+│  └─ data/                 # 런타임 인증/Y.Doc 데이터(git 제외)
 ├─ start-lan.bat            # LAN 접속용 서버 실행 (0.0.0.0, 클라이언트+API 단일 포트)
 ├─ error.log                # 모든 프로그램 오류 기록 (ABS_RULE)
 └─ package.json             # 루트 (dev 동시 실행)
@@ -161,7 +173,7 @@ HydroNet/
 ## 🚀 실행 방법
 
 ### 사전 준비
-- Node.js 18 이상 (개발은 Node 24 기준)
+- Node.js 24.x, npm 11.x (`package.json` engines 기준)
 
 ### 설치
 ```bash
@@ -174,7 +186,7 @@ npm run dev
 # 클라이언트: http://localhost:5273
 # 서버 API : http://localhost:4020  (Vite가 /api 프록시)
 ```
-> 서버를 띄우지 않아도 클라이언트는 동작합니다 — 이 경우 프로젝트는 브라우저 `localStorage`에 저장됩니다.
+> 서버를 띄우지 않아도 클라이언트는 동작합니다. 이 오프라인 경로는 provider를 연결하지 않고 y-indexeddb로 Y.Doc을 보존합니다.
 
 ### 배포 빌드
 ```bash
@@ -191,7 +203,7 @@ node server/src/index.js   # dist가 있으면 서버가 정적 호스팅
 cd client
 # 글꼴 내장이 필요하면 KoPubWorld Dotum_Pro Medium/Bold.otf 를 client/public/fonts/ 에 둠
 npm run build:single      # → 저장소 루트에 HydroNet.html 생성 (약 20MB, KoPub 내장 시)
-npx tsx scripts/check-single.ts   # (선택) jsdom으로 마운트 검증
+node_modules/.bin/tsx scripts/check-single.ts   # jsdom 마운트 검증
 ```
 - 모든 JS/CSS를 한 파일에 인라인하고, KoPub OTF를 base64로 `@font-face`에 내장합니다(어느 PC에서도 KoPub로 표시). 진입 스크립트는 **classic 스크립트(IIFE)** 로 만들어 `file://` 더블클릭에서도 실행됩니다.
 - **되는 것**: 편집·모든 출력(PNG·JPG·PDF·SVG·DXF) — 전부 브라우저에서 처리(서버 불필요).
@@ -201,7 +213,7 @@ npx tsx scripts/check-single.ts   # (선택) jsdom으로 마운트 검증
 ### 🌐 LAN(사내망)에서 다른 PC로 접속
 오지 현장 사무실의 여러 PC가 한 대의 서버에 접속해 공유할 수 있습니다. 서버는
 `0.0.0.0`(모든 네트워크 인터페이스)에 바인딩되어 클라이언트(빌드본) + API를
-한 포트(기본 4020)로 함께 제공합니다. (개발=4020 / 운영=4000 권장)
+한 포트(개발 기본 4020)로 함께 제공합니다. WebSocket 협업도 같은 포트의 `/collab`을 사용합니다.
 
 ```bat
 start-lan.bat          ◀ 더블클릭 (최초 1회 자동 빌드)
@@ -215,14 +227,32 @@ LAN:   http://192.168.x.x:4020/      ← 다른 PC는 이 주소로 접속
 > ```
 > netsh advfirewall firewall add rule name="HydroNet 4020" dir=in action=allow protocol=TCP localport=4020
 > ```
-> 포트 변경: 실행 전 `set PORT=4000` 등으로 지정 가능(미지정 시 4020). 개발은 4020, 운영은 4000을 권장합니다.
+> 이 작업공간의 검증은 4020 또는 테스트가 할당한 임시 포트에서만 수행합니다. 4000은 기존 운영 인스턴스용이므로 점유·재시작하지 않습니다.
+
+협업 WebSocket은 12시간 project grant를 직접 받지 않습니다. 클라이언트가 same-origin HTTP로 5분짜리 collab ticket을 교환하고, Hocuspocus 인증 메시지로 전달합니다. 기본 Origin 정책은 명시 allowlist 또는 같은 host의 private-LAN/localhost만 허용합니다. 운영에서는 배포 계층에서 TLS/WSS와 내부 CA를 적용해야 합니다. 자세한 절차는 [`docs/DEPLOY_CRDT.md`](docs/DEPLOY_CRDT.md)를 참고하세요.
 
 ### 검증 스크립트
-```bash
-cd client
-npx tsx scripts/smoke.ts            # 엔진(CPM/레이아웃/라우팅) 무결성 검사
-npx tsx scripts/mount-test.ts       # jsdom 전체앱 마운트 — 빈화면 회귀 방지(커밋 전 필수)
-npx tsx scripts/render-preview.ts   # preview.png 로 마일스톤 출력 미리보기
+```powershell
+npm.cmd run build
+client\node_modules\.bin\tsx.cmd client\scripts\smoke.ts
+Push-Location client
+node_modules\.bin\tsx.cmd scripts\mount-test.ts
+npm.cmd run smoke:crdt
+npm.cmd run build:single
+node_modules\.bin\tsx.cmd scripts\check-single.ts
+node_modules\.bin\tsx.cmd scripts\auth-phone-test.ts
+Pop-Location
+npm.cmd --prefix server run auth-smoke
+npm.cmd --prefix server run collab-smoke
+```
+
+계정 roster는 개인정보를 출력하지 않는 전용 CLI로 처리합니다. 기본 실행은 검증만 하는 dry-run이며 `--apply`에서만 현재 인증 저장소에 반영합니다.
+
+```powershell
+node server\scripts\seed-roster.mjs
+node server\scripts\seed-roster.mjs --apply
+# 기존 계정 초기비밀번호를 의도적으로 되돌릴 때만:
+node server\scripts\seed-roster.mjs --apply --reset-passwords
 ```
 
 ---
@@ -268,10 +298,11 @@ npx tsx scripts/render-preview.ts   # preview.png 로 마일스톤 출력 미리
 - [x] 사용성 빠른개선: 보기 필터·색상·오늘선 · 인라인 이름편집 · 새 도면 템플릿 갤러리 (간단/전문가 모드는 이후 제거 — 전체 기능 상시 노출)
 - [x] 마일스톤 편집 핵심: WBS 좌측 표 · 시설물 유형 9종 프리셋 · 화살표 양끝 연결(FS/SS/FF/SF)+지연↔위치 양방향 · 공사기간 구분선(연/월)
 - [x] 건설사업관리(CM) 패키지(대시보드·EVM·베이스라인·분야별 모듈)는 **SYNC-BUILD로 분리**(2026-07-30, 마일스톤 전용화)
+- [x] **실시간 공동편집(CRDT)** — Yjs·y-indexeddb·Y.UndoManager + 같은 4020 서버의 Hocuspocus `/collab` 인증 협업, 접속코드·3역할 RBAC(ADR-002). Y.Doc이 권위 원본이고 파생 스케줄값은 클라이언트가 재계산 (2026-08-02)
 - [ ] 5단계: 현장 데이터 기반 안정화, 대용량 렌더링 최적화
 - [ ] 기상 데이터 연동(우기 자동 보정), 보수보강 전용 타임라인
 - [ ] **Electron 패키징** → 오프라인 `.exe` 배포
 
 ---
 
-<sub>최종 갱신 · 2026-07-02 · <code>dev</code> 브랜치 기준</sub>
+<sub>최종 갱신 · 2026-08-02 · <code>dev</code> 브랜치 기준</sub>
