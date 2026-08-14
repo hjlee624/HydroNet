@@ -1,0 +1,79 @@
+# Dependencies
+node_modules/
+*/node_modules/
+
+# Build output
+dist/
+build/
+*/dist/
+dist-single/
+**/dist-single/
+*.tsbuildinfo
+
+# Single-file build: bundled KoPub OTFs (large binaries, not committed).
+client/public/fonts/*.otf
+# 정식 배포본 Sequence.html 은 저장소에 포함(다운로드 배포용). 날짜 스냅샷만 무시.
+/Sequence_*.html
+
+# 과거 백업 스냅샷(개인 로컬 보관용) — VCS에 올리지 않음. 2026-07-30 추적 해제.
+@bak/
+
+# Logs (ABS_RULE: program logs live in error.log; keep them local, not in VCS)
+error.log
+*.log
+logs/
+
+# Runtime project data (file-based storage)
+server/data/*.json
+!server/data/.gitkeep
+# Runtime CRDT authority: room Y.Doc binaries are regenerated from the legacy JSON
+# seed / live edits and must never be committed (server/data is runtime-only).
+server/data/ydocs/
+
+# Local sample & reference exports dropped into the repo (personal project data,
+# not part of the app). Root milestone JSON exports and the SAMPLE/ drop folder.
+/SAMPLE/
+/*마일스톤*.json
+
+# Local personnel rosters contain names/phone numbers and must never be committed.
+DB/*.xlsx
+
+# Environment / editor / tooling
+.env
+.env.local
+.DS_Store
+.vscode/
+.idea/
+.omc/
+.claude/
+
+# Electron packaging output (future)
+out/
+release/
+*.exe
+
+# Dev render / verification artifacts
+preview.png
+preview.svg
+**/preview.png
+**/preview.svg
+sample.dxf
+**/sample.dxf
+
+# Exported drawings / reference images dropped in the repo root (DESIGN/ assets
+# are kept; only root-level artifacts are ignored via the leading slash).
+/*.png
+/*.svg
+/*.jpg
+/*.jpeg
+/*.dxf
+/*.pdf
+
+# Video assets — 데모 영상 제거(2026-07-30). 루트 레벨 동영상은 무시(개인 자료 방지).
+/*.mp4
+/*.mov
+/*.avi
+/*.mkv
+
+# UI 캡처 스냅샷(개인 작업용) — 저장소에 올리지 않음.
+/SHOTS/

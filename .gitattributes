@@ -1,0 +1,13 @@
+# Normalize line endings — store as LF in the repo, check out native locally.
+* text=auto eol=lf
+
+# Windows batch scripts must use CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Treat known binaries as binary (no EOL conversion).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.jfif binary
+*.pdf binary

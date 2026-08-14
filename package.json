@@ -1,0 +1,29 @@
+{
+  "name": "sequence",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Sequence — 토목 설계·시공 공정표(예정공정표·마일스톤) 관리 프로그램",
+  "type": "module",
+  "scripts": {
+    "postinstall": "npm --prefix client install && npm --prefix server install",
+    "dev": "concurrently -n server,client -c blue,green \"npm:dev:server\" \"npm:dev:client\"",
+    "dev:client": "npm --prefix client run dev",
+    "dev:server": "npm --prefix server run dev",
+    "build": "npm --prefix client run build",
+    "preview": "npm --prefix client run preview",
+    "start": "npm run dev",
+    "lint": "biome lint",
+    "lint:fix": "biome lint --write",
+    "format": "biome format --write",
+    "check": "biome check",
+    "check:fix": "biome check --write"
+  },
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.2",
+    "concurrently": "^9.1.0"
+  }
+}

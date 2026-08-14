@@ -1,0 +1,173 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Link routing — orthogonal "elbow" connectors between task bars.
+//
+// Produces an SVG path plus an arrowhead pose for each dependency link. Routes
+// cleanly to the right when the successor is downstream, and wraps around (over
+// or under) when it is not, so arrows avoid crossing back through their source.
+// A small per-endpoint fan-out keeps parallel links from overlapping.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import type { Link } from '../types/model'
+import type { LaidTask, LayoutModel } from './layout'
+import { laidTaskMap } from './layout'
+
+export interface RoutedLink {
+  id: string
+  from: string
+  to: string
+  d: string
+  /** Orthogonal elbow points (for non-SVG consumers like the DXF exporter). */
+  points: Array<[number, number]>
+  arrowX: number
+  arrowY: number
+  arrowAngle: number // radians, direction of travel at the head
+  critical: boolean
+  type: Link['type']
+  /** User-chosen line style (실선/파선/점선); undefined = auto. */
+  style?: Link['style']
+  /** User-chosen line width (px); undefined = auto. */
+  width?: Link['width']
+}
+
+const STUB = 12
+const CORNER = 5
+
+interface Anchor {
+  x: number
+  y: number
+  dir: 1 | -1
+} // dir: +1 exits/enters to the right
+
+function sourceAnchor(lt: LaidTask, type: Link['type']): Anchor {
+  const fromStart = type === 'SS' || type === 'SF'
+  return { x: fromStart ? lt.startX : lt.endX, y: lt.cy, dir: fromStart ? -1 : 1 }
+}
+function targetAnchor(lt: LaidTask, type: Link['type']): Anchor {
+  const toFinish = type === 'FF' || type === 'SF'
+  // entering anchor faces inward: arrive from the left for a start-anchor (dir +1)
+  return { x: toFinish ? lt.endX : lt.startX, y: lt.cy, dir: toFinish ? 1 : -1 }
+}
+
+/** Build an orthogonal path string with lightly rounded corners. */
+function orthoPath(pts: Array<[number, number]>): string {
+  if (pts.length < 2) return ''
+  let d = `M ${round(pts[0][0])} ${round(pts[0][1])}`
+  for (let i = 1; i < pts.length - 1; i++) {
+    const [px, py] = pts[i - 1]
+    const [cx, cy] = pts[i]
+    const [nx, ny] = pts[i + 1]
+    const inDx = Math.sign(cx - px)
+    const inDy = Math.sign(cy - py)
+    const outDx = Math.sign(nx - cx)
+    const outDy = Math.sign(ny - cy)
+    const r = CORNER
+    const beforeX = cx - inDx * r
+    const beforeY = cy - inDy * r
+    const afterX = cx + outDx * r
+    const afterY = cy + outDy * r
+    d += ` L ${round(beforeX)} ${round(beforeY)} Q ${round(cx)} ${round(cy)} ${round(afterX)} ${round(afterY)}`
+  }
+  const last = pts[pts.length - 1]
+  d += ` L ${round(last[0])} ${round(last[1])}`
+  return d
+}
+
+function round(n: number): number {
+  return Math.round(n * 10) / 10
+}
+
+export function routeLinks(model: LayoutModel, links: Link[]): RoutedLink[] {
+  const map = laidTaskMap(model)
+  const routed: RoutedLink[] = []
+
+  for (const link of links) {
+    const a = map.get(link.from)
+    const b = map.get(link.to)
+    if (!a || !b) continue
+
+    const src = sourceAnchor(a, link.type)
+    const dst = targetAnchor(b, link.type)
+
+    // No per-link fan-out: every arrow sharing a target converges on that bar's
+    // centre (and leaves from the source's centre), so multiple arrows into/out of
+    // one bar read as a single clean junction — vertical/horizontal segments stay
+    // aligned instead of stepping downward.
+    const dstY = dst.y
+
+    const sx = src.x + src.dir * STUB
+    const dx = dst.x + dst.dir * STUB
+    const sameRow = Math.abs(a.cy - b.cy) < 1
+    // Sequential bars on ONE row (e.g. 굴착→축조→페이스슬라브→충수): source exits
+    // right, target enters left, target sits at/after the source → a clean straight
+    // horizontal hop instead of a hump.
+    const forwardSameRow = sameRow && src.dir === 1 && dst.dir === -1 && dst.x >= src.x - 1
+
+    let pts: Array<[number, number]>
+    if (forwardSameRow) {
+      pts = [
+        [src.x, src.y],
+        [dst.x, dstY],
+      ]
+    } else if (src.dir === dst.dir) {
+      // Same-facing anchors — FF (both exit/enter right) or SS (both left).
+      // 요구(FF.png의 TO-BE): 출발 끝에서 **출발 막대 높이 그대로 수평 직진**하다가
+      // 대상 끝 지점에서 **수직 한 번만** 꺾어 내려(올려) 붙는다. 중간 채널로 일찍
+      // 꺾여 계단처럼 내려가던 AS-IS를 없앤다. 보통의 FF(짧은 선행이 긴 후행의 종료를
+      // 끄는 경우)는 대상 끝이 출발 끝보다 더 바깥(오른쪽/왼쪽)이라, 수직선을 대상 끝에
+      // 정확히 내리면 화살표가 끝점에 수직으로 꽂히고 되꺾임(back-hook)이 없다.
+      const targetBeyond = src.dir === 1 ? dst.x >= src.x : dst.x <= src.x
+      if (targetBeyond) {
+        pts = [
+          [src.x, src.y],
+          [dst.x, src.y],
+          [dst.x, dstY],
+        ]
+      } else {
+        // 대상 끝이 출발 끝보다 안쪽이면 짧은 스텁만 내밀고 내려가 수평으로 접근한다.
+        const cornerX = src.x + src.dir * STUB
+        pts = [
+          [src.x, src.y],
+          [cornerX, src.y],
+          [cornerX, dstY],
+          [dst.x, dstY],
+        ]
+      }
+    } else {
+      pts = [
+        [src.x, src.y],
+        [sx, src.y],
+      ]
+      if (src.dir === 1 && dst.dir === -1 && dx > sx) {
+        // Standard downstream FS: route through a vertical mid-line.
+        const midX = (sx + dx) / 2
+        pts.push([midX, src.y], [midX, dstY], [dx, dstY])
+      } else {
+        // Wrap-around: drop to a channel between the two rows then approach.
+        const channelY = sameRow ? src.y - model.rowHeight * 0.55 : (src.y + dstY) / 2
+        pts.push([sx, channelY], [dx, channelY], [dx, dstY])
+      }
+      pts.push([dst.x, dstY])
+    }
+
+    const d = orthoPath(pts)
+    const head = pts[pts.length - 1]
+    const prev = pts[pts.length - 2]
+    const arrowAngle = Math.atan2(head[1] - prev[1], head[0] - prev[0])
+
+    routed.push({
+      id: link.id,
+      from: link.from,
+      to: link.to,
+      d,
+      points: pts,
+      arrowX: head[0],
+      arrowY: head[1],
+      arrowAngle,
+      critical: !!(a.critical && b.critical),
+      type: link.type,
+      style: link.style,
+      width: link.width,
+    })
+  }
+  return routed
+}

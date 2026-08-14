@@ -1,0 +1,931 @@
+// Interaction layer over ChartSvg: drag-to-move bars, drag-to-link from the
+// finish anchor, click selection, and zoom-aware layout. Pointer math maps
+// client coordinates into chart-content space (the paper is rendered 1:1).
+//
+// Photoshop-style navigation tools (store.navMode): in 'zoom' the mouse wheel
+// zooms centred on the cursor; in 'pan' a drag scrolls the view. Editing
+// gestures (move/resize/link/select) only run in 'edit'. Esc returns to edit.
+
+import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { dateToDay, daysInMonth, dayToDate, toISO } from '../engine/dates'
+import { computeLayout, type LayoutModel } from '../engine/layout'
+import { augmentForMirror } from '../engine/mirror'
+import { routeLinks } from '../engine/routing'
+import { publishPresenceCursor, usePresence } from '../state/collaboration'
+import { filterActive, useEditor } from '../state/store'
+import type { LinkType } from '../types/model'
+import { ChartSvg, type LinkingGhost } from './ChartSvg'
+import { Modal } from './Modal'
+
+type Drag =
+  | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
+  | {
+      kind: 'moveGroup'
+      base: Array<{ id: string; start: number }>
+      grabDay: number
+      started: boolean
+    }
+  | {
+      kind: 'resize'
+      taskId: string
+      edge: 'start' | 'end'
+      startDay: number
+      endDay: number
+      started: boolean
+    }
+  | { kind: 'logo'; index: number; rightEdge: number; ratio: number; started: boolean }
+  | { kind: 'link'; fromId: string; fromEdge: 'start' | 'end' }
+  | { kind: 'rainy'; seasonId: string; edge: 'start' | 'end'; started: boolean }
+  | null
+
+export function ChartCanvas() {
+  const project = useEditor((s) => s.project)
+  const zoom = useEditor((s) => s.zoom)
+  const navMode = useEditor((s) => s.navMode)
+  const selectedTaskId = useEditor((s) => s.selectedTaskId)
+  const selectedTaskIds = useEditor((s) => s.selectedTaskIds)
+  const selectedLinkId = useEditor((s) => s.selectedLinkId)
+  const selectedTextRole = useEditor((s) => s.selectedTextRole)
+  const linking = useEditor((s) => s.linking)
+  const filter = useEditor((s) => s.filter)
+  const colorMode = useEditor((s) => s.colorMode)
+  const remotePresences = usePresence((s) => s.remote)
+
+  const wrapRef = useRef<HTMLDivElement>(null)
+  const paperRef = useRef<HTMLDivElement>(null)
+  const dragRef = useRef<Drag>(null)
+  const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
+  const zoomAnchor = useRef<{
+    cX: number
+    cY: number
+    clientX: number
+    clientY: number
+    z: number
+  } | null>(null)
+  const renameDone = useRef(false)
+  const durDone = useRef(false)
+  // Edge auto-scroll while dragging a bar/link past the visible area, plus the last
+  // pointer position (so the gesture re-applies as the view scrolls) and a guard so
+  // the click that ends a drag doesn't collapse a multi-selection.
+  const lastClient = useRef<{ x: number; y: number } | null>(null)
+  const autoScrollRef = useRef<number | null>(null)
+  const movedRef = useRef(false)
+  const [ghost, setGhost] = useState<LinkingGhost | null>(null)
+  const [panning, setPanning] = useState(false)
+  // 표시 기간 설정 팝업(마일스톤 상단 연/월 클릭 — 요구사항 1).
+  const [periodOpen, setPeriodOpen] = useState(false)
+  const [editing, setEditing] = useState<{ id: string; name: string } | null>(null)
+  // 막대 아래 공기(기간) 텍스트 인라인 편집(이름 편집과 별개 입력).
+  const [editingDur, setEditingDur] = useState<{ id: string; text: string } | null>(null)
+  // Live "drop here" hint while dragging a bar vertically: a line for a new row
+  // (above/below) or a highlighted band for merging onto an existing row.
+  const [reorderHint, setReorderHint] = useState<{ lineY: number; merge: boolean } | null>(null)
+  // Rubber-band (marquee) rectangle in content coords while drag-selecting bars.
+  const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(
+    null,
+  )
+  const marqueeRef = useRef<{ x0: number; y0: number } | null>(null)
+
+  useEffect(() => () => publishPresenceCursor(null), [])
+
+  // Layout is computed at base scale; zoom is applied as a uniform CSS
+  // transform on the paper so the WHOLE milestone (bars, text, arrows, header)
+  // scales together — not just the horizontal axis.
+  // 예정공정표↔마일스톤 연동(요구사항 4): 미러가 켜져 있으면 예정 시트의 공종/공정을 병합한
+  // 새 project로 레이아웃·라우팅한다(표시 전용). 새 객체는 이 컴포넌트 본문에서만 만든다
+  // (zustand 셀렉터로 반환하면 스냅샷 불안정 → 빈 화면).
+  const augmented = useMemo(() => augmentForMirror(project), [project])
+  const model = useMemo(() => computeLayout(augmented, filter), [augmented, filter])
+
+  const routed = useMemo(() => routeLinks(model, augmented.links), [model, augmented.links])
+
+  // "오늘" line position (content coords), or null when today is off-domain.
+  const todayX = useMemo(() => {
+    const x = model.xOf(dateToDay(project.startDate, new Date()))
+    return x >= model.labelWidth && x <= model.contentWidth ? x : null
+  }, [project.startDate, model])
+
+  const editLt = editing ? model.tasks.find((t) => t.task.id === editing.id) : null
+  const editDurLt = editingDur ? model.tasks.find((t) => t.task.id === editingDur.id) : null
+
+  function toContent(clientX: number, clientY: number) {
+    const rect = paperRef.current!.getBoundingClientRect()
+    // rect reflects the scaled box; divide by zoom to get unscaled model coords.
+    return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom }
+  }
+
+  // Map a content-Y (while dragging task `taskId`) to a row drop target: which lane,
+  // which existing row to MERGE onto (so the bar joins a one-line package), or a new
+  // row ABOVE/BELOW an anchor row. `anchorId` references a concrete task so the
+  // target survives the include/exclude shift when the dragged task is removed.
+  function computeRowTarget(taskId: string, contentY: number) {
+    const cats = model.categories
+    if (!cats.length) return null
+    let cat = cats.find((c) => contentY >= c.y && contentY < c.y + c.height)
+    if (!cat) cat = contentY < cats[0].y ? cats[0] : cats[cats.length - 1]
+    const rh = model.rowHeight
+    // Existing rows in this lane EXCLUDING the dragged task, each with a representative
+    // (anchor) task and the row centre Y.
+    const byRow = new Map<number, { anchorId: string; cy: number }>()
+    for (const lt of model.tasks) {
+      if (lt.categoryId !== cat.id || lt.task.id === taskId) continue
+      if (!byRow.has(lt.subRow)) byRow.set(lt.subRow, { anchorId: lt.task.id, cy: lt.cy })
+    }
+    const rows = [...byRow.values()].sort((a, b) => a.cy - b.cy)
+    if (!rows.length)
+      return {
+        catId: cat.id,
+        anchorId: null as string | null,
+        mode: 'below' as const,
+        lineY: cat.y + cat.height / 2,
+        merge: false,
+      }
+    for (const r of rows) {
+      const top = r.cy - rh / 2
+      const frac = (contentY - top) / rh
+      if (frac < 0 || frac >= 1) continue
+      if (frac < 0.28)
+        return {
+          catId: cat.id,
+          anchorId: r.anchorId,
+          mode: 'above' as const,
+          lineY: top,
+          merge: false,
+        }
+      if (frac > 0.72)
+        return {
+          catId: cat.id,
+          anchorId: r.anchorId,
+          mode: 'below' as const,
+          lineY: top + rh,
+          merge: false,
+        }
+      return {
+        catId: cat.id,
+        anchorId: r.anchorId,
+        mode: 'merge' as const,
+        lineY: r.cy,
+        merge: true,
+      }
+    }
+    if (contentY < rows[0].cy)
+      return {
+        catId: cat.id,
+        anchorId: rows[0].anchorId,
+        mode: 'above' as const,
+        lineY: rows[0].cy - rh / 2,
+        merge: false,
+      }
+    const last = rows[rows.length - 1]
+    return {
+      catId: cat.id,
+      anchorId: last.anchorId,
+      mode: 'below' as const,
+      lineY: last.cy + rh / 2,
+      merge: false,
+    }
+  }
+
+  // ── Zoom-to-cursor: after a wheel-driven zoom commits, shift scroll so the
+  //    content point that was under the cursor stays under the cursor. ──
+  useLayoutEffect(() => {
+    const a = zoomAnchor.current
+    if (!a) return
+    zoomAnchor.current = null
+    const wrap = wrapRef.current,
+      paper = paperRef.current
+    if (!wrap || !paper) return
+    const r = paper.getBoundingClientRect()
+    wrap.scrollLeft += r.left + a.cX * a.z - a.clientX
+    wrap.scrollTop += r.top + a.cY * a.z - a.clientY
+  }, [zoom])
+
+  // Native (non-passive) wheel listener so we can preventDefault while zooming.
+  useEffect(() => {
+    const wrap = wrapRef.current
+    if (!wrap) return
+    function onWheel(e: WheelEvent) {
+      const st = useEditor.getState()
+      // Ctrl(⌘)+휠 = 차트만 커서 기준 확대/축소. preventDefault로 Chrome 등의 페이지
+      // 전체 줌(Ctrl+휠)을 막아 이 페이지에선 마일스톤 차트만 확대/축소된다. 트랙패드
+      // 핀치도 ctrlKey로 들어와 동일하게 동작. 일반 휠은 평소대로 스크롤.
+      if (!(e.ctrlKey || e.metaKey)) return
+      e.preventDefault()
+      const paper = paperRef.current
+      if (!paper) return
+      const z1 = st.zoom
+      const r = paper.getBoundingClientRect()
+      const cX = (e.clientX - r.left) / z1
+      const cY = (e.clientY - r.top) / z1
+      const z2 = Math.min(6, Math.max(0.25, z1 * (e.deltaY < 0 ? 1.12 : 1 / 1.12)))
+      if (Math.abs(z2 - z1) < 1e-4) return
+      zoomAnchor.current = { cX, cY, clientX: e.clientX, clientY: e.clientY, z: z2 }
+      st.setZoom(z2)
+    }
+    wrap.addEventListener('wheel', onWheel, { passive: false })
+    return () => wrap.removeEventListener('wheel', onWheel)
+  }, [])
+
+  // Cancel any running edge auto-scroll loop if we unmount mid-drag (stopAutoScroll
+  // reads the stable ref, so identity across renders doesn't matter).
+  useEffect(() => () => stopAutoScroll(), [])
+
+  // ── Hand-tool panning (navMode === 'pan') ──
+  function onWrapPointerDown(e: RPointerEvent) {
+    if (useEditor.getState().navMode !== 'pan') return
+    const wrap = wrapRef.current
+    if (!wrap) return
+    e.preventDefault()
+    panRef.current = { x: e.clientX, y: e.clientY, sl: wrap.scrollLeft, st: wrap.scrollTop }
+    setPanning(true)
+    window.addEventListener('pointermove', onPanMove)
+    window.addEventListener('pointerup', onPanUp)
+  }
+  function onPanMove(e: PointerEvent) {
+    const p = panRef.current,
+      wrap = wrapRef.current
+    if (!p || !wrap) return
+    wrap.scrollLeft = p.sl - (e.clientX - p.x)
+    wrap.scrollTop = p.st - (e.clientY - p.y)
+  }
+  function onPanUp() {
+    window.removeEventListener('pointermove', onPanMove)
+    window.removeEventListener('pointerup', onPanUp)
+    panRef.current = null
+    setPanning(false)
+  }
+
+  // ── Rubber-band marquee select (edit mode): drag on empty canvas to draw a
+  //    rectangle; every bar/milestone it touches becomes the multi-selection,
+  //    which can then be dragged horizontally as a group. Bars stop their own
+  //    pointerdown, so reaching here means an empty spot. ──
+  function onPaperPointerDown(e: RPointerEvent) {
+    if (useEditor.getState().navMode !== 'edit') return // pan mode handled by the wrap
+    if (e.button !== 0) return
+    e.preventDefault() // suppress native text/drag-select while rubber-banding
+    const { x, y } = toContent(e.clientX, e.clientY)
+    marqueeRef.current = { x0: x, y0: y }
+    movedRef.current = false
+    window.addEventListener('pointermove', onMarqueeMove)
+    window.addEventListener('pointerup', onMarqueeUp)
+  }
+  function marqueeRect(s: { x0: number; y0: number }, clientX: number, clientY: number) {
+    const { x, y } = toContent(clientX, clientY)
+    return {
+      x: Math.min(s.x0, x),
+      y: Math.min(s.y0, y),
+      w: Math.abs(x - s.x0),
+      h: Math.abs(y - s.y0),
+    }
+  }
+  function onMarqueeMove(e: PointerEvent) {
+    const s = marqueeRef.current
+    if (!s) return
+    const r = marqueeRect(s, e.clientX, e.clientY)
+    if (r.w > 3 || r.h > 3) movedRef.current = true
+    setMarquee(r)
+  }
+  function onMarqueeUp(e: PointerEvent) {
+    window.removeEventListener('pointermove', onMarqueeMove)
+    window.removeEventListener('pointerup', onMarqueeUp)
+    const started = marqueeRef.current
+    marqueeRef.current = null
+    setMarquee(null)
+    if (!started || !movedRef.current) return // a plain click → background click clears
+    const r = marqueeRect(started, e.clientX, e.clientY)
+    const hit = (lt: (typeof model.tasks)[number]) => {
+      const bx = lt.isMilestone ? lt.cx - 8 : lt.x
+      const bw = lt.isMilestone ? 16 : lt.w
+      const by = lt.isMilestone ? lt.cy - 8 : lt.y
+      const bh = lt.isMilestone ? 16 : lt.h
+      return r.x < bx + bw && bx < r.x + r.w && r.y < by + bh && by < r.y + r.h
+    }
+    // 미러(예정 연동) 공정은 표시 전용이라 선택 대상에서 제외.
+    const ids = model.tasks.filter((lt) => !lt.task.__mirror && hit(lt)).map((lt) => lt.task.id)
+    if (ids.length) useEditor.getState().selectTasks(ids)
+    else useEditor.getState().selectTask(null)
+  }
+
+  function onTaskPointerDown(e: RPointerEvent, id: string) {
+    if (useEditor.getState().navMode !== 'edit') return // let zoom/pan take over
+    e.stopPropagation()
+    e.preventDefault()
+    const store = useEditor.getState()
+    const task = project.tasks.find((t) => t.id === id)
+    if (!task) return
+    movedRef.current = false
+    // Ctrl/⌘+클릭 = 다중 선택 토글(드래그 시작 안 함).
+    if (e.ctrlKey || e.metaKey) {
+      store.toggleTaskSelection(id)
+      return
+    }
+    const sel = store.selectedTaskIds
+    const { x } = toContent(e.clientX, e.clientY)
+    if (sel.length > 1 && sel.includes(id)) {
+      // 다중 선택된 막대 중 하나를 잡고 드래그 → 선택 전체를 수평으로 함께 이동.
+      const base = project.tasks
+        .filter((t) => sel.includes(t.id))
+        .map((t) => ({ id: t.id, start: t.start }))
+      dragRef.current = { kind: 'moveGroup', base, grabDay: model.dayOf(x), started: false }
+    } else {
+      store.selectTask(id)
+      // History is captured lazily on the first real move, so a plain click that
+      // merely selects a bar does not push an empty undo step.
+      dragRef.current = {
+        kind: 'move',
+        taskId: id,
+        grabOffsetDays: model.dayOf(x) - task.start,
+        started: false,
+      }
+    }
+    lastClient.current = { x: e.clientX, y: e.clientY }
+    startAutoScroll()
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
+  function onBarResizePointerDown(e: RPointerEvent, id: string, edge: 'start' | 'end') {
+    if (useEditor.getState().navMode !== 'edit') return
+    e.stopPropagation()
+    e.preventDefault()
+    const store = useEditor.getState()
+    const task = project.tasks.find((t) => t.id === id)
+    if (!task) return
+    store.selectTask(id)
+    dragRef.current = {
+      kind: 'resize',
+      taskId: id,
+      edge,
+      startDay: task.start,
+      endDay: task.start + task.duration,
+      started: false,
+    }
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
+  function onLogoResizePointerDown(e: RPointerEvent, index: number) {
+    if (useEditor.getState().navMode !== 'edit') return
+    e.stopPropagation()
+    e.preventDefault()
+    const lg = model.logos.find((l) => l.index === index)
+    if (!lg) return
+    // Right edge stays anchored; dragging the bottom-left grip scales the box.
+    dragRef.current = {
+      kind: 'logo',
+      index,
+      rightEdge: lg.x + lg.w,
+      ratio: lg.h / lg.w,
+      started: false,
+    }
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
+  function onRainyResizePointerDown(e: RPointerEvent, seasonId: string, edge: 'start' | 'end') {
+    if (useEditor.getState().navMode !== 'edit') return
+    e.stopPropagation()
+    e.preventDefault()
+    dragRef.current = { kind: 'rainy', seasonId, edge, started: false }
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
+  function onAnchorPointerDown(e: RPointerEvent, id: string, edge: 'start' | 'end') {
+    if (useEditor.getState().navMode !== 'edit') return
+    e.stopPropagation()
+    e.preventDefault()
+    const store = useEditor.getState()
+    store.startLinking(id)
+    dragRef.current = { kind: 'link', fromId: id, fromEdge: edge }
+    const { x, y } = toContent(e.clientX, e.clientY)
+    setGhostFrom(id, edge, x, y)
+    lastClient.current = { x: e.clientX, y: e.clientY }
+    startAutoScroll() // 화면 밖 아래/위 공종으로도 끌어갈 수 있도록 가장자리 자동 스크롤
+    window.addEventListener('pointermove', onWindowMove)
+    window.addEventListener('pointerup', onWindowUp)
+  }
+
+  function setGhostFrom(fromId: string, edge: 'start' | 'end', x: number, y: number) {
+    const src = model.tasks.find((t) => t.task.id === fromId)
+    if (src) setGhost({ x1: edge === 'start' ? src.startX : src.endX, y1: src.cy, x2: x, y2: y })
+  }
+
+  // Apply the active gesture at a given client pointer position. Shared by the
+  // pointermove handler and the edge auto-scroll loop, so the bar/link/target keeps
+  // tracking the cursor while the canvas scrolls under it.
+  function applyAtPointer(clientX: number, clientY: number) {
+    const drag = dragRef.current
+    if (!drag) return
+    const { x, y } = toContent(clientX, clientY)
+    if (drag.kind === 'move') {
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
+      movedRef.current = true
+      const newStart = model.dayOf(x) - drag.grabOffsetDays
+      useEditor.getState().setTaskStartLive(drag.taskId, newStart)
+      // Vertical component → preview which row the bar would join / create (skip
+      // when a filter is active: lanes/rows are a subset and the math is ambiguous).
+      if (filterActive(useEditor.getState().filter)) setReorderHint(null)
+      else {
+        const t = computeRowTarget(drag.taskId, y)
+        setReorderHint(t ? { lineY: t.lineY, merge: t.merge } : null)
+      }
+    } else if (drag.kind === 'moveGroup') {
+      // 다중 선택 막대 수평 동시 이동 — 세로(줄 재배치)는 건드리지 않는다.
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
+      movedRef.current = true
+      const delta = model.dayOf(x) - drag.grabDay
+      useEditor
+        .getState()
+        .setTasksStartLive(drag.base.map((b) => ({ id: b.id, start: b.start + delta })))
+    } else if (drag.kind === 'resize') {
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
+      movedRef.current = true
+      const day = model.dayOf(x)
+      if (drag.edge === 'end') {
+        useEditor.getState().setTaskSpanLive(drag.taskId, drag.startDay, day - drag.startDay)
+      } else {
+        const s = Math.min(drag.endDay - 1, Math.round(day)) // 시작 핸들: day 0 이전(음수)도 허용
+        useEditor.getState().setTaskSpanLive(drag.taskId, s, drag.endDay - s)
+      }
+    } else if (drag.kind === 'logo') {
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
+      const newW = Math.max(40, Math.min(900, drag.rightEdge - x))
+      useEditor.getState().setLogoSize(drag.index, newW, newW * drag.ratio)
+    } else if (drag.kind === 'rainy') {
+      if (!drag.started) {
+        drag.started = true
+        useEditor.getState().beginGesture()
+      }
+      const date = dayToDate(project.startDate, Math.round(model.dayOf(x)))
+      const m = date.getMonth() + 1
+      const d = Math.min(date.getDate(), daysInMonth(2001, m - 1)) // non-leap day model
+      // setRainySeason keeps start ≤ end and reuses (month, day) for every year,
+      // so dragging one edge of any year moves all years identically.
+      if (drag.edge === 'start') useEditor.getState().setRainySeason({ startMonth: m, startDay: d })
+      else useEditor.getState().setRainySeason({ endMonth: m, endDay: d })
+    } else {
+      setGhostFrom(drag.fromId, drag.fromEdge, x, y)
+    }
+  }
+
+  function onWindowMove(e: PointerEvent) {
+    const drag = dragRef.current
+    if (!drag) return
+    // If the user switched to a zoom/pan tool mid-drag (keyboard), abort the
+    // edit gesture cleanly instead of continuing to mutate the model.
+    if (useEditor.getState().navMode !== 'edit') {
+      stopAutoScroll()
+      window.removeEventListener('pointermove', onWindowMove)
+      window.removeEventListener('pointerup', onWindowUp)
+      dragRef.current = null
+      setGhost(null)
+      setReorderHint(null)
+      if (drag.kind === 'link') useEditor.getState().cancelLinking()
+      else if ('started' in drag && drag.started) useEditor.getState().endGesture()
+      return
+    }
+    lastClient.current = { x: e.clientX, y: e.clientY }
+    applyAtPointer(e.clientX, e.clientY)
+  }
+
+  // ── Edge auto-scroll: while dragging a bar or pulling a link, scroll the canvas
+  //    when the pointer nears (or passes) an edge so off-screen 공종 become reachable.
+  function stopAutoScroll() {
+    if (autoScrollRef.current != null) {
+      cancelAnimationFrame(autoScrollRef.current)
+      autoScrollRef.current = null
+    }
+  }
+  function startAutoScroll() {
+    if (autoScrollRef.current != null) return
+    const EDGE = 52,
+      MAX = 20
+    const ramp = (over: number) => Math.max(0, Math.min(MAX, Math.ceil((over / EDGE) * MAX)))
+    const tick = () => {
+      const wrap = wrapRef.current,
+        lp = lastClient.current
+      if (!wrap || !lp || !dragRef.current) {
+        autoScrollRef.current = null
+        return
+      }
+      const r = wrap.getBoundingClientRect()
+      let dx = 0,
+        dy = 0
+      if (lp.y < r.top + EDGE) dy = -ramp(r.top + EDGE - lp.y)
+      else if (lp.y > r.bottom - EDGE) dy = ramp(lp.y - (r.bottom - EDGE))
+      if (lp.x < r.left + EDGE) dx = -ramp(r.left + EDGE - lp.x)
+      else if (lp.x > r.right - EDGE) dx = ramp(lp.x - (r.right - EDGE))
+      if (dx || dy) {
+        const sl = wrap.scrollLeft,
+          st = wrap.scrollTop
+        wrap.scrollLeft = sl + dx
+        wrap.scrollTop = st + dy
+        if (wrap.scrollLeft !== sl || wrap.scrollTop !== st) applyAtPointer(lp.x, lp.y)
+      }
+      autoScrollRef.current = requestAnimationFrame(tick)
+    }
+    autoScrollRef.current = requestAnimationFrame(tick)
+  }
+
+  function onWindowUp(e: PointerEvent) {
+    const drag = dragRef.current
+    stopAutoScroll()
+    window.removeEventListener('pointermove', onWindowMove)
+    window.removeEventListener('pointerup', onWindowUp)
+    dragRef.current = null
+    setGhost(null)
+    setReorderHint(null)
+    if (!drag) return
+    if (drag.kind === 'move' && drag.started && !filterActive(useEditor.getState().filter)) {
+      // The vertical part of the move assigns the activity's row — merging onto an
+      // existing row (one-line package) or making a new row above/below — and may
+      // move it to another 공종. Same gesture, so history:false (already snapped).
+      const { y } = toContent(e.clientX, e.clientY)
+      const dragged = model.tasks.find((lt) => lt.task.id === drag.taskId)
+      const target = computeRowTarget(drag.taskId, y)
+      // A near-horizontal drag within the task's own row is a pure schedule move —
+      // don't restack rows.
+      const tinyVertical =
+        !!dragged &&
+        target?.catId === dragged.categoryId &&
+        Math.abs(y - dragged.cy) < model.rowHeight * 0.5
+      // 미러(예정 연동) 공종 레인으로는 옮길 수 없다 — 실제 공종(현재 시트)만 드롭 대상.
+      if (target && !tinyVertical && project.categories.some((c) => c.id === target.catId)) {
+        useEditor
+          .getState()
+          .moveTaskToRow(drag.taskId, target.catId, target.anchorId, target.mode, {
+            history: false,
+          })
+      }
+    }
+    if (drag.kind !== 'link' && 'started' in drag && drag.started) {
+      useEditor.getState().endGesture()
+    }
+    if (drag.kind === 'link') {
+      const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null
+      const target = el?.closest('[data-task-id]') as HTMLElement | null
+      const toId = target?.getAttribute('data-task-id')
+      const store = useEditor.getState()
+      if (toId && toId !== drag.fromId) {
+        // 도착 막대의 앞/뒤 중 드롭 위치에 가까운 끝을 도착점으로 삼고(시작=S·종료=F),
+        // 출발 끝점(앞=S·뒤=F)과 조합해 FS/SS/FF/SF 연결 유형을 자동 결정한다.
+        const targetLt = model.tasks.find((lt) => lt.task.id === toId)
+        let toEdge: 'start' | 'end' = 'start'
+        if (targetLt && !targetLt.isMilestone) {
+          const { x } = toContent(e.clientX, e.clientY)
+          toEdge = Math.abs(x - targetLt.startX) <= Math.abs(x - targetLt.endX) ? 'start' : 'end'
+        }
+        const type =
+          `${drag.fromEdge === 'end' ? 'F' : 'S'}${toEdge === 'end' ? 'F' : 'S'}` as LinkType
+        store.completeLinking(toId, type)
+      } else store.cancelLinking()
+    }
+  }
+
+  // ── Inline rename (double-click a bar/milestone) + create-on-double-click ──
+  function commitRename() {
+    if (!editing || renameDone.current) return
+    renameDone.current = true
+    const name = editing.name.trim()
+    if (name) useEditor.getState().updateTask(editing.id, { name })
+    setEditing(null)
+  }
+  function onTaskDoubleClick(_: RMouseEvent, id: string) {
+    if (useEditor.getState().navMode !== 'edit') return
+    const t = project.tasks.find((x) => x.id === id)
+    if (!t) return
+    useEditor.getState().selectTask(id)
+    renameDone.current = false
+    setEditing({ id, name: t.name })
+  }
+  function onPaperDoubleClick(e: RMouseEvent) {
+    if (useEditor.getState().navMode !== 'edit') return // task dbl-clicks stop propagation
+    // While a filter is active the lanes are a subset and a freshly-created
+    // (non-matching) task would be filtered straight back out — no bar, no
+    // rename box. Skip quick-add until the filter is cleared.
+    if (filterActive(useEditor.getState().filter)) return
+    const { x, y } = toContent(e.clientX, e.clientY)
+    if (x < model.labelWidth) return
+    const cat = model.categories.find((c) => y >= c.y && y < c.y + c.height)
+    // 미러(예정 연동)로 추가된 공종 레인엔 빠른추가 금지 — 실제 공종(현재 시트)만 대상.
+    if (!cat || !project.categories.some((c) => c.id === cat.id)) return
+    const day = Math.round(model.dayOf(x)) // 빈 레인 더블클릭 추가 — day 0 이전(음수)도 허용
+    const id = useEditor.getState().addTask(cat.id, { start: day, duration: 30 })
+    const t = useEditor.getState().project.tasks.find((x2) => x2.id === id)
+    renameDone.current = false
+    setEditing({ id, name: t?.name ?? '새 공정' })
+  }
+
+  // ── 공기(기간) 텍스트 인라인 편집: 막대 아래 "30일"을 더블클릭 → 입력. 순수 숫자면
+  //    duration 자체를 바꾸고(막대 길이 변경), 그 외 문자열은 표시 라벨로 저장한다. ──
+  function onDurationDoubleClick(id: string) {
+    if (useEditor.getState().navMode !== 'edit') return
+    const t = project.tasks.find((x) => x.id === id)
+    if (!t || t.isMilestone) return
+    useEditor.getState().selectTask(id)
+    durDone.current = false
+    const seed = t.durationLabel && t.durationLabel.trim() ? t.durationLabel : String(t.duration)
+    setEditingDur({ id, text: seed })
+  }
+  function commitDuration() {
+    if (!editingDur || durDone.current) return
+    durDone.current = true
+    const v = editingDur.text.trim()
+    const store = useEditor.getState()
+    if (/^\d+$/.test(v))
+      store.updateTask(editingDur.id, { duration: Math.max(1, Number(v)), durationLabel: '' })
+    else store.updateTask(editingDur.id, { durationLabel: v }) // 빈 값이면 자동(${duration}일)로 복귀
+    setEditingDur(null)
+  }
+
+  const navClass =
+    navMode === 'zoom'
+      ? ' nav-zoom'
+      : navMode === 'pan'
+        ? ` nav-pan${panning ? ' panning' : ''}`
+        : ''
+
+  return (
+    <div className="canvas-host">
+      {navMode !== 'edit' && (
+        <div className="nav-mode-badge" data-export-hide="1">
+          <span>
+            {navMode === 'zoom'
+              ? '🔍 줌 모드 · 스크롤로 확대/축소'
+              : '✋ 이동 모드 · 드래그로 화면 이동'}
+          </span>
+          <span className="nav-mode-esc">Esc 해제</span>
+        </div>
+      )}
+      <div
+        ref={wrapRef}
+        className={`canvas-wrap${navClass}`}
+        onPointerDown={onWrapPointerDown}
+        onClick={() => {
+          if (useEditor.getState().navMode !== 'edit') return
+          if (movedRef.current) {
+            movedRef.current = false
+            return
+          }
+          useEditor.getState().selectTask(null)
+        }}
+      >
+        <div
+          className="paper-scale"
+          style={{ width: model.contentWidth * zoom, height: model.contentHeight * zoom }}
+        >
+          <div
+            ref={paperRef}
+            className="paper"
+            style={{
+              width: model.contentWidth,
+              height: model.contentHeight,
+              transform: `scale(${zoom})`,
+            }}
+            onPointerDown={onPaperPointerDown}
+            onPointerMove={(event) => {
+              const { x, y } = toContent(event.clientX, event.clientY)
+              publishPresenceCursor({ x: Math.round(x * 10) / 10, y: Math.round(y * 10) / 10 })
+            }}
+            onPointerLeave={() => publishPresenceCursor(null)}
+            onClick={(e) => e.stopPropagation()}
+            onDoubleClick={onPaperDoubleClick}
+          >
+            <ChartSvg
+              model={model}
+              routed={routed}
+              project={project}
+              selectedTaskId={selectedTaskId}
+              selectedTaskIds={selectedTaskIds}
+              selectedLinkId={selectedLinkId}
+              selectedTextRole={selectedTextRole}
+              showCriticalPath={project.view.showCriticalPath}
+              showGrid={project.view.showGrid}
+              colorMode={colorMode}
+              todayX={todayX}
+              linkingGhost={linking ? ghost : null}
+              remotePresences={remotePresences}
+              zoom={zoom}
+              onTaskPointerDown={onTaskPointerDown}
+              onAnchorPointerDown={onAnchorPointerDown}
+              onBarResizePointerDown={onBarResizePointerDown}
+              onLogoResizePointerDown={onLogoResizePointerDown}
+              onTaskClick={(e, id) => {
+                if (useEditor.getState().navMode !== 'edit') return
+                if (e.ctrlKey || e.metaKey) return // pointerdown handled the multi-select toggle
+                if (movedRef.current) {
+                  movedRef.current = false
+                  return
+                } // a drag just ended → keep selection
+                useEditor.getState().selectTask(id)
+              }}
+              onTaskDoubleClick={onTaskDoubleClick}
+              onTaskContextMenu={(_, id) => {
+                if (useEditor.getState().navMode === 'edit') useEditor.getState().toggleDummy(id)
+              }}
+              onDurationDoubleClick={onDurationDoubleClick}
+              onLinkClick={(_, id) => {
+                if (useEditor.getState().navMode === 'edit') useEditor.getState().selectLink(id)
+              }}
+              onTextClick={(role) => {
+                if (useEditor.getState().navMode === 'edit')
+                  useEditor.getState().selectTextRole(role)
+              }}
+              onTimelineClick={() => {
+                if (useEditor.getState().navMode === 'edit') setPeriodOpen(true)
+              }}
+              onRainyResizePointerDown={onRainyResizePointerDown}
+              onBackgroundClick={() => {
+                if (useEditor.getState().navMode !== 'edit') return
+                if (movedRef.current) {
+                  movedRef.current = false
+                  return
+                } // marquee/drag just ran → keep selection
+                useEditor.getState().selectTask(null)
+              }}
+            />
+            {editing && editLt && (
+              <input
+                className="inline-rename"
+                autoFocus
+                value={editing.name}
+                style={{
+                  left: editLt.x,
+                  top: editLt.isMilestone ? editLt.cy - 24 : editLt.y - 19,
+                }}
+                onChange={(e) => setEditing({ id: editing.id, name: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitRename()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    renameDone.current = true
+                    setEditing(null)
+                  }
+                }}
+                onBlur={commitRename}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              />
+            )}
+            {editingDur && editDurLt && !editDurLt.isMilestone && (
+              <input
+                className="inline-rename inline-dur"
+                autoFocus
+                value={editingDur.text}
+                style={{ left: editDurLt.x, top: editDurLt.y + editDurLt.h + 2 }}
+                onChange={(e) => setEditingDur({ id: editingDur.id, text: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    commitDuration()
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault()
+                    durDone.current = true
+                    setEditingDur(null)
+                  }
+                }}
+                onBlur={commitDuration}
+                onClick={(e) => e.stopPropagation()}
+                onDoubleClick={(e) => e.stopPropagation()}
+              />
+            )}
+            {reorderHint &&
+              (reorderHint.merge ? (
+                <div
+                  data-export-hide="1"
+                  style={{
+                    position: 'absolute',
+                    top: reorderHint.lineY - model.rowHeight / 2,
+                    height: model.rowHeight,
+                    left: model.labelWidth,
+                    width: Math.max(0, model.contentWidth - model.labelWidth),
+                    background: 'rgba(250,81,17,0.12)',
+                    border: '1.5px solid var(--primary)',
+                    borderRadius: 4,
+                    pointerEvents: 'none',
+                    zIndex: 5,
+                  }}
+                />
+              ) : (
+                <div
+                  className="reorder-line"
+                  data-export-hide="1"
+                  style={{
+                    top: reorderHint.lineY,
+                    left: model.labelWidth,
+                    width: Math.max(0, model.contentWidth - model.labelWidth),
+                  }}
+                />
+              ))}
+            {marquee && (marquee.w > 1 || marquee.h > 1) && (
+              <div
+                className="marquee"
+                data-export-hide="1"
+                style={{ left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h }}
+              />
+            )}
+          </div>
+        </div>
+      </div>
+      {periodOpen && <DisplayPeriodDialog model={model} onClose={() => setPeriodOpen(false)} />}
+    </div>
+  )
+}
+
+/** 표시 기간 설정 팝업(요구사항 1) — 시작~종료 월을 지정하면 타임라인을 그 구간으로 고정한다.
+ *  '자동으로 초기화'하면 데이터 범위(착수~준공)로 복귀. */
+function DisplayPeriodDialog({ model, onClose }: { model: LayoutModel; onClose: () => void }) {
+  const project = useEditor((s) => s.project)
+  const a = useEditor.getState
+  const ym = (day: number) => toISO(dayToDate(project.startDate, day)).slice(0, 7) // YYYY-MM
+  const curStart = project.view.displayStart?.slice(0, 7) ?? ym(model.domainStartDay)
+  const curEnd =
+    project.view.displayEnd?.slice(0, 7) ??
+    ym(Math.max(model.domainStartDay, model.domainEndDay - 1))
+  const [start, setStart] = useState(curStart)
+  const [end, setEnd] = useState(curEnd)
+  const active = !!(project.view.displayStart && project.view.displayEnd)
+
+  function apply() {
+    if (!start || !end) return
+    if (end < start) {
+      if (typeof window !== 'undefined') window.alert('종료 월이 시작 월보다 빠릅니다.')
+      return
+    }
+    a().setView({ displayStart: `${start}-01`, displayEnd: `${end}-01` })
+    onClose()
+  }
+  function reset() {
+    a().setView({ displayStart: undefined, displayEnd: undefined })
+    onClose()
+  }
+
+  return (
+    <Modal
+      title="표시 기간 설정"
+      sub="마일스톤 타임라인에 표시할 기간(시작~종료 월)을 지정합니다."
+      width={400}
+      onClose={onClose}
+      footer={(close) => (
+        <div style={{ display: 'flex', gap: 8, width: '100%' }}>
+          <button
+            className="btn btn--sm"
+            style={{ flex: 1 }}
+            onClick={reset}
+            disabled={!active}
+            title="데이터 범위(착수~준공)로 되돌리기"
+          >
+            자동으로 초기화
+          </button>
+          <button className="btn btn--sm" onClick={close}>
+            취소
+          </button>
+          <button className="btn btn--primary btn--sm" onClick={apply}>
+            적용
+          </button>
+        </div>
+      )}
+    >
+      <div className="field-row">
+        <div className="field">
+          <label>시작 (연-월)</label>
+          <input
+            className="input"
+            type="month"
+            value={start}
+            onChange={(e) => setStart(e.target.value)}
+          />
+        </div>
+        <div className="field">
+          <label>종료 (연-월)</label>
+          <input
+            className="input"
+            type="month"
+            value={end}
+            onChange={(e) => setEnd(e.target.value)}
+          />
+        </div>
+      </div>
+      <p className="note">
+        지정한 구간만 표시됩니다 — 데이터가 더 길어도 그 구간만, 짧아도 빈 기간을 포함합니다.
+        ‘자동으로 초기화’ 하면 데이터 범위로 돌아갑니다.
+      </p>
+    </Modal>
+  )
+}

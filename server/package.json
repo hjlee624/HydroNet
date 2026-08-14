@@ -1,0 +1,30 @@
+{
+  "name": "sequence-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Sequence backend — file/CRDT persistence, error logging, 인증/RBAC(ADR-002)",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "auth-smoke": "node scripts/auth-smoke.mjs",
+    "collab-smoke": "node scripts/collab-smoke.mjs",
+    "seed:roster": "node scripts/seed-roster.mjs"
+  },
+  "engines": {
+    "node": ">=24 <25",
+    "npm": ">=11"
+  },
+  "dependencies": {
+    "@hocuspocus/extension-database": "^4.4.0",
+    "@hocuspocus/server": "^4.4.0",
+    "cors": "^2.8.5",
+    "crossws": "^0.4.10",
+    "express": "^4.21.2",
+    "jose": "^6.2.5",
+    "nanoid": "^5.0.9",
+    "pg": "^8.22.0",
+    "xlsx": "^0.18.5",
+    "yjs": "^13.6.31"
+  }
+}
