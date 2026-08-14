@@ -37,6 +37,8 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const pendingApprovals = useAuth((s) => s.pendingApprovals)
   const fetchPendingApprovals = useAuth((s) => s.fetchPendingApprovals)
   const approveUser = useAuth((s) => s.approveUser)
+  const deleteAdminUser = useAuth((s) => s.deleteAdminUser)
+  const currentUserId = useAuth((s) => s.user?.id)
 
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState<AddUserForm>({
@@ -65,6 +67,19 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const handleToggleActive = async (user: AdminUser) => {
     setEditingRole(user.id)
     await upsertAdminUser({ id: user.id, name: user.name, role: user.role, active: !user.active })
+    setEditingRole(null)
+  }
+
+  const handleDelete = async (user: AdminUser) => {
+    if (
+      typeof window !== 'undefined' &&
+      !window.confirm(
+        `‘${user.name || user.id}’ 계정을 삭제합니다. 되돌릴 수 없습니다. 계속할까요?`,
+      )
+    )
+      return
+    setEditingRole(user.id)
+    await deleteAdminUser(user.id)
     setEditingRole(null)
   }
 
@@ -290,6 +305,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                   <th>역할</th>
                   <th>상태</th>
                   <th>비밀번호</th>
+                  <th>삭제</th>
                 </tr>
               </thead>
               <tbody>
@@ -343,11 +359,27 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                         {u.hasPassword ? '설정됨' : '미설정'}
                       </span>
                     </td>
+                    <td>
+                      {u.id === currentUserId ? (
+                        <span className="admin-empty">-</span>
+                      ) : (
+                        <button
+                          className="admin-del-btn"
+                          type="button"
+                          disabled={editingRole === u.id}
+                          onClick={() => void handleDelete(u)}
+                          title="사용자 삭제"
+                          aria-label={`${u.name || u.id} 삭제`}
+                        >
+                          🗑
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {!adminUsers.length && (
                   <tr>
-                    <td colSpan={6} className="admin-empty-row">
+                    <td colSpan={7} className="admin-empty-row">
                       사용자가 없습니다.
                     </td>
                   </tr>

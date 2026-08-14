@@ -2,7 +2,7 @@
 // 운영은 pgRepo.js(Postgres)가 같은 인터페이스를 구현 → 라우트/로직은 어댑터 무관.
 //
 // 인터페이스(모두 async):
-//   users:    getUser(id) · listUsers() · upsertUser(u) · setUserPassword(id, hash)
+//   users:    getUser(id) · listUsers() · upsertUser(u) · setUserPassword(id, hash) · deleteUser(id)
 //   projects: listProjects() · getProject(id) · upsertProject(p) · setProjectAccessCode(id, hash)
 //             · setProjectActive(id, active) · deleteProject(id)
 //   members:  getMembership(projectId, userId) · listMembershipsForUser(userId)
@@ -66,6 +66,12 @@ export function createMemoryRepo(file) {
         state.users[id].passwordHash = hash
         save()
       }
+    },
+    async deleteUser(id) {
+      delete state.users[id]
+      // 해당 사용자의 프로젝트 멤버십도 함께 제거(고아 멤버십 방지).
+      state.members = state.members.filter((m) => m.userId !== id)
+      save()
     },
     async listProjects() {
       return Object.values(state.projects).map(clone)

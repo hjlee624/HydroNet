@@ -2962,6 +2962,23 @@ textarea.input {
   font-size: 11.5px;
   color: #c0392b;
 }
+.admin-del-btn {
+  border: 1px solid var(--hairline-strong);
+  background: var(--canvas);
+  border-radius: 8px;
+  padding: 3px 8px;
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+}
+.admin-del-btn:hover:not(:disabled) {
+  background: #fdecea;
+  border-color: var(--critical, #e12d1b);
+}
+.admin-del-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ── 새 도면 2단계 템플릿 ── */
 .tpl-steps {

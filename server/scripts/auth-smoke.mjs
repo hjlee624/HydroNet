@@ -412,6 +412,16 @@ cookie = ''
 r = await call('POST', '/auth/login', { username: '010-7777-0002', password: '1234' })
 ok(r.status === 200 && r.data.user.role === 'pm', '승인 후 관리자 로그인')
 
+// 사용자 삭제(개발자 전용) — 본인 삭제 금지 + 실제 삭제·멤버십 정리
+r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
+r = await call('DELETE', `/admin/users/${boot.id}`, {})
+ok(r.status === 400, '개발자 본인 계정 삭제 거부(400)')
+r = await call('DELETE', '/admin/users/010-7777-0001', {})
+ok(
+  r.status === 200 && (await repo.getUser('01077770001')) === null,
+  '개발자 사용자 삭제(200) + 저장소 제거',
+)
+
 // 비로그인 차단
 cookie = ''
 r = await call('GET', '/auth/me')

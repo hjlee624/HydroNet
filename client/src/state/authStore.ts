@@ -144,6 +144,8 @@ interface AuthState {
     password?: string
     active?: boolean
   }) => Promise<boolean>
+  /** 사용자 계정 삭제(개발자 전용). 본인 계정은 불가. */
+  deleteAdminUser: (id: string) => Promise<boolean>
   /** 엑셀/CSV 업로드(개발자 전용). */
   importUsersFile: (base64: string) => Promise<{ imported?: number; error?: string } | null>
 }
@@ -434,6 +436,17 @@ export const useAuth = create<AuthState>((set, get) => ({
     } finally {
       set({ adminLoading: false })
     }
+  },
+
+  deleteAdminUser: async (id) => {
+    set({ adminError: null })
+    const r = await j(`/api/admin/users/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!r.ok) {
+      set({ adminError: (r.data?.error as string) || '사용자 삭제에 실패했습니다.' })
+      return false
+    }
+    await get().fetchAdminUsers()
+    return true
   },
 
   importUsersFile: async (base64) => {

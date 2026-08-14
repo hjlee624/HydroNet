@@ -60,6 +60,9 @@ export function createPgRepo(connectionString) {
     async setUserPassword(id, hash) {
       await q('UPDATE users SET password_hash=$2, updated_at=now() WHERE id=$1', [id, hash])
     },
+    async deleteUser(id) {
+      await q('DELETE FROM users WHERE id=$1', [id]) // project_members ON DELETE CASCADE
+    },
     async listProjects() {
       return (await q('SELECT * FROM projects ORDER BY updated_at DESC')).rows.map(projRow)
     },

@@ -480,6 +480,18 @@ export function createAuthRouter(repo, opts = {}) {
     }),
   )
 
+  router.delete(
+    '/admin/users/:id',
+    authMw,
+    requireAdmin,
+    wrap(async (req, res) => {
+      const id = normalizeLoginId(req.params.id)
+      if (id === req.user.id) throw fail(400, '본인 계정은 삭제할 수 없습니다.')
+      if (!(await repo.getUser(id))) throw fail(404, '사용자를 찾을 수 없습니다.')
+      await repo.deleteUser(id) // 프로젝트 멤버십 함께 삭제(memory 정리 · pg CASCADE)
+      res.json({ ok: true })
+    }),
+  )
   router.post(
     '/admin/projects',
     authMw,
