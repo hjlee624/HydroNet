@@ -24,6 +24,7 @@ export function createPgRepo(connectionString) {
       createdBy: r.created_by,
       active: r.active,
       division: r.division,
+      sample: r.sample,
     }
   const memRow = (r) =>
     r && { projectId: r.project_id, userId: r.user_id, role: r.role, addedBy: r.added_by }
@@ -71,11 +72,12 @@ export function createPgRepo(connectionString) {
     },
     async upsertProject(p) {
       const r = await q(
-        `INSERT INTO projects (id,name,access_code_hash,created_by,active,division) VALUES ($1,$2,$3,$4,COALESCE($5,true),$6)
+        `INSERT INTO projects (id,name,access_code_hash,created_by,active,division,sample) VALUES ($1,$2,$3,$4,COALESCE($5,true),$6,COALESCE($7,false))
          ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,
            access_code_hash=COALESCE(EXCLUDED.access_code_hash, projects.access_code_hash),
            active=COALESCE($5, projects.active),
            division=COALESCE(EXCLUDED.division, projects.division),
+           sample=COALESCE($7, projects.sample),
            updated_at=now()
          RETURNING *`,
         [
@@ -85,6 +87,7 @@ export function createPgRepo(connectionString) {
           p.createdBy ?? null,
           p.active ?? null,
           p.division ?? null,
+          p.sample ?? null,
         ],
       )
       return projRow(r.rows[0])

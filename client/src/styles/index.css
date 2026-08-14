@@ -2320,6 +2320,10 @@ textarea.input {
   background: #eceae6;
   color: var(--steel);
 }
+.proj-card__badge--sample {
+  background: rgba(94, 156, 160, 0.18);
+  color: #2e7d6b;
+}
 .proj-card__main:disabled {
   cursor: not-allowed;
   opacity: 0.72;

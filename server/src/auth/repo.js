@@ -88,6 +88,7 @@ export function createMemoryRepo(file) {
         createdBy: p.createdBy ?? prev.createdBy ?? null,
         active: p.active ?? prev.active ?? true,
         division: p.division ?? prev.division ?? null,
+        sample: p.sample ?? prev.sample ?? false,
       }
       save()
       return clone(state.projects[p.id])

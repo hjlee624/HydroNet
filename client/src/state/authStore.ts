@@ -36,6 +36,8 @@ export interface ProjectSummary {
   canEnter?: boolean
   /** 편집 가능(개발자·담당). false면 입장해도 조회 전용. */
   canEdit?: boolean
+  /** 체험존(본부 샘플) — 같은 본부 누구나 배정 없이 입장·편집. */
+  sample?: boolean
 }
 export interface EnteredProject {
   id: string

@@ -23,12 +23,14 @@ CREATE TABLE IF NOT EXISTS projects (
   created_by       TEXT REFERENCES users(id) ON DELETE SET NULL,
   active           BOOLEAN NOT NULL DEFAULT TRUE, -- 개발자가 비활성화하면 일반 사용자 목록·입장에서 제외
   division         TEXT,                          -- 소속 본부 키. 같은 본부만 조회/입장 가능(개발자는 전체)
+  sample           BOOLEAN NOT NULL DEFAULT FALSE, -- 체험존: 같은 본부 누구나 배정 없이 입장·편집
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at       TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- 기존 DB 마이그레이션(컬럼이 없으면 추가).
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS active BOOLEAN NOT NULL DEFAULT TRUE;
 ALTER TABLE projects ADD COLUMN IF NOT EXISTS division TEXT;
+ALTER TABLE projects ADD COLUMN IF NOT EXISTS sample BOOLEAN NOT NULL DEFAULT FALSE;
 
 CREATE TABLE IF NOT EXISTS project_members (
   project_id  TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,

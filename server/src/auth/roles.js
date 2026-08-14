@@ -79,10 +79,14 @@ export function canSeeProject(user, project) {
 export function canEnterProjectDiv(user, project, membership) {
   if (isDeveloper(user)) return true
   if (membership) return true
+  // 체험존(sample): 같은 본부면 배정 없이 누구나 입장.
+  if (project?.sample && sameDivision(user, project)) return true
   return user?.role === 'pm' && sameDivision(user, project)
 }
 
-/** 편집 가능 — 개발자 또는 배정 멤버(담당). 그 외(같은 본부 PM 조회 입장)는 읽기전용. */
-export function canEditProjectDiv(user, membership) {
-  return isDeveloper(user) || !!membership
+/** 편집 가능 — 개발자·배정 멤버(담당), 그리고 체험존은 같은 본부 누구나. 그 외(조회 입장)는 읽기전용. */
+export function canEditProjectDiv(user, project, membership) {
+  if (isDeveloper(user) || membership) return true
+  if (project?.sample && sameDivision(user, project)) return true
+  return false
 }

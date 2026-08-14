@@ -25,7 +25,6 @@ import {
   PROJECT_ROLES,
   sameDivision,
 } from './roles.js'
-import { sampleProjectId } from './sampleProjects.js'
 
 const COOKIE = 'hn_session'
 const parseCookies = (req) => {
@@ -141,7 +140,7 @@ export function createAuthRouter(repo, opts = {}) {
       req.projectGrant = {
         ...p,
         projRole: membership?.role ?? user.role,
-        canEdit: canEditProjectDiv(user, membership),
+        canEdit: canEditProjectDiv(user, project, membership),
       }
       next()
     } catch {
@@ -220,9 +219,7 @@ export function createAuthRouter(repo, opts = {}) {
         active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
         pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
       })
-      // 소속 본부 샘플 프로젝트에 자동 배정 → 로그인 즉시 예시 공정표를 열어볼 수 있게(온보딩).
-      const sid = sampleProjectId(division)
-      if (await repo.getProject(sid)) await repo.addMember(sid, id, 'user', null)
+      // 체험존(본부 샘플) 접근은 본부 기준이라 별도 배정 불필요 — 로그인 즉시 열람·편집 가능.
       res.status(201).json({ ok: true, pending: isPm })
     }),
   )
@@ -256,6 +253,7 @@ export function createAuthRouter(repo, opts = {}) {
           name: p.name,
           role: 'developer',
           division: p.division ?? null,
+          sample: !!p.sample,
           hasCode: !!p.accessCodeHash,
           active: p.active !== false,
           canEnter: true,
@@ -270,13 +268,15 @@ export function createAuthRouter(repo, opts = {}) {
           .filter((p) => p.active !== false && sameDivision(req.user, p))
           .map((p) => {
             const m = memById.get(p.id)
-            const canEdit = !!m
-            const canEnter = !!m || req.user.role === 'pm'
+            // 체험존(sample)은 같은 본부면 배정 없이 입장·편집.
+            const canEdit = !!m || !!p.sample
+            const canEnter = !!m || req.user.role === 'pm' || !!p.sample
             return {
               id: p.id,
               name: p.name,
               role: m?.role ?? req.user.role,
               division: p.division ?? null,
+              sample: !!p.sample,
               hasCode: !!p.accessCodeHash,
               active: true,
               canEnter,
@@ -365,7 +365,7 @@ export function createAuthRouter(repo, opts = {}) {
         if (!(await verifySecret(code, project.accessCodeHash)))
           throw fail(401, '접속코드가 올바르지 않습니다.')
       }
-      const canEdit = canEditProjectDiv(req.user, membership)
+      const canEdit = canEditProjectDiv(req.user, project, membership)
       const projRole = membership?.role ?? req.user.role
       const token = await signProjectToken(req.user.id, projectId, projRole, canEdit)
       res.json({ token, project: { id: project.id, name: project.name }, projRole, canEdit })
@@ -389,7 +389,7 @@ export function createAuthRouter(repo, opts = {}) {
       if (!canEnterProjectDiv(user, project, membership))
         throw fail(403, '이 프로젝트 접근 권한이 없습니다.')
       // 편집 권한(담당/개발자)만 편집 가능한 collab 티켓 — 그 외는 읽기전용(WS readOnly).
-      const canEdit = canEditProjectDiv(user, membership)
+      const canEdit = canEditProjectDiv(user, project, membership)
       const projRole = membership?.role ?? user.role
       res.json({
         ticket: await signCollabToken(user.id, projectId, projRole, canEdit),

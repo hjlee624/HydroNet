@@ -18,7 +18,18 @@ export async function bootstrapSampleProjects(repo, dataDir) {
   const created = []
   for (const div of DIVISION_KEYS) {
     const id = sampleProjectId(div)
-    if (await repo.getProject(id)) continue // 이미 존재 → 건너뜀
+    const existing = await repo.getProject(id)
+    if (existing) {
+      // 이미 있으면 건너뛰되, 체험존 플래그가 없으면 보강(구버전에서 생성된 샘플 마이그레이션).
+      if (!existing.sample)
+        await repo.upsertProject({
+          id,
+          name: existing.name,
+          division: existing.division ?? div,
+          sample: true,
+        })
+      continue
+    }
     let content
     try {
       content = JSON.parse(fs.readFileSync(path.join(SEED_DIR, `${div}.json`), 'utf8'))
@@ -30,7 +41,14 @@ export async function bootstrapSampleProjects(repo, dataDir) {
     // 콘텐츠 = 룸 시드(server/data/<id>.json). 이미 있으면 덮어쓰지 않음(사용자 편집 보존).
     const dest = path.join(dataDir, `${id}.json`)
     if (!fs.existsSync(dest)) fs.writeFileSync(dest, JSON.stringify(content, null, 2), 'utf8')
-    await repo.upsertProject({ id, name, division: div, createdBy: null, active: true })
+    await repo.upsertProject({
+      id,
+      name,
+      division: div,
+      createdBy: null,
+      active: true,
+      sample: true,
+    })
     created.push(id)
   }
   return created

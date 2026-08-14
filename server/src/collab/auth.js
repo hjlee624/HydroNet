@@ -39,6 +39,6 @@ export async function authenticateProjectToken(repo, token, documentName) {
     projectId: documentName,
     projRole: currentRole,
     // 편집 권한(담당/개발자)만 편집. 그 외(같은 본부 PM 조회)는 읽기전용 연결.
-    canEdit: canEditProjectDiv(user, membership),
+    canEdit: canEditProjectDiv(user, project, membership),
   }
 }

@@ -397,7 +397,9 @@ function ProjectSelectScreen() {
                     {p.active === false && (
                       <span className="proj-card__inactive-badge">비활성</span>
                     )}
-                    {p.canEnter === false ? (
+                    {p.sample ? (
+                      <span className="proj-card__badge proj-card__badge--sample">체험존</span>
+                    ) : p.canEnter === false ? (
                       <span className="proj-card__badge proj-card__badge--muted">미할당</span>
                     ) : p.canEdit === false ? (
                       <span className="proj-card__badge proj-card__badge--view">조회 전용</span>
