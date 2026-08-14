@@ -8,6 +8,22 @@ export const isRole = (r) => ROLES.includes(r)
 /** 프로젝트 내 역할(멤버십). PM은 관리, user는 편집만. */
 export const PROJECT_ROLES = ['pm', 'user']
 
+/** 본부(조직 단위) 키 — client/src/data/divisions.ts 와 동일하게 유지. */
+export const DIVISION_KEYS = new Set([
+  'strategy',
+  'water-env',
+  'water-res',
+  'land',
+  'railway',
+  'road',
+  'plant',
+  'cm',
+  'overseas',
+  'bizdev',
+  'safety',
+])
+export const isDivision = (d) => DIVISION_KEYS.has(d)
+
 export const isDeveloper = (user) => user?.role === 'developer'
 
 /** 이 사용자가 모든 프로젝트에 접근 가능한가(개발자만). */
@@ -43,4 +59,30 @@ export function canCreateProject(user) {
 /** 사용자 계정·프로젝트 생성 등 시스템 관리(개발자 전용). */
 export function canAdmin(user) {
   return isDeveloper(user)
+}
+
+// ── 본부(division) 기반 접근 판정 ────────────────────────────────────────────
+/** 같은 본부인가 — 사용자·프로젝트 모두 본부가 있고 동일. 개발자는 division 무관(전체). */
+export function sameDivision(user, project) {
+  return !!user?.division && !!project?.division && user.division === project.division
+}
+
+/** 목록/조회 가능 — 개발자(전체) 또는 같은 본부. */
+export function canSeeProject(user, project) {
+  return isDeveloper(user) || sameDivision(user, project)
+}
+
+/**
+ * 입장 가능 — 개발자, 배정 멤버(담당), 또는 같은 본부 PM(조회용 입장).
+ * 사용자(user)는 배정(membership)된 프로젝트만 입장 가능(같은 본부라도 미배정이면 목록만).
+ */
+export function canEnterProjectDiv(user, project, membership) {
+  if (isDeveloper(user)) return true
+  if (membership) return true
+  return user?.role === 'pm' && sameDivision(user, project)
+}
+
+/** 편집 가능 — 개발자 또는 배정 멤버(담당). 그 외(같은 본부 PM 조회 입장)는 읽기전용. */
+export function canEditProjectDiv(user, membership) {
+  return isDeveloper(user) || !!membership
 }

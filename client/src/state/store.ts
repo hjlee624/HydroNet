@@ -180,6 +180,8 @@ export interface EditorState {
   /** Simple / pro UI (progressive disclosure). */
   uiMode: UiMode
   autoCascade: boolean
+  /** 조회 전용(입장했으나 편집 권한 없음). true면 모든 변경(commit)이 차단된다. */
+  readOnly: boolean
   dirty: boolean
   warnings: string[]
   /** Last reschedule/cascade diff; non-null drives the 재계산 popup. */
@@ -324,6 +326,8 @@ export interface EditorState {
   clearFilter: () => void
   setColorMode: (m: ColorMode) => void
   setUiMode: (m: UiMode) => void
+  /** 조회 전용 모드 토글(협업 입장 시 편집권한에 따라 CollaborationBridge가 설정). */
+  setReadOnly: (v: boolean) => void
 
   // history & persistence
   beginGesture: () => void
@@ -880,6 +884,8 @@ export const useEditor = create<EditorState>()((set, get) => {
     opts: { history?: boolean; cascade?: boolean; origin?: unknown } = {},
   ) {
     const { history = true, cascade = false } = opts
+    // 조회 전용(편집 권한 없음)이면 어떤 변경도 적용하지 않는다.
+    if (get().readOnly) return
     const state = get()
     const draft = clone(authoritativeShadow)
     const updatedAt = new Date().toISOString()
@@ -929,6 +935,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     // localStorage에 남아 기능이 숨겨진 채 갇히지 않도록 'pro'로 고정한다.
     uiMode: 'pro' as UiMode,
     autoCascade: true,
+    readOnly: false,
     dirty: initialDirty,
     warnings: [],
     recalcReport: null,
@@ -1694,6 +1701,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       lsSet('sequence:uiMode', m)
       set({ uiMode: m })
     },
+    setReadOnly: (v) => set({ readOnly: v }),
 
     beginGesture: () => {
       runtime.undoManager.stopCapturing()

@@ -7,7 +7,15 @@ export function createPgRepo(connectionString) {
   const pool = new pg.Pool({ connectionString })
   const q = (text, params) => pool.query(text, params)
   const userRow = (r) =>
-    r && { id: r.id, name: r.name, role: r.role, passwordHash: r.password_hash, active: r.active }
+    r && {
+      id: r.id,
+      name: r.name,
+      role: r.role,
+      division: r.division,
+      passwordHash: r.password_hash,
+      active: r.active,
+      pending: r.pending,
+    }
   const projRow = (r) =>
     r && {
       id: r.id,
@@ -15,6 +23,7 @@ export function createPgRepo(connectionString) {
       accessCodeHash: r.access_code_hash,
       createdBy: r.created_by,
       active: r.active,
+      division: r.division,
     }
   const memRow = (r) =>
     r && { projectId: r.project_id, userId: r.user_id, role: r.role, addedBy: r.added_by }
@@ -30,12 +39,21 @@ export function createPgRepo(connectionString) {
     },
     async upsertUser(u) {
       const r = await q(
-        `INSERT INTO users (id,name,role,password_hash,active) VALUES ($1,$2,$3,$4,$5)
+        `INSERT INTO users (id,name,role,division,password_hash,active,pending) VALUES ($1,$2,$3,$4,$5,$6,$7)
          ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role,
+           division=COALESCE(EXCLUDED.division, users.division),
            password_hash=COALESCE(EXCLUDED.password_hash, users.password_hash),
-           active=EXCLUDED.active, updated_at=now()
+           active=EXCLUDED.active, pending=EXCLUDED.pending, updated_at=now()
          RETURNING *`,
-        [u.id, u.name ?? '', u.role ?? 'user', u.passwordHash ?? null, u.active ?? true],
+        [
+          u.id,
+          u.name ?? '',
+          u.role ?? 'user',
+          u.division ?? null,
+          u.passwordHash ?? null,
+          u.active ?? true,
+          u.pending ?? false,
+        ],
       )
       return userRow(r.rows[0])
     },
@@ -50,13 +68,21 @@ export function createPgRepo(connectionString) {
     },
     async upsertProject(p) {
       const r = await q(
-        `INSERT INTO projects (id,name,access_code_hash,created_by,active) VALUES ($1,$2,$3,$4,COALESCE($5,true))
+        `INSERT INTO projects (id,name,access_code_hash,created_by,active,division) VALUES ($1,$2,$3,$4,COALESCE($5,true),$6)
          ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,
            access_code_hash=COALESCE(EXCLUDED.access_code_hash, projects.access_code_hash),
            active=COALESCE($5, projects.active),
+           division=COALESCE(EXCLUDED.division, projects.division),
            updated_at=now()
          RETURNING *`,
-        [p.id, p.name ?? '', p.accessCodeHash ?? null, p.createdBy ?? null, p.active ?? null],
+        [
+          p.id,
+          p.name ?? '',
+          p.accessCodeHash ?? null,
+          p.createdBy ?? null,
+          p.active ?? null,
+          p.division ?? null,
+        ],
       )
       return projRow(r.rows[0])
     },

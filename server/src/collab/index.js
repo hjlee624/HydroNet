@@ -54,8 +54,8 @@ export function attachCollaborationServer(httpServer, options) {
     async onAuthenticate({ token, documentName, connectionConfig }) {
       if (!isDocumentName(documentName)) throw new Error('invalid-document-name')
       const context = await authenticateProjectToken(repo, token, documentName)
-      // ADR-002 currently grants edit access to developer, PM, and user.
-      connectionConfig.readOnly = false
+      // 편집 권한(담당/개발자)만 문서 쓰기 허용. 같은 본부 PM 조회 입장 등은 읽기전용 연결.
+      connectionConfig.readOnly = !context.canEdit
       return context
     },
   })

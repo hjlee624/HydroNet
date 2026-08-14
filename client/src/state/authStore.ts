@@ -20,6 +20,8 @@ export interface SessionUser {
   id: string
   name: string
   role: UserRole
+  /** 소속 본부 키(divisions.ts). 개발자는 null=전체. */
+  division?: string | null
 }
 export interface ProjectSummary {
   id: string
@@ -28,12 +30,36 @@ export interface ProjectSummary {
   hasCode: boolean
   /** 활성 여부. 개발자 목록에만 false가 올 수 있다(비활성 프로젝트는 일반 사용자에겐 미노출). */
   active?: boolean
+  /** 프로젝트 소속 본부 키. */
+  division?: string | null
+  /** 입장 가능(개발자·담당·같은 본부 PM). 사용자는 배정 프로젝트만 true. */
+  canEnter?: boolean
+  /** 편집 가능(개발자·담당). false면 입장해도 조회 전용. */
+  canEdit?: boolean
 }
 export interface EnteredProject {
   id: string
   name: string
   projRole: string
   token: string
+  /** 편집 권한. false면 조회 전용으로 입장(WS 읽기전용). */
+  canEdit?: boolean
+}
+
+/** 개발자 승인 대기(셀프등록 관리자) 항목. */
+export interface PendingUser {
+  id: string
+  name: string
+  role: string
+  division?: string | null
+}
+/** 셀프 등록 입력. */
+export interface RegisterInput {
+  name: string
+  phone: string
+  password: string
+  role: 'pm' | 'user'
+  division: string
 }
 
 export interface ProjectMember {
@@ -52,7 +78,9 @@ export interface AdminUser {
   id: string
   name: string
   role: string
+  division?: string | null
   active: boolean
+  pending?: boolean
   hasPassword: boolean
 }
 
@@ -73,18 +101,26 @@ interface AuthState {
   searchableUsers: SearchableUser[]
   /** 관리자 도구용 전체 사용자(개발자 전용). */
   adminUsers: AdminUser[]
+  /** 개발자 승인 대기(셀프등록 관리자) 목록 — 대시보드/관리자도구 알림 배지. */
+  pendingApprovals: PendingUser[]
   adminLoading: boolean
   adminError: string | null
   init: () => Promise<void>
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshProjects: () => Promise<void>
-  /** 새 프로젝트 생성(개발자·PM). 성공 시 목록 갱신. */
-  createProject: (name: string, accessCode?: string) => Promise<boolean>
+  /** 새 프로젝트 생성(개발자·PM). division 은 개발자만 지정(PM 은 본인 본부로 고정). */
+  createProject: (name: string, accessCode?: string, division?: string) => Promise<boolean>
   /** 프로젝트 삭제(개발자 전용). 성공 시 목록 갱신. */
   deleteProject: (id: string) => Promise<boolean>
   /** 프로젝트 활성/비활성 전환(개발자 전용). 성공 시 목록 갱신. */
   setProjectActive: (id: string, active: boolean) => Promise<boolean>
+  /** 셀프 등록(공개) — 사용자 즉시 활성, 관리자(PM)는 개발자 승인 대기. */
+  register: (input: RegisterInput) => Promise<{ ok: boolean; pending?: boolean; error?: string }>
+  /** 개발자 승인 대기(관리자 셀프등록) 목록 로드(개발자 전용). */
+  fetchPendingApprovals: () => Promise<void>
+  /** 관리자 셀프등록 승인/거절(개발자 전용). 성공 시 목록 갱신. */
+  approveUser: (id: string, approve: boolean) => Promise<boolean>
   select: (p: ProjectSummary) => Promise<void>
   enter: (code: string) => Promise<void>
   exitProject: () => void
@@ -104,6 +140,7 @@ interface AuthState {
     id: string
     name: string
     role: string
+    division?: string
     password?: string
     active?: boolean
   }) => Promise<boolean>
@@ -153,6 +190,7 @@ export const useAuth = create<AuthState>((set, get) => ({
   membersLoading: false,
   searchableUsers: [],
   adminUsers: [],
+  pendingApprovals: [],
   adminLoading: false,
   adminError: null,
 
@@ -165,8 +203,10 @@ export const useAuth = create<AuthState>((set, get) => ({
     // 서버 존재 — 기존 세션 있으면 바로 로그인 상태로.
     const me = await j('/api/auth/me').catch(() => ({ status: 0, ok: false, data: null }))
     if (me.ok && me.data?.user) {
-      set({ mode: 'server', user: me.data.user as SessionUser })
+      const u = me.data.user as SessionUser
+      set({ mode: 'server', user: u })
       await get().refreshProjects()
+      if (u.role === 'developer') await get().fetchPendingApprovals()
     } else {
       set({ mode: 'server', user: null })
     }
@@ -180,8 +220,10 @@ export const useAuth = create<AuthState>((set, get) => ({
         password,
       })
       if (!r.ok) throw new Error((r.data?.error as string) || '로그인에 실패했습니다.')
-      set({ user: r.data?.user as SessionUser, mode: 'server' })
+      const u = r.data?.user as SessionUser
+      set({ user: u, mode: 'server' })
       await get().refreshProjects()
+      if (u?.role === 'developer') await get().fetchPendingApprovals()
     } catch (e) {
       set({ error: e instanceof Error ? e.message : '로그인 오류' })
     } finally {
@@ -200,6 +242,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       projectMembers: null,
       searchableUsers: [],
       adminUsers: [],
+      pendingApprovals: [],
     })
   },
 
@@ -208,10 +251,14 @@ export const useAuth = create<AuthState>((set, get) => ({
     if (r.ok && Array.isArray(r.data)) set({ projects: r.data as unknown as ProjectSummary[] })
   },
 
-  createProject: async (name, accessCode) => {
+  createProject: async (name, accessCode, division) => {
     set({ loading: true, error: null })
     try {
-      const r = await post('/api/auth/projects', { name, ...(accessCode ? { accessCode } : {}) })
+      const r = await post('/api/auth/projects', {
+        name,
+        ...(accessCode ? { accessCode } : {}),
+        ...(division ? { division } : {}),
+      })
       if (!r.ok) throw new Error((r.data?.error as string) || '프로젝트 생성에 실패했습니다.')
       await get().refreshProjects()
       return true
@@ -245,6 +292,33 @@ export const useAuth = create<AuthState>((set, get) => ({
     return true
   },
 
+  register: async (input) => {
+    const r = await post('/api/auth/register', {
+      name: input.name,
+      phone: input.phone,
+      password: input.password,
+      role: input.role,
+      division: input.division,
+    })
+    if (!r.ok) return { ok: false, error: (r.data?.error as string) || '등록에 실패했습니다.' }
+    return { ok: true, pending: !!r.data?.pending }
+  },
+
+  fetchPendingApprovals: async () => {
+    const r = await j('/api/admin/pending')
+    if (r.ok && Array.isArray(r.data)) set({ pendingApprovals: r.data as unknown as PendingUser[] })
+  },
+
+  approveUser: async (id, approve) => {
+    const r = await post(`/api/admin/users/${encodeURIComponent(id)}/approve`, { approve })
+    if (!r.ok) {
+      set({ adminError: (r.data?.error as string) || '승인 처리에 실패했습니다.' })
+      return false
+    }
+    await get().fetchPendingApprovals()
+    return true
+  },
+
   select: async (p) => {
     set({ selected: p, error: null, projectMembers: null })
     // 개발자·PM은 코드 면제, 그리고 접속코드가 없는 프로젝트는 사용자도 바로 입장.
@@ -265,6 +339,7 @@ export const useAuth = create<AuthState>((set, get) => ({
           name: (r.data?.project as { name: string }).name,
           projRole: r.data?.projRole as string,
           token: r.data?.token as string,
+          canEdit: r.data?.canEdit !== false,
         },
         projectMembers: null,
       })

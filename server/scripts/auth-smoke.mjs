@@ -1,14 +1,15 @@
 // 인증/RBAC 통합 스모크 — 메모리 어댑터(Postgres 불필요)로 로그인·역할·엑셀임포트·접속코드·멤버십 검증.
 // 실행: node server/scripts/auth-smoke.mjs
-import express from 'express'
-import * as XLSX from 'xlsx'
+
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import express from 'express'
+import * as XLSX from 'xlsx'
 import { hashSecret, verifySecret, verifyToken } from '../src/auth/crypto.js'
 import { importUsers, parseRosterFile, UserImportValidationError } from '../src/auth/importUsers.js'
 import { canonicalPhoneId, formatPhoneId, normalizeLoginId } from '../src/auth/phone.js'
 import { createMemoryRepo } from '../src/auth/repo.js'
-import { createAuthRouter, bootstrapDeveloper } from '../src/auth/routes.js'
+import { bootstrapDeveloper, createAuthRouter } from '../src/auth/routes.js'
 import {
   createBoundedRateLimiter,
   createHttpOriginPolicy,
@@ -29,14 +30,20 @@ const workbookBuffer = (aoa) => {
 }
 
 // Startup/storage configuration must be deterministic: never silently mix pg auth with file collab.
-ok(resolveAuthBackendConfig({ AUTH_BACKEND: 'memory' }).backend === 'memory', 'memory backend config')
+ok(
+  resolveAuthBackendConfig({ AUTH_BACKEND: 'memory' }).backend === 'memory',
+  'memory backend config',
+)
 let missingPgUrl = null
 try {
   resolveAuthBackendConfig({ AUTH_BACKEND: 'pg', DATABASE_URL: '' })
 } catch (error) {
   missingPgUrl = error
 }
-ok(/requires DATABASE_URL/.test(missingPgUrl?.message || ''), 'pg backend without DATABASE_URL rejected')
+ok(
+  /requires DATABASE_URL/.test(missingPgUrl?.message || ''),
+  'pg backend without DATABASE_URL rejected',
+)
 const serverDir = fileURLToPath(new URL('..', import.meta.url))
 const failedStartup = spawnSync(
   process.execPath,
@@ -50,7 +57,9 @@ const failedStartup = spawnSync(
 )
 ok(
   failedStartup.status !== 0 &&
-    `${failedStartup.stdout}${failedStartup.stderr}`.includes('AUTH_BACKEND=pg requires DATABASE_URL'),
+    `${failedStartup.stdout}${failedStartup.stderr}`.includes(
+      'AUTH_BACKEND=pg requires DATABASE_URL',
+    ),
   'server startup fails clearly for incomplete pg config',
 )
 
@@ -174,7 +183,12 @@ ok(
 rosterImport = await importUsers(rosterRepo, rosterBuf, { resetPasswords: true })
 ok(
   rosterImport.withPassword === 3 &&
-    (await verifySecret(parsedRoster[0].password, (await rosterRepo.getUser(preservedId)).passwordHash)),
+    (await verifySecret(
+      parsedRoster[0].password,
+      (
+        await rosterRepo.getUser(preservedId)
+      ).passwordHash,
+    )),
   '명시 reset에서만 초기비밀번호 재설정',
 )
 
@@ -218,16 +232,31 @@ const aoa = [
 ]
 const buf = workbookBuffer(aoa)
 r = await call('POST', '/admin/users/import', { fileBase64: buf.toString('base64') })
-ok(r.status === 200 && r.data.imported === 2 && r.data.withPassword === 2, `엑셀 사용자 임포트 ${r.data?.imported}명`)
+ok(
+  r.status === 200 && r.data.imported === 2 && r.data.withPassword === 2,
+  `엑셀 사용자 임포트 ${r.data?.imported}명`,
+)
+// 본부(division) 부여 — projA 와 같은 본부로 두어야 목록/입장 가능(본부 기반 RBAC).
+await repo.upsertUser({ id: 'pm1', name: '피엠', role: 'pm', division: 'water-res' })
+await repo.upsertUser({ id: 'u1', name: '사용자', role: 'user', division: 'water-res' })
 
 // 한글 전화번호 roster API 임포트 + formatted 로그인 + rate limit/성공 초기화.
 r = await call('POST', '/admin/users/import', { fileBase64: rosterBuf.toString('base64') })
-ok(r.status === 200 && r.data.imported === 3 && r.data.withPassword === 3, '한글 전화번호 roster API 임포트')
+ok(
+  r.status === 200 && r.data.imported === 3 && r.data.withPassword === 3,
+  '한글 전화번호 roster API 임포트',
+)
 r = await call('POST', '/admin/users/import', { fileBase64: invalidRosterBuf.toString('base64') })
 ok(r.status === 400 && /validation|검증/.test(r.data.error), '잘못된 roster API 400 안전 거부')
 const rateUser = parsedRoster[2]
-r = await call('POST', '/auth/login', { username: formatPhoneId(rateUser.username), password: rateUser.password })
-ok(r.status === 200 && r.data.user.id === rateUser.username, '하이픈 전화번호 로그인 canonical lookup')
+r = await call('POST', '/auth/login', {
+  username: formatPhoneId(rateUser.username),
+  password: rateUser.password,
+})
+ok(
+  r.status === 200 && r.data.user.id === rateUser.username,
+  '하이픈 전화번호 로그인 canonical lookup',
+)
 let beforeReset401 = 0
 for (let i = 0; i < 4; i++) {
   r = await call('POST', '/auth/login', { username: rateUser.username, password: 'wrong' })
@@ -237,14 +266,25 @@ r = await call('POST', '/auth/login', { username: rateUser.username, password: r
 ok(beforeReset401 === 4 && r.status === 200, '로그인 성공 시 실패 횟수 초기화')
 let afterReset401 = 0
 for (let i = 0; i < 4; i++) {
-  r = await call('POST', '/auth/login', { username: formatPhoneId(rateUser.username), password: 'wrong' })
+  r = await call('POST', '/auth/login', {
+    username: formatPhoneId(rateUser.username),
+    password: 'wrong',
+  })
   if (r.status === 401) afterReset401++
 }
 r = await call('POST', '/auth/login', { username: rateUser.username, password: 'wrong' })
-ok(afterReset401 === 4 && r.status === 429 && Number(r.retryAfter) > 0, '5회 실패 후 15분 429/Retry-After')
+ok(
+  afterReset401 === 4 && r.status === 429 && Number(r.retryAfter) > 0,
+  '5회 실패 후 15분 429/Retry-After',
+)
 cookie = bootstrapCookie
 
-r = await call('POST', '/admin/projects', { id: 'projA', name: 'A댐', accessCode: 'code-A' })
+r = await call('POST', '/admin/projects', {
+  id: 'projA',
+  name: 'A댐',
+  accessCode: 'code-A',
+  division: 'water-res',
+})
 ok(r.status === 200, '프로젝트 생성 + 접속코드')
 r = await call('POST', '/projects/projA/members', { userId: 'pm1', role: 'pm' })
 ok(r.status === 200, 'PM 멤버 추가')
@@ -266,9 +306,17 @@ ok(r.status === 200 && r.data.some((p) => p.id === 'projA'), 'user 접근가능 
 r = await call('POST', '/auth/projects/projA/enter', { code: 'wrong' })
 ok(r.status === 401, 'user 잘못된 접속코드 거부(401)')
 r = await call('POST', '/auth/projects/projA/enter', { code: 'code-A' })
-ok(r.status === 200 && !!r.data.token && r.data.projRole === 'user', 'user 올바른 접속코드 → 입장+프로젝트토큰')
+ok(
+  r.status === 200 && !!r.data.token && r.data.projRole === 'user',
+  'user 올바른 접속코드 → 입장+프로젝트토큰',
+)
 const projectGrant = r.data.token
-r = await call('POST', '/auth/projects/projA/collab-ticket', {}, { authorization: `Bearer ${projectGrant}` })
+r = await call(
+  'POST',
+  '/auth/projects/projA/collab-ticket',
+  {},
+  { authorization: `Bearer ${projectGrant}` },
+)
 const collabClaims = r.status === 200 ? await verifyToken(r.data.ticket, 'collab') : null
 ok(
   r.status === 200 &&
@@ -281,7 +329,12 @@ ok(
   'project grant → 5분 collab ticket claim 검증',
 )
 await repo.removeMember('projA', 'u1')
-r = await call('POST', '/auth/projects/projA/collab-ticket', {}, { authorization: `Bearer ${projectGrant}` })
+r = await call(
+  'POST',
+  '/auth/projects/projA/collab-ticket',
+  {},
+  { authorization: `Bearer ${projectGrant}` },
+)
 ok(r.status === 403, '멤버십 제거 후 기존 grant의 collab ticket 교환 거부')
 await repo.addMember('projA', 'u1', 'user', boot.id)
 r = await call('GET', '/projects/projA/members')
@@ -300,7 +353,10 @@ r = await call('POST', '/auth/projects', { name: 'PM새프로젝트' })
 ok(r.status === 201 && !!r.data.project?.id, 'PM 새 프로젝트 생성(201)')
 const pmProj = r.data?.project?.id
 r = await call('GET', '/auth/projects')
-ok(r.status === 200 && r.data.some((p) => p.id === pmProj && p.role === 'pm'), 'PM 생성 프로젝트가 목록에 pm으로 노출')
+ok(
+  r.status === 200 && r.data.some((p) => p.id === pmProj && p.role === 'pm'),
+  'PM 생성 프로젝트가 목록에 pm으로 노출',
+)
 r = await call('POST', `/auth/projects/${pmProj}/enter`, {})
 ok(r.status === 200 && !!r.data.token, 'PM 생성 프로젝트 코드 면제 입장')
 
@@ -313,8 +369,48 @@ ok(r.status === 403, 'user 프로젝트 생성 거부(403)')
 // developer 프로젝트 생성(201)
 r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
 ok(r.status === 200, '개발자 재로그인')
-r = await call('POST', '/auth/projects', { name: 'DEV프로젝트' })
+r = await call('POST', '/auth/projects', { name: 'DEV프로젝트', division: 'water-res' })
 ok(r.status === 201 && !!r.data.project?.id, '개발자 새 프로젝트 생성(201)')
+
+// 셀프 등록 — 사용자 즉시 활성 / 관리자(PM) 개발자 승인 대기 + 본부 기반 격리
+cookie = ''
+r = await call('POST', '/auth/register', {
+  name: '등록사용자',
+  phone: '010-7777-0001',
+  password: '1234',
+  role: 'user',
+  division: 'road',
+})
+ok(r.status === 201 && r.data.pending === false, '사용자 셀프등록(즉시 활성)')
+r = await call('POST', '/auth/login', { username: '010-7777-0001', password: '1234' })
+ok(r.status === 200 && r.data.user.division === 'road', '등록 사용자 로그인 + 본부 반영')
+r = await call('GET', '/auth/projects')
+ok(
+  r.status === 200 && !r.data.some((p) => p.id === 'projA'),
+  '다른 본부 사용자는 타 본부 프로젝트 미노출',
+)
+cookie = ''
+r = await call('POST', '/auth/register', {
+  name: '등록관리자',
+  phone: '010-7777-0002',
+  password: '1234',
+  role: 'pm',
+  division: 'road',
+})
+ok(r.status === 201 && r.data.pending === true, '관리자 셀프등록(승인 대기)')
+r = await call('POST', '/auth/login', { username: '010-7777-0002', password: '1234' })
+ok(r.status === 401, '승인 전 관리자 로그인 거부')
+r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
+r = await call('GET', '/admin/pending')
+ok(
+  r.status === 200 && r.data.some((u) => u.id === '01077770002'),
+  '개발자 승인대기 목록 노출(알림)',
+)
+r = await call('POST', '/admin/users/01077770002/approve', { approve: true })
+ok(r.status === 200 && r.data.approved === true, '개발자 관리자 승인')
+cookie = ''
+r = await call('POST', '/auth/login', { username: '010-7777-0002', password: '1234' })
+ok(r.status === 200 && r.data.user.role === 'pm', '승인 후 관리자 로그인')
 
 // 비로그인 차단
 cookie = ''

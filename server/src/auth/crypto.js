@@ -47,9 +47,9 @@ export function signSession(user, ttl = '12h') {
     .sign(secret())
 }
 
-/** 프로젝트 토큰(접속코드 통과 후 발급). payload = {sub, projectId, projRole}. */
-export function signProjectToken(userId, projectId, projRole, ttl = '12h') {
-  return new SignJWT({ projectId, projRole })
+/** 프로젝트 토큰(접속코드 통과 후 발급). payload = {sub, projectId, projRole, canEdit}. */
+export function signProjectToken(userId, projectId, projRole, canEdit, ttl = '12h') {
+  return new SignJWT({ projectId, projRole, canEdit: !!canEdit })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuer(ISS)
@@ -63,8 +63,8 @@ export function signProjectToken(userId, projectId, projRole, ttl = '12h') {
  * 협업 WebSocket 연결에만 쓰는 단수명 티켓.
  * 장기 project grant를 소켓에 직접 전달하지 않고, aud/typ가 분리된 5분 토큰으로 교환한다.
  */
-export function signCollabToken(userId, projectId, projRole, ttl = '5m') {
-  return new SignJWT({ projectId, projRole, typ: 'collab' })
+export function signCollabToken(userId, projectId, projRole, canEdit, ttl = '5m') {
+  return new SignJWT({ projectId, projRole, canEdit: !!canEdit, typ: 'collab' })
     .setProtectedHeader({ alg: 'HS256' })
     .setSubject(userId)
     .setIssuer(ISS)

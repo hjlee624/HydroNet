@@ -4,12 +4,26 @@
 import { AuthGate } from './components/auth/AuthGate'
 import { CollaborationBridge } from './components/CollaborationBridge'
 import { ScheduleModule } from './components/ScheduleModule'
+import { useEditor } from './state/store'
+
+/** 조회 전용(편집 권한 없음) 입장 시 상단 배너. 편집은 담당자/개발자만 가능. */
+function ReadOnlyBanner() {
+  const readOnly = useEditor((s) => s.readOnly)
+  if (!readOnly) return null
+  return (
+    <div className="readonly-banner" role="status">
+      🔒 조회 전용 — 이 프로젝트는 열람만 가능합니다. 편집은 담당자(배정 멤버)·개발자만 할 수
+      있습니다.
+    </div>
+  )
+}
 
 export default function App() {
   return (
     <AuthGate>
       <CollaborationBridge />
       <div className="shell">
+        <ReadOnlyBanner />
         <main className="shell__content">
           <ScheduleModule />
         </main>

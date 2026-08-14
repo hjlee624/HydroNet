@@ -16,11 +16,14 @@ import {
   canAccessAll,
   canAdmin,
   canCreateProject,
-  canEnterProject,
+  canEditProjectDiv,
+  canEnterProjectDiv,
   canManageProject,
   isDeveloper,
+  isDivision,
   isRole,
   PROJECT_ROLES,
+  sameDivision,
 } from './roles.js'
 
 const COOKIE = 'hn_session'
@@ -60,7 +63,12 @@ export function createAuthRouter(repo, opts = {}) {
       'Set-Cookie',
       `${COOKIE}=; HttpOnly; Path=/; SameSite=Strict; Max-Age=0${secure ? '; Secure' : ''}`,
     )
-  const publicUser = (u) => ({ id: u.id, name: u.name, role: u.role })
+  const publicUser = (u) => ({
+    id: u.id,
+    name: u.name,
+    role: u.role,
+    division: u.division ?? null,
+  })
   const attemptKey = (req, userId) =>
     `${req.socket?.remoteAddress || req.ip || 'unknown'}\0${userId}`
   const cleanupLoginAttempts = (now) => {
@@ -121,12 +129,19 @@ export function createAuthRouter(repo, opts = {}) {
       const user = await repo.getUser(p.sub)
       if (!user || user.active === false)
         return res.status(401).json({ error: '유효하지 않은 계정입니다.' })
+      const project = await repo.getProject(projectId)
+      if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' })
       const membership = canAccessAll(user)
         ? { role: 'developer' }
         : await repo.getMembership(projectId, user.id)
-      if (!membership) return res.status(403).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+      if (!canEnterProjectDiv(user, project, membership))
+        return res.status(403).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
       req.user = user
-      req.projectGrant = { ...p, projRole: membership.role }
+      req.projectGrant = {
+        ...p,
+        projRole: membership?.role ?? user.role,
+        canEdit: canEditProjectDiv(user, membership),
+      }
       next()
     } catch {
       res.status(500).json({ error: '서버 오류' })
@@ -181,6 +196,33 @@ export function createAuthRouter(repo, opts = {}) {
   })
   router.get('/auth/me', authMw, (req, res) => res.json({ user: publicUser(req.user) }))
 
+  // ── 셀프 등록(공개) — 관리자(PM)/사용자 + 본부 선택. 사용자는 즉시 활성, PM은 개발자 승인 대기. ──
+  router.post(
+    '/auth/register',
+    wrap(async (req, res) => {
+      const { name, phone, password, role, division } = req.body || {}
+      const id = normalizeLoginId(String(phone || ''))
+      if (!/^010\d{8}$/.test(id)) throw fail(400, '전화번호(010########)를 정확히 입력하세요.')
+      if (!/^\d{4}$/.test(String(password || '')))
+        throw fail(400, '비밀번호는 숫자 4자리로 입력하세요.')
+      if (role !== 'pm' && role !== 'user') throw fail(400, '역할(관리자/사용자)을 선택하세요.')
+      if (!isDivision(division)) throw fail(400, '본부를 선택하세요.')
+      if (await repo.getUser(id))
+        throw fail(409, '이미 등록된 전화번호입니다. 관리자에게 문의하세요.')
+      const isPm = role === 'pm'
+      await repo.upsertUser({
+        id,
+        name: String(name || '').trim(),
+        role,
+        division,
+        passwordHash: await hashSecret(String(password)),
+        active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
+        pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
+      })
+      res.status(201).json({ ok: true, pending: isPm })
+    }),
+  )
+
   // ── 멤버 추가용 사용자 검색(개발자·PM 세션 전용) — 아이디·이름만 반환. ──
   router.get(
     '/users/searchable',
@@ -204,29 +246,37 @@ export function createAuthRouter(repo, opts = {}) {
       const all = await repo.listProjects()
       let list
       if (canAccessAll(req.user)) {
-        // 개발자는 비활성 프로젝트도 보되(관리·활성화용) active 플래그를 함께 전달.
+        // 개발자는 전체 본부·전체 프로젝트를 보고 관리(비활성 포함, 항상 입장·편집 가능).
         list = all.map((p) => ({
           id: p.id,
           name: p.name,
           role: 'developer',
+          division: p.division ?? null,
           hasCode: !!p.accessCodeHash,
           active: p.active !== false,
+          canEnter: true,
+          canEdit: true,
         }))
       } else {
+        // 같은 본부의 활성 프로젝트는 모두 '목록에 보임'. 입장/편집 가능 여부는 역할·배정으로 갈림:
+        //  · 배정 멤버(담당) → 입장+편집 · 같은 본부 PM(미배정) → 입장(조회 전용) · 사용자(미배정) → 목록만
         const mem = await repo.listMembershipsForUser(req.user.id)
-        const byId = new Map(all.map((p) => [p.id, p]))
-        list = mem
-          .filter((m) => byId.has(m.projectId))
-          // 비활성화된 프로젝트는 일반 사용자·PM 목록에서 제외.
-          .filter((m) => byId.get(m.projectId).active !== false)
-          .map((m) => {
-            const p = byId.get(m.projectId)
+        const memById = new Map(mem.map((m) => [m.projectId, m]))
+        list = all
+          .filter((p) => p.active !== false && sameDivision(req.user, p))
+          .map((p) => {
+            const m = memById.get(p.id)
+            const canEdit = !!m
+            const canEnter = !!m || req.user.role === 'pm'
             return {
               id: p.id,
               name: p.name,
-              role: m.role,
+              role: m?.role ?? req.user.role,
+              division: p.division ?? null,
               hasCode: !!p.accessCodeHash,
               active: true,
+              canEnter,
+              canEdit,
             }
           })
       }
@@ -243,12 +293,16 @@ export function createAuthRouter(repo, opts = {}) {
         throw fail(403, '프로젝트 생성 권한(개발자·프로젝트 관리자)이 필요합니다.')
       const name = String(req.body?.name || '').trim()
       if (!name) throw fail(400, '프로젝트 이름을 입력하세요.')
+      // 본부: 개발자는 지정, PM 은 본인 소속 본부로 고정.
+      const division = isDeveloper(req.user) ? req.body?.division : req.user.division
+      if (!isDivision(division)) throw fail(400, '본부를 선택하세요.')
       const accessCode = req.body?.accessCode
       const id = `p_${nanoid(10)}`
       const accessCodeHash = accessCode ? await hashSecret(String(accessCode)) : undefined
       await repo.upsertProject({
         id,
         name,
+        division,
         createdBy: req.user.id,
         ...(accessCodeHash ? { accessCodeHash } : {}),
       })
@@ -295,18 +349,22 @@ export function createAuthRouter(repo, opts = {}) {
       const membership = canAccessAll(req.user)
         ? { role: 'developer' }
         : await repo.getMembership(projectId, req.user.id)
-      if (!canEnterProject(req.user, membership))
-        throw fail(403, '이 프로젝트 접근 권한이 없습니다.')
-      // 접속코드가 설정된 프로젝트에서만 코드를 검증한다. 코드가 없으면(미설정) 지정된
-      // 멤버(관리자·사용자)는 코드 없이 바로 입장 — 개발자·PM 은 어차피 코드 면제.
-      if (!accessCodeExempt(req.user, membership) && project.accessCodeHash) {
+      // 입장 가능: 개발자 · 배정 멤버(담당) · 같은 본부 PM(조회 입장). 사용자는 배정된 프로젝트만.
+      if (!canEnterProjectDiv(req.user, project, membership))
+        throw fail(403, '이 프로젝트에 입장할 권한이 없습니다. (같은 본부·배정 여부 확인)')
+      // 접속코드가 설정된 프로젝트에서만 코드 검증. 개발자·해당 프로젝트 PM·같은 본부 PM 은 면제.
+      const codeExempt =
+        accessCodeExempt(req.user, membership) ||
+        (req.user.role === 'pm' && sameDivision(req.user, project))
+      if (!codeExempt && project.accessCodeHash) {
         const code = String(req.body?.code || '')
         if (!(await verifySecret(code, project.accessCodeHash)))
           throw fail(401, '접속코드가 올바르지 않습니다.')
       }
-      const projRole = membership.role
-      const token = await signProjectToken(req.user.id, projectId, projRole)
-      res.json({ token, project: { id: project.id, name: project.name }, projRole })
+      const canEdit = canEditProjectDiv(req.user, membership)
+      const projRole = membership?.role ?? req.user.role
+      const token = await signProjectToken(req.user.id, projectId, projRole, canEdit)
+      res.json({ token, project: { id: project.id, name: project.name }, projRole, canEdit })
     }),
   )
 
@@ -316,16 +374,23 @@ export function createAuthRouter(repo, opts = {}) {
     requireProjectToken,
     wrap(async (req, res) => {
       const projectId = req.params.id
-      if (!(await repo.getProject(projectId))) throw fail(404, '프로젝트를 찾을 수 없습니다.')
+      const project = await repo.getProject(projectId)
+      if (!project) throw fail(404, '프로젝트를 찾을 수 없습니다.')
       const userId = String(req.projectGrant?.sub ?? req.user?.id ?? '')
       const user = userId ? await repo.getUser(userId) : null
       if (!user || user.active === false) throw fail(401, '유효하지 않은 계정입니다.')
       const membership = canAccessAll(user)
         ? { role: 'developer' }
         : await repo.getMembership(projectId, user.id)
-      if (!membership) throw fail(403, '이 프로젝트 접근 권한이 없습니다.')
-      const projRole = membership.role
-      res.json({ ticket: await signCollabToken(user.id, projectId, projRole), expiresIn: 300 })
+      if (!canEnterProjectDiv(user, project, membership))
+        throw fail(403, '이 프로젝트 접근 권한이 없습니다.')
+      // 편집 권한(담당/개발자)만 편집 가능한 collab 티켓 — 그 외는 읽기전용(WS readOnly).
+      const canEdit = canEditProjectDiv(user, membership)
+      const projRole = membership?.role ?? user.role
+      res.json({
+        ticket: await signCollabToken(user.id, projectId, projRole, canEdit),
+        expiresIn: 300,
+      })
     }),
   )
 
@@ -352,7 +417,9 @@ export function createAuthRouter(repo, opts = {}) {
           id: u.id,
           name: u.name,
           role: u.role,
+          division: u.division ?? null,
           active: u.active,
+          pending: !!u.pending,
           hasPassword: !!u.passwordHash,
         })),
       ),
@@ -363,7 +430,7 @@ export function createAuthRouter(repo, opts = {}) {
     authMw,
     requireAdmin,
     wrap(async (req, res) => {
-      const { id, name, role, password, active } = req.body || {}
+      const { id, name, role, division, password, active } = req.body || {}
       if (!id || !isRole(role)) throw fail(400, 'id·role(developer|pm|user)이 필요합니다.')
       const passwordHash = password ? await hashSecret(String(password)) : undefined
       await repo.upsertUser({
@@ -371,23 +438,61 @@ export function createAuthRouter(repo, opts = {}) {
         name: name ?? '',
         role,
         active: active ?? true,
+        ...(isDivision(division) ? { division } : {}),
         ...(passwordHash ? { passwordHash } : {}),
       })
       res.json({ ok: true })
     }),
   )
+  // ── 관리자(PM) 등록 승인 대기 목록 + 승인/거절(개발자 전용) ──
+  router.get(
+    '/admin/pending',
+    authMw,
+    requireAdmin,
+    wrap(async (_req, res) => {
+      const users = await repo.listUsers()
+      res.json(
+        users
+          .filter((u) => u.pending)
+          .map((u) => ({ id: u.id, name: u.name, role: u.role, division: u.division ?? null })),
+      )
+    }),
+  )
+  router.post(
+    '/admin/users/:id/approve',
+    authMw,
+    requireAdmin,
+    wrap(async (req, res) => {
+      const id = normalizeLoginId(req.params.id)
+      const u = await repo.getUser(id)
+      if (!u) throw fail(404, '사용자를 찾을 수 없습니다.')
+      const approve = req.body?.approve !== false
+      // 승인 → 활성화·대기 해제. 거절 → 비활성화(로그인 불가)로 대기에서 제외.
+      await repo.upsertUser({
+        id,
+        name: u.name,
+        role: u.role,
+        division: u.division,
+        active: approve,
+        pending: false,
+      })
+      res.json({ ok: true, approved: approve })
+    }),
+  )
+
   router.post(
     '/admin/projects',
     authMw,
     requireAdmin,
     wrap(async (req, res) => {
-      const { id, name, accessCode } = req.body || {}
+      const { id, name, accessCode, division } = req.body || {}
       if (!id) throw fail(400, '프로젝트 id가 필요합니다.')
       const accessCodeHash = accessCode ? await hashSecret(String(accessCode)) : undefined
       await repo.upsertProject({
         id: String(id),
         name: name ?? '',
         createdBy: req.user.id,
+        ...(isDivision(division) ? { division } : {}),
         ...(accessCodeHash ? { accessCodeHash } : {}),
       })
       res.json({ ok: true })

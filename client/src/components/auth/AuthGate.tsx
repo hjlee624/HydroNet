@@ -1,6 +1,7 @@
 // 로그인 게이트 — 서버 모드일 때 로그인 → 프로젝트 선택 → 접속코드 → 편집기.
 // 로컬 모드(오프라인 단일 HTML/서버 없음)면 곧장 편집기. ADR-002.
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { DIVISIONS, divisionIcon, divisionLabel } from '../../data/divisions'
 import {
   formatLoginPhoneInput,
   loginPhoneDigits,
@@ -10,6 +11,16 @@ import {
 } from '../../state/authStore'
 import { AdminPanel } from './AdminPanel'
 import { AuthBackground } from './AuthBackground'
+
+/** 본부 심볼(원형) — 이미지 애셋 + 색 원 폴백. presence 배지와 동일한 결. */
+function DivisionSymbol({ division, size = 28 }: { division?: string | null; size?: number }) {
+  const icon = divisionIcon(division ?? undefined)
+  return (
+    <span className="div-symbol" style={{ width: size, height: size }} aria-hidden="true">
+      {icon ? <img src={icon} alt="" width={size} height={size} /> : '🏢'}
+    </span>
+  )
+}
 
 const ROLE_LABEL: Record<string, string> = {
   developer: '개발자',
@@ -93,6 +104,7 @@ function LoginScreen() {
   const error = useAuth((s) => s.error)
   const [username, setU] = useState('')
   const [password, setP] = useState('')
+  const [registerOpen, setRegisterOpen] = useState(false)
   const validPhoneId = /^010\d{8}$/.test(loginPhoneDigits(username))
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -133,6 +145,143 @@ function LoginScreen() {
         >
           {loading ? '확인 중…' : '로그인'}
         </button>
+        <button className="auth-link" type="button" onClick={() => setRegisterOpen(true)}>
+          사용자 등록
+        </button>
+      </form>
+      {registerOpen && <RegisterModal onClose={() => setRegisterOpen(false)} />}
+    </div>
+  )
+}
+
+// 셀프 등록 — 관리자(PM)/사용자 + 본부 선택, 이름, 전화번호(ID), 비밀번호 4자리.
+// 사용자는 즉시 로그인 가능, 관리자는 개발자 승인 후 로그인 가능(개발자 대시보드에 알림).
+function RegisterModal({ onClose }: { onClose: () => void }) {
+  const register = useAuth((s) => s.register)
+  const [role, setRole] = useState<'user' | 'pm'>('user')
+  const [division, setDivision] = useState('')
+  const [name, setName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [password, setPassword] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState<{ pending: boolean } | null>(null)
+
+  const validPhone = /^010\d{8}$/.test(loginPhoneDigits(phone))
+  const validPw = /^\d{4}$/.test(password)
+  const canSubmit = validPhone && validPw && !!division && !!name.trim() && !busy
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit) return
+    setBusy(true)
+    setErr(null)
+    const r = await register({ name: name.trim(), phone, password, role, division })
+    setBusy(false)
+    if (!r.ok) setErr(r.error ?? '등록 실패')
+    else setDone({ pending: !!r.pending })
+  }
+
+  return (
+    <div className="admin-overlay" onClick={onClose}>
+      <form
+        className="proj-create proj-create--modal"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => void submit(e)}
+      >
+        <div className="member-panel__header">
+          <span className="member-panel__title">＋ 사용자 등록</span>
+          <button className="member-panel__close" type="button" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
+        </div>
+
+        {done ? (
+          <div className="register-done">
+            {done.pending ? (
+              <>
+                <b>관리자 등록 신청이 접수되었습니다.</b>
+                <p>개발자 승인 후 로그인할 수 있습니다. 승인 알림이 개발자에게 전달되었습니다.</p>
+              </>
+            ) : (
+              <>
+                <b>사용자 등록이 완료되었습니다.</b>
+                <p>지금 바로 전화번호와 비밀번호로 로그인하세요.</p>
+              </>
+            )}
+            <div className="proj-create__actions">
+              <button className="auth-primary" type="button" onClick={onClose}>
+                확인
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <div className="register-role">
+              <button
+                type="button"
+                className={`register-role__opt${role === 'user' ? ' is-on' : ''}`}
+                onClick={() => setRole('user')}
+              >
+                사용자
+                <em>할당된 프로젝트 편집</em>
+              </button>
+              <button
+                type="button"
+                className={`register-role__opt${role === 'pm' ? ' is-on' : ''}`}
+                onClick={() => setRole('pm')}
+              >
+                관리자
+                <em>본부 프로젝트 관리(개발자 승인 필요)</em>
+              </button>
+            </div>
+            <label className="auth-field">
+              <span>본부</span>
+              <select value={division} onChange={(e) => setDivision(e.target.value)}>
+                <option value="">— 본부 선택 —</option>
+                {DIVISIONS.map((d) => (
+                  <option key={d.key} value={d.key}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="auth-field">
+              <span>이름</span>
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="홍길동" />
+            </label>
+            <label className="auth-field">
+              <span>전화번호 (아이디)</span>
+              <input
+                inputMode="numeric"
+                maxLength={13}
+                value={phone}
+                onChange={(e) => setPhone(formatLoginPhoneInput(e.target.value))}
+                placeholder="010-0000-0000"
+              />
+            </label>
+            <label className="auth-field">
+              <span>비밀번호 (숫자 4자리)</span>
+              <input
+                type="password"
+                inputMode="numeric"
+                maxLength={4}
+                value={password}
+                onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 4))}
+                placeholder="숫자 4자리"
+              />
+            </label>
+            {err && <div className="auth-error">{err}</div>}
+            <div className="proj-create__actions">
+              <button className="auth-primary" type="submit" disabled={!canSubmit}>
+                {busy ? '등록 중…' : '등록'}
+              </button>
+              <button className="auth-link" type="button" onClick={onClose}>
+                취소
+              </button>
+            </div>
+          </>
+        )}
       </form>
     </div>
   )
@@ -164,7 +313,7 @@ function ProjectSelectScreen() {
   const user = useAuth((s) => s.user)
   const canCreate = user?.role === 'developer' || user?.role === 'pm'
   const isDeveloper = user?.role === 'developer'
-  const managing = projects.filter((p) => p.role !== 'user').length
+  const pendingApprovals = useAuth((s) => s.pendingApprovals)
   const deleteProject = useAuth((s) => s.deleteProject)
   const setProjectActive = useAuth((s) => s.setProjectActive)
   const onDeleteProject = async (p: ProjectSummary) => {
@@ -194,8 +343,17 @@ function ProjectSelectScreen() {
               안녕하세요, <b>{user?.name || user?.id}</b> 님
             </div>
             <div className="proj-dash__sub">
-              {ROLE_LABEL[user?.role ?? ''] ?? user?.role} · 참여 {projects.length}
-              {managing > 0 ? ` · 관리 ${managing}` : ''} — 입장할 프로젝트를 선택하세요.
+              {ROLE_LABEL[user?.role ?? ''] ?? user?.role}
+              {user?.division
+                ? ` · ${divisionLabel(user.division)}`
+                : isDeveloper
+                  ? ' · 전체 본부'
+                  : ''}
+              {` · 프로젝트 ${projects.length}`}
+              {isDeveloper && pendingApprovals.length > 0
+                ? ` · 승인 대기 ${pendingApprovals.length}`
+                : ''}{' '}
+              — 입장할 프로젝트를 선택하세요.
             </div>
           </div>
           <button className="proj-dash__logout" type="button" onClick={logout}>
@@ -214,19 +372,39 @@ function ProjectSelectScreen() {
                 key={p.id}
                 className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
               >
-                <button className="proj-card__main" type="button" onClick={() => select(p)}>
+                <button
+                  className="proj-card__main"
+                  type="button"
+                  disabled={p.canEnter === false}
+                  title={
+                    p.canEnter === false ? '할당된 프로젝트가 아닙니다 (입장 불가)' : undefined
+                  }
+                  onClick={() => {
+                    if (p.canEnter !== false) select(p)
+                  }}
+                >
                   <span className="proj-card__icon" aria-hidden="true">
                     {projectIcon(p.name, i)}
                   </span>
                   <span className="proj-card__name">{p.name || p.id}</span>
-                  <span className="proj-card__foot">
-                    <span className={`proj-card__role proj-card__role--${p.role}`}>
-                      {PROJ_ROLE_LABEL[p.role] ?? p.role}
+                  {p.division && (
+                    <span className="proj-card__div">
+                      <DivisionSymbol division={p.division} size={16} />
+                      {divisionLabel(p.division)}
                     </span>
+                  )}
+                  <span className="proj-card__foot">
                     {p.active === false && (
                       <span className="proj-card__inactive-badge">비활성</span>
                     )}
-                    {p.role === 'user' && p.hasCode && (
+                    {p.canEnter === false ? (
+                      <span className="proj-card__badge proj-card__badge--muted">미할당</span>
+                    ) : p.canEdit === false ? (
+                      <span className="proj-card__badge proj-card__badge--view">조회 전용</span>
+                    ) : (
+                      <span className="proj-card__badge proj-card__badge--edit">편집 가능</span>
+                    )}
+                    {p.role === 'user' && p.hasCode && p.canEnter !== false && (
                       <span className="proj-card__lock" title="접속코드 필요">
                         🔒
                       </span>
@@ -293,6 +471,21 @@ function ProjectSelectScreen() {
                   ⚙
                 </span>
                 <span className="proj-card__name">관리자 도구</span>
+              </button>
+            )}
+            {isDeveloper && pendingApprovals.length > 0 && (
+              <button
+                className="proj-card proj-card--action proj-card--pending"
+                type="button"
+                onClick={() => setAdminOpen(true)}
+                title="관리자 등록 승인 대기"
+              >
+                <span className="proj-card__icon" aria-hidden="true">
+                  🔔
+                </span>
+                <span className="proj-card__name">
+                  관리자 승인 대기 <b>{pendingApprovals.length}</b>
+                </span>
               </button>
             )}
           </div>
@@ -547,12 +740,17 @@ function MemberPanel({
 function ProjectCreateModal({ onClose }: { onClose: () => void }) {
   const createProject = useAuth((s) => s.createProject)
   const loading = useAuth((s) => s.loading)
+  const user = useAuth((s) => s.user)
+  const isDeveloper = user?.role === 'developer'
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
+  const [division, setDivision] = useState('')
+  // 개발자는 본부를 선택, PM 은 본인 본부로 고정.
+  const effectiveDivision = isDeveloper ? division : (user?.division ?? '')
   const submit = async (e: FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) return
-    if (await createProject(name.trim(), code.trim() || undefined)) onClose()
+    if (!name.trim() || !effectiveDivision) return
+    if (await createProject(name.trim(), code.trim() || undefined, effectiveDivision)) onClose()
   }
   return (
     <div className="admin-overlay" onClick={onClose}>
@@ -567,6 +765,21 @@ function ProjectCreateModal({ onClose }: { onClose: () => void }) {
             ✕
           </button>
         </div>
+        <label className="auth-field">
+          <span>본부</span>
+          {isDeveloper ? (
+            <select value={division} onChange={(e) => setDivision(e.target.value)}>
+              <option value="">— 본부 선택 —</option>
+              {DIVISIONS.map((d) => (
+                <option key={d.key} value={d.key}>
+                  {d.label}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <input value={divisionLabel(user?.division ?? undefined)} disabled />
+          )}
+        </label>
         <label className="auth-field">
           <span>프로젝트 이름</span>
           <input
@@ -587,7 +800,11 @@ function ProjectCreateModal({ onClose }: { onClose: () => void }) {
           />
         </label>
         <div className="proj-create__actions">
-          <button className="auth-primary" type="submit" disabled={loading || !name.trim()}>
+          <button
+            className="auth-primary"
+            type="submit"
+            disabled={loading || !name.trim() || !effectiveDivision}
+          >
             {loading ? '생성 중…' : '생성'}
           </button>
           <button className="auth-link" type="button" onClick={onClose}>

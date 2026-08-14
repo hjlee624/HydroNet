@@ -1,5 +1,5 @@
 import { verifyToken } from '../auth/crypto.js'
-import { canAccessAll, canEnterProject } from '../auth/roles.js'
+import { canAccessAll, canEditProjectDiv, canEnterProjectDiv } from '../auth/roles.js'
 
 const denied = () => Object.assign(new Error(''), { reason: 'permission-denied' })
 
@@ -30,13 +30,15 @@ export async function authenticateProjectToken(repo, token, documentName) {
   const membership = canAccessAll(user)
     ? { projectId: documentName, userId: user.id, role: 'developer' }
     : await repo.getMembership(documentName, user.id)
-  if (!canEnterProject(user, membership)) throw denied()
-  const currentRole = canAccessAll(user) ? 'developer' : membership.role
+  if (!canEnterProjectDiv(user, project, membership)) throw denied()
+  const currentRole = canAccessAll(user) ? 'developer' : (membership?.role ?? user.role)
   if (grant.projRole !== currentRole) throw denied()
 
   return {
     userId: user.id,
     projectId: documentName,
     projRole: currentRole,
+    // 편집 권한(담당/개발자)만 편집. 그 외(같은 본부 PM 조회)는 읽기전용 연결.
+    canEdit: canEditProjectDiv(user, membership),
   }
 }

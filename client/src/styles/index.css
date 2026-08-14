@@ -2065,7 +2065,8 @@ textarea.input {
 
 /* ── 프로젝트 선택 = 대시보드(카드 그리드) ── */
 .auth-card--dash {
-  max-width: 880px;
+  max-width: 1120px;
+  width: min(96vw, 1120px);
 }
 .proj-dash__head {
   display: flex;
@@ -2275,6 +2276,154 @@ textarea.input {
   font-weight: 800;
   background: #eceae6;
   color: var(--steel);
+}
+
+/* ── 본부(division) 심볼 + 프로젝트 카드 본부/권한 배지 ── */
+.div-symbol {
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  overflow: hidden;
+  background: radial-gradient(circle at 35% 28%, #fff, var(--cream-deeper, #eadfc5));
+  box-shadow: inset 0 0 0 1px rgba(217, 98, 42, 0.18);
+  flex: 0 0 auto;
+}
+.div-symbol img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.proj-card__div {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 6px;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--slate);
+}
+.proj-card__badge {
+  padding: 2px 9px;
+  border-radius: 20px;
+  font-size: 10.5px;
+  font-weight: 800;
+}
+.proj-card__badge--edit {
+  background: rgba(46, 125, 107, 0.16);
+  color: #2e7d6b;
+}
+.proj-card__badge--view {
+  background: rgba(120, 140, 170, 0.18);
+  color: #46566e;
+}
+.proj-card__badge--muted {
+  background: #eceae6;
+  color: var(--steel);
+}
+.proj-card__main:disabled {
+  cursor: not-allowed;
+  opacity: 0.72;
+}
+.proj-card--pending {
+  border-color: var(--primary);
+  background: rgba(217, 98, 42, 0.08);
+}
+.proj-card--pending .proj-card__name b {
+  color: var(--primary-deep, var(--primary));
+}
+
+/* ── 셀프 등록 모달 ── */
+.register-role {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.register-role__opt {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 12px;
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: 10px;
+  background: var(--canvas);
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  font-size: 13.5px;
+  color: var(--ink);
+  text-align: left;
+}
+.register-role__opt em {
+  font-weight: 500;
+  font-style: normal;
+  font-size: 10.5px;
+  color: var(--steel);
+}
+.register-role__opt.is-on {
+  border-color: var(--primary);
+  background: var(--cream);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--primary) 14%, transparent);
+}
+.register-done {
+  padding: 8px 2px 4px;
+  font-size: 13px;
+  color: var(--slate);
+}
+.register-done b {
+  display: block;
+  font-size: 14.5px;
+  color: var(--ink);
+  margin-bottom: 4px;
+}
+
+/* ── 관리자 승인 대기(관리자 도구) ── */
+.admin-pending {
+  margin: 10px 0;
+  border: 1.5px solid var(--primary);
+  border-radius: 12px;
+  background: rgba(217, 98, 42, 0.07);
+  padding: 10px 12px;
+}
+.admin-pending__title {
+  font-weight: 800;
+  font-size: 13px;
+  color: var(--primary-deep, var(--primary));
+  margin-bottom: 8px;
+}
+.admin-pending__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.admin-pending__item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.admin-pending__name {
+  font-weight: 700;
+  color: var(--ink);
+}
+.admin-pending__meta {
+  flex: 1;
+  font-size: 11.5px;
+  color: var(--steel);
+}
+
+/* ── 조회 전용 배너 ── */
+.readonly-banner {
+  flex: 0 0 auto;
+  padding: 8px 16px;
+  background: rgba(120, 140, 170, 0.16);
+  border-bottom: 1px solid rgba(90, 110, 140, 0.28);
+  color: #3a4a63;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: center;
 }
 
 .proj-card--action {

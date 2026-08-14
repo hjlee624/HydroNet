@@ -53,8 +53,10 @@ export function createMemoryRepo(file) {
         id: u.id,
         name: u.name ?? prev.name ?? '',
         role: u.role ?? prev.role ?? 'user',
+        division: u.division ?? prev.division ?? null,
         passwordHash: u.passwordHash ?? prev.passwordHash ?? null,
         active: u.active ?? prev.active ?? true,
+        pending: u.pending ?? prev.pending ?? false,
       }
       save()
       return clone(state.users[u.id])
@@ -79,6 +81,7 @@ export function createMemoryRepo(file) {
         accessCodeHash: p.accessCodeHash ?? prev.accessCodeHash ?? null,
         createdBy: p.createdBy ?? prev.createdBy ?? null,
         active: p.active ?? prev.active ?? true,
+        division: p.division ?? prev.division ?? null,
       }
       save()
       return clone(state.projects[p.id])

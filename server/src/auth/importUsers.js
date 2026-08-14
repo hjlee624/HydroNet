@@ -3,7 +3,29 @@
 import * as XLSX from 'xlsx'
 import { hashSecret } from './crypto.js'
 import { canonicalPhoneId, normalizeLoginId } from './phone.js'
-import { isRole } from './roles.js'
+import { isDivision, isRole } from './roles.js'
+
+// 본부 라벨/키 → 키. 명부에 '본부' 열이 있으면 사용자 division 으로 저장(없으면 null).
+const DIVISION_LABEL_TO_KEY = {
+  경영전략본부: 'strategy',
+  물환경본부: 'water-env',
+  수자원본부: 'water-res',
+  국토개발본부: 'land',
+  철도본부: 'railway',
+  도로본부: 'road',
+  플랜트본부: 'plant',
+  cm: 'cm',
+  해외사업본부: 'overseas',
+  사업개발실: 'bizdev',
+  안전품질관리실: 'safety',
+}
+const DIVISION_HEADERS = ['본부', '부서', '소속', 'division', 'division_key']
+const resolveDivision = (v) => {
+  const s = String(v ?? '').trim()
+  if (!s) return null
+  if (isDivision(s)) return s
+  return DIVISION_LABEL_TO_KEY[s] ?? DIVISION_LABEL_TO_KEY[s.toLowerCase()] ?? null
+}
 
 const pick = (row, keys) => {
   const map = {}
@@ -96,6 +118,7 @@ function parseRosterRows(headers, rows) {
         username,
         name,
         role,
+        division: resolveDivision(pick(row, DIVISION_HEADERS)), // 선택 '본부' 열(없으면 null)
         password: username.slice(-4),
         passwordKind: 'initial-phone-last4',
       })
@@ -115,6 +138,7 @@ function parseGenericRows(rows) {
       username: normalizeLoginId(rawUsername),
       name: pick(row, ['name', '이름', '성명']),
       role: normRole(pick(row, ['role', '역할', '그룹', 'group'])),
+      division: resolveDivision(pick(row, DIVISION_HEADERS)),
       password: pick(row, ['password', '비밀번호', 'pw', 'passwd']),
       passwordKind: 'explicit',
     })
@@ -164,6 +188,7 @@ export async function importParsedUsers(repo, parsed, { resetPasswords = false }
       name: u.name,
       role: u.role,
       active: existing?.active ?? true,
+      ...(u.division ? { division: u.division } : {}),
       ...(passwordHash ? { passwordHash } : {}),
     })
   }

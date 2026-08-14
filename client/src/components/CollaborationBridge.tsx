@@ -29,6 +29,11 @@ export function CollaborationBridge() {
     publishPresenceSelection({ selectedTaskIds, selectedCategoryIds, selectedLinkId })
   }, [selectedTaskIds, selectedCategoryIds, selectedLinkId])
 
+  // 편집 권한 없이 입장(같은 본부 PM 조회 등)하면 조회 전용 — 모든 변경 차단(+WS 읽기전용).
+  useEffect(() => {
+    useEditor.getState().setReadOnly(!!entered && entered.canEdit === false)
+  }, [entered])
+
   useEffect(() => {
     let cancelled = false
     clearActiveCollaborationSession()

@@ -1,5 +1,6 @@
 // 개발자 전용 관리자 패널 — 전체 사용자 목록·역할 변경·계정 추가·CSV/엑셀 업로드. ADR-002.
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react'
+import { DIVISIONS, divisionLabel } from '../../data/divisions'
 import { type AdminUser, useAuth } from '../../state/authStore'
 
 const ROLE_OPTS = [
@@ -22,6 +23,7 @@ interface AddUserForm {
   id: string
   name: string
   role: string
+  division: string
   password: string
 }
 
@@ -32,9 +34,18 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const fetchAdminUsers = useAuth((s) => s.fetchAdminUsers)
   const upsertAdminUser = useAuth((s) => s.upsertAdminUser)
   const importUsersFile = useAuth((s) => s.importUsersFile)
+  const pendingApprovals = useAuth((s) => s.pendingApprovals)
+  const fetchPendingApprovals = useAuth((s) => s.fetchPendingApprovals)
+  const approveUser = useAuth((s) => s.approveUser)
 
   const [addOpen, setAddOpen] = useState(false)
-  const [addForm, setAddForm] = useState<AddUserForm>({ id: '', name: '', role: 'user', password: '' })
+  const [addForm, setAddForm] = useState<AddUserForm>({
+    id: '',
+    name: '',
+    role: 'user',
+    division: '',
+    password: '',
+  })
   const [addError, setAddError] = useState<string | null>(null)
   const [importMsg, setImportMsg] = useState<string | null>(null)
   const [editingRole, setEditingRole] = useState<string | null>(null) // userId
@@ -42,7 +53,8 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     void fetchAdminUsers()
-  }, [fetchAdminUsers])
+    void fetchPendingApprovals()
+  }, [fetchAdminUsers, fetchPendingApprovals])
 
   const handleRoleChange = async (user: AdminUser, role: string) => {
     setEditingRole(user.id)
@@ -59,17 +71,21 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const handleAddSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setAddError(null)
-    if (!addForm.id.trim()) { setAddError('아이디를 입력하세요.'); return }
+    if (!addForm.id.trim()) {
+      setAddError('아이디를 입력하세요.')
+      return
+    }
     const ok = await upsertAdminUser({
       id: addForm.id.trim(),
       name: addForm.name.trim(),
       role: addForm.role,
+      ...(addForm.division ? { division: addForm.division } : {}),
       ...(addForm.password ? { password: addForm.password } : {}),
       active: true,
     })
     if (ok) {
       setAddOpen(false)
-      setAddForm({ id: '', name: '', role: 'user', password: '' })
+      setAddForm({ id: '', name: '', role: 'user', division: '', password: '' })
     }
   }
 
@@ -98,7 +114,9 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
             <div className="admin-panel__title">⚙ 관리자 도구</div>
             <div className="admin-panel__sub">전체 사용자 계정 관리 (개발자 전용)</div>
           </div>
-          <button className="admin-close" type="button" onClick={onClose} aria-label="닫기">✕</button>
+          <button className="admin-close" type="button" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
         </div>
 
         {/* 도구 모음 */}
@@ -106,7 +124,10 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
           <button
             className="admin-btn admin-btn--primary"
             type="button"
-            onClick={() => { setAddOpen((v) => !v); setAddError(null) }}
+            onClick={() => {
+              setAddOpen((v) => !v)
+              setAddError(null)
+            }}
           >
             {addOpen ? '취소' : '＋ 사용자 추가'}
           </button>
@@ -164,12 +185,32 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                   onChange={(e) => setAddForm((f) => ({ ...f, role: e.target.value }))}
                 >
                   {ROLE_OPTS.map((o) => (
-                    <option key={o.value} value={o.value}>{o.label}</option>
+                    <option key={o.value} value={o.value}>
+                      {o.label}
+                    </option>
                   ))}
                 </select>
               </label>
               <label className="admin-field">
-                <span>초기 비밀번호 <em>(비워두면 로그인 불가)</em></span>
+                <span>
+                  본부 <em>(개발자는 비움)</em>
+                </span>
+                <select
+                  value={addForm.division}
+                  onChange={(e) => setAddForm((f) => ({ ...f, division: e.target.value }))}
+                >
+                  <option value="">— 없음 —</option>
+                  {DIVISIONS.map((d) => (
+                    <option key={d.key} value={d.key}>
+                      {d.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="admin-field">
+                <span>
+                  초기 비밀번호 <em>(비워두면 로그인 불가)</em>
+                </span>
                 <input
                   type="password"
                   value={addForm.password}
@@ -180,16 +221,57 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
             </div>
             {addError && <div className="admin-error">{addError}</div>}
             <div className="admin-add-form__actions">
-              <button className="admin-btn admin-btn--primary" type="submit" disabled={adminLoading}>
+              <button
+                className="admin-btn admin-btn--primary"
+                type="submit"
+                disabled={adminLoading}
+              >
                 {adminLoading ? '저장 중…' : '저장'}
               </button>
             </div>
           </form>
         )}
 
+        {/* 관리자(PM) 셀프등록 승인 대기 */}
+        {pendingApprovals.length > 0 && (
+          <div className="admin-pending">
+            <div className="admin-pending__title">
+              🔔 관리자 승인 대기 ({pendingApprovals.length})
+            </div>
+            <ul className="admin-pending__list">
+              {pendingApprovals.map((p) => (
+                <li key={p.id} className="admin-pending__item">
+                  <span className="admin-pending__name">{p.name || p.id}</span>
+                  <span className="admin-pending__meta">
+                    {p.id} · {divisionLabel(p.division ?? undefined) || '본부 미지정'}
+                  </span>
+                  <button
+                    className="admin-btn admin-btn--primary"
+                    type="button"
+                    onClick={() => void approveUser(p.id, true)}
+                  >
+                    승인
+                  </button>
+                  <button
+                    className="admin-btn"
+                    type="button"
+                    onClick={() => void approveUser(p.id, false)}
+                  >
+                    거절
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
         {/* 알림 메시지 */}
         {(adminError || importMsg) && (
-          <div className={importMsg?.startsWith('✅') ? 'admin-msg admin-msg--ok' : 'admin-msg admin-msg--err'}>
+          <div
+            className={
+              importMsg?.startsWith('✅') ? 'admin-msg admin-msg--ok' : 'admin-msg admin-msg--err'
+            }
+          >
             {adminError ?? importMsg}
           </div>
         )}
@@ -204,6 +286,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                 <tr>
                   <th>아이디</th>
                   <th>이름</th>
+                  <th>본부</th>
                   <th>역할</th>
                   <th>상태</th>
                   <th>비밀번호</th>
@@ -211,9 +294,17 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
               </thead>
               <tbody>
                 {adminUsers.map((u) => (
-                  <tr key={u.id} className={editingRole === u.id ? 'admin-row admin-row--busy' : 'admin-row'}>
+                  <tr
+                    key={u.id}
+                    className={editingRole === u.id ? 'admin-row admin-row--busy' : 'admin-row'}
+                  >
                     <td className="admin-cell-id">{u.id}</td>
                     <td>{u.name || <span className="admin-empty">-</span>}</td>
+                    <td>
+                      {divisionLabel(u.division ?? undefined) || (
+                        <span className="admin-empty">-</span>
+                      )}
+                    </td>
                     <td>
                       <select
                         className="admin-role-select"
@@ -223,14 +314,22 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                         aria-label={`${u.id} 역할`}
                       >
                         {ROLE_OPTS.map((o) => (
-                          <option key={o.value} value={o.value}>{ROLE_LABEL[o.value]}</option>
+                          <option key={o.value} value={o.value}>
+                            {ROLE_LABEL[o.value]}
+                          </option>
                         ))}
                       </select>
-                      <span className={ROLE_CLASS[u.role] ?? 'admin-badge'}>{ROLE_LABEL[u.role] ?? u.role}</span>
+                      <span className={ROLE_CLASS[u.role] ?? 'admin-badge'}>
+                        {ROLE_LABEL[u.role] ?? u.role}
+                      </span>
                     </td>
                     <td>
                       <button
-                        className={u.active ? 'admin-toggle admin-toggle--on' : 'admin-toggle admin-toggle--off'}
+                        className={
+                          u.active
+                            ? 'admin-toggle admin-toggle--on'
+                            : 'admin-toggle admin-toggle--off'
+                        }
                         type="button"
                         disabled={editingRole === u.id}
                         onClick={() => void handleToggleActive(u)}
@@ -248,7 +347,9 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                 ))}
                 {!adminUsers.length && (
                   <tr>
-                    <td colSpan={5} className="admin-empty-row">사용자가 없습니다.</td>
+                    <td colSpan={6} className="admin-empty-row">
+                      사용자가 없습니다.
+                    </td>
                   </tr>
                 )}
               </tbody>
