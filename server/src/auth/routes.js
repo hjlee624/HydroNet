@@ -297,10 +297,10 @@ export function createAuthRouter(repo, opts = {}) {
         : await repo.getMembership(projectId, req.user.id)
       if (!canEnterProject(req.user, membership))
         throw fail(403, '이 프로젝트 접근 권한이 없습니다.')
-      if (!accessCodeExempt(req.user, membership)) {
+      // 접속코드가 설정된 프로젝트에서만 코드를 검증한다. 코드가 없으면(미설정) 지정된
+      // 멤버(관리자·사용자)는 코드 없이 바로 입장 — 개발자·PM 은 어차피 코드 면제.
+      if (!accessCodeExempt(req.user, membership) && project.accessCodeHash) {
         const code = String(req.body?.code || '')
-        if (!project.accessCodeHash)
-          throw fail(403, '이 프로젝트에 접속코드가 설정되지 않았습니다. 관리자에게 문의하세요.')
         if (!(await verifySecret(code, project.accessCodeHash)))
           throw fail(401, '접속코드가 올바르지 않습니다.')
       }

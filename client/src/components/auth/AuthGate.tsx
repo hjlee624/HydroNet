@@ -52,7 +52,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
     )
   } else if (!user) {
     screen = <LoginScreen />
-  } else if (selected && selected.role === 'user') {
+  } else if (selected && selected.role === 'user' && selected.hasCode) {
     screen = <AccessCodeScreen />
   } else {
     screen = <ProjectSelectScreen />

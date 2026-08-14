@@ -247,8 +247,9 @@ export const useAuth = create<AuthState>((set, get) => ({
 
   select: async (p) => {
     set({ selected: p, error: null, projectMembers: null })
-    // 개발자·PM은 접속코드 면제 → 바로 입장 시도. 그 외는 접속코드 화면으로.
-    if (p.role === 'developer' || p.role === 'pm') await get().enter('')
+    // 개발자·PM은 코드 면제, 그리고 접속코드가 없는 프로젝트는 사용자도 바로 입장.
+    // 코드가 설정된 프로젝트를 고른 일반 사용자만 접속코드 화면으로 넘어간다.
+    if (p.role === 'developer' || p.role === 'pm' || !p.hasCode) await get().enter('')
   },
 
   enter: async (code) => {

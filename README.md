@@ -42,6 +42,45 @@ Sequence 는 토목 전 분야(도로·교량·터널·하천·상하수도·항
 
 ---
 
+## 아키텍처
+
+```mermaid
+flowchart LR
+  subgraph CL["클라이언트 · React / Vite"]
+    UI["도면 편집 UI"]
+    ST["상태 store · zustand"]
+    YD["Yjs Y.Doc · CRDT"]
+    IDB[("IndexedDB")]
+    UI --> ST --> YD --> IDB
+  end
+  subgraph SV["서버 · Node / Express"]
+    API["인증 · 프로젝트 API"]
+    WS["협업 WebSocket · Hocuspocus"]
+    RP["repo · pg 또는 memory"]
+    API --> RP
+    WS --> RP
+  end
+  DB[("PostgreSQL")]
+  UI -->|"HTTPS /api"| API
+  YD <-->|"WebSocket /collab"| WS
+  RP --> DB
+```
+
+## 접속 흐름
+
+```mermaid
+flowchart TD
+  A["로그인 · 전화번호 + 비밀번호"] --> B["프로젝트 선택"]
+  B --> C{"역할 · 접속코드"}
+  C -->|"개발자 · PM"| E["바로 입장"]
+  C -->|"사용자 · 코드 없음"| E
+  C -->|"사용자 · 코드 있음"| D["접속코드 입력"]
+  D --> E
+  E --> F["공정표 편집 · 실시간 협업"]
+```
+
+---
+
 ## 프로젝트 구조
 
 ```
@@ -97,7 +136,16 @@ npm --prefix client run build:single   # → Sequence.html (오프라인 단독 
   파일 기반 메모리 저장소로도 동작(소규모/사내).
 - **초기 계정** — 사용자가 하나도 없으면 환경변수(`AUTH_BOOTSTRAP_USER` /
   `AUTH_BOOTSTRAP_PASSWORD`, 기본 `admin` / `sequence`)로 개발자 계정을 시드합니다.
-- **권한** — 개발자(전체) · PM(담당 프로젝트) · 사용자(부여받은 프로젝트, 접속코드 입력).
+- **권한** — 개발자(전체) · PM(담당 프로젝트) · 사용자(부여받은 프로젝트).
+
+### 전사 배포 · 계정 일괄 등록
+
+1. **명부 업로드** — 관리자 도구에서 사내 명부 엑셀(`전화번호` · `이름` · `그룹` 열)을 올리면
+   전 직원 계정이 한 번에 생성됩니다. **초기 비밀번호 = 전화번호 뒤 4자리**.
+   (또는 `username · name · role · password` 열의 일반 CSV/엑셀도 지원.)
+2. **로그인** — 아이디 = 전화번호(010-…), 비밀번호 = 뒤 4자리로 각자 접속.
+3. **테스트 프로젝트** — 접속코드 없이 만든 프로젝트에 인원을 배정하면, 배정된 관리자·
+   사용자는 코드 없이 바로 입장해 함께 테스트할 수 있습니다.
 
 ---
 
