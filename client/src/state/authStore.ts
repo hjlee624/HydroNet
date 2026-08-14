@@ -121,6 +121,13 @@ interface AuthState {
   fetchPendingApprovals: () => Promise<void>
   /** 관리자 셀프등록 승인/거절(개발자 전용). 성공 시 목록 갱신. */
   approveUser: (id: string, approve: boolean) => Promise<boolean>
+  /** 알림 채널 시험 발송(개발자 전용) — 현재 설정으로 발송하고 결과 반환. */
+  testNotify: () => Promise<{
+    ok: boolean
+    provider?: string
+    recipients?: string[]
+    reason?: string
+  } | null>
   select: (p: ProjectSummary) => Promise<void>
   enter: (code: string) => Promise<void>
   exitProject: () => void
@@ -317,6 +324,12 @@ export const useAuth = create<AuthState>((set, get) => ({
     }
     await get().fetchPendingApprovals()
     return true
+  },
+
+  testNotify: async () => {
+    const r = await post('/api/admin/test-notify')
+    if (!r.ok) return { ok: false, reason: (r.data?.error as string) || '요청 실패' }
+    return r.data as { ok: boolean; provider?: string; recipients?: string[]; reason?: string }
   },
 
   select: async (p) => {

@@ -1,7 +1,7 @@
 // 인증/RBAC 라우터 — 로그인·세션·프로젝트 목록·접속코드 입장·관리(엑셀 업로드·멤버). ADR-002.
 import express from 'express'
 import { nanoid } from 'nanoid'
-import { notifyAdminRegistration } from '../notify.js'
+import { notifyAdminRegistration, sendTestNotification } from '../notify.js'
 import {
   hashSecret,
   signCollabToken,
@@ -449,6 +449,17 @@ export function createAuthRouter(repo, opts = {}) {
       res.json({ ok: true })
     }),
   )
+  // 알림 채널 설정 확인 — 현재 설정으로 시험 발송하고 결과 반환(개발자 전용).
+  router.post(
+    '/admin/test-notify',
+    authMw,
+    requireAdmin,
+    wrap(async (_req, res) => {
+      const r = await sendTestNotification(repo)
+      res.json(r)
+    }),
+  )
+
   // ── 관리자(PM) 등록 승인 대기 목록 + 승인/거절(개발자 전용) ──
   router.get(
     '/admin/pending',

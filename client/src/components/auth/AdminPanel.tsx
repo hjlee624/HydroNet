@@ -37,6 +37,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const pendingApprovals = useAuth((s) => s.pendingApprovals)
   const fetchPendingApprovals = useAuth((s) => s.fetchPendingApprovals)
   const approveUser = useAuth((s) => s.approveUser)
+  const testNotify = useAuth((s) => s.testNotify)
 
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState<AddUserForm>({
@@ -87,6 +88,19 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
       setAddOpen(false)
       setAddForm({ id: '', name: '', role: 'user', division: '', password: '' })
     }
+  }
+
+  const handleTestNotify = async () => {
+    setImportMsg('알림 발송 중…')
+    const r = await testNotify()
+    if (r?.ok)
+      setImportMsg(
+        `✅ 알림 발송됨 (채널: ${r.provider}, 수신 ${r.recipients?.length ?? 0}건) — 폰/앱을 확인하세요`,
+      )
+    else
+      setImportMsg(
+        `❌ 알림 미발송 (채널: ${r?.provider ?? '-'}) — ${r?.reason ?? '서버 .env 알림 설정을 확인하세요'}`,
+      )
   }
 
   const handleFileUpload = (e: ChangeEvent<HTMLInputElement>) => {
@@ -146,6 +160,14 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
             style={{ display: 'none' }}
             onChange={handleFileUpload}
           />
+          <button
+            className="admin-btn"
+            type="button"
+            onClick={() => void handleTestNotify()}
+            title="현재 알림 설정으로 시험 발송(개발자 수신 확인)"
+          >
+            🔔 알림 테스트
+          </button>
           <button
             className="admin-btn"
             type="button"
