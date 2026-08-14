@@ -6,19 +6,20 @@
 //      identified defect is recorded and never silently repeats.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import express from 'express'
-import cors from 'cors'
-import http from 'node:http'
-import fs from 'node:fs/promises'
 import fssync from 'node:fs'
-import path from 'node:path'
+import fs from 'node:fs/promises'
+import http from 'node:http'
 import os from 'node:os'
+import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { createMemoryRepo } from './auth/repo.js'
-import { createPgRepo } from './auth/pgRepo.js'
-import { createAuthRouter, bootstrapDeveloper } from './auth/routes.js'
+import cors from 'cors'
+import express from 'express'
 import { verifyToken } from './auth/crypto.js'
+import { createPgRepo } from './auth/pgRepo.js'
+import { createMemoryRepo } from './auth/repo.js'
 import { canAccessAll, canAdmin, canEnterProject } from './auth/roles.js'
+import { bootstrapDeveloper, createAuthRouter } from './auth/routes.js'
+import { bootstrapSampleProjects } from './auth/sampleProjects.js'
 import { attachCollaborationServer } from './collab/index.js'
 import {
   createBoundedRateLimiter,
@@ -113,7 +114,9 @@ const authRepo =
     ? createPgRepo(DATABASE_URL)
     : createMemoryRepo(path.join(DATA_DIR, 'auth.json'))
 if (authRepo.backend !== AUTH_BACKEND) {
-  throw new Error(`Auth repository backend mismatch: configured=${AUTH_BACKEND}, actual=${authRepo.backend}`)
+  throw new Error(
+    `Auth repository backend mismatch: configured=${AUTH_BACKEND}, actual=${authRepo.backend}`,
+  )
 }
 const secureCookie = process.env.AUTH_SECURE_COOKIE === '1' || process.env.NODE_ENV === 'production'
 const { router: authRouter, requireAuth } = createAuthRouter(authRepo, { secure: secureCookie })
@@ -121,7 +124,11 @@ const listGate = AUTH_ENABLED ? requireAuth : (_req, _res, next) => next()
 const logGate = AUTH_ENABLED
   ? requireAuth
   : (_req, res) => res.status(404).json({ error: 'Client logging is disabled.' })
-const clientLogLimiter = createBoundedRateLimiter({ limit: 30, windowMs: 60_000, maxTracked: 5_000 })
+const clientLogLimiter = createBoundedRateLimiter({
+  limit: 30,
+  windowMs: 60_000,
+  maxTracked: 5_000,
+})
 const clientLogRateGate = (req, res, next) => {
   const actor = req.user?.id || 'anonymous'
   const ip = req.ip || req.socket?.remoteAddress || 'unknown'
@@ -133,9 +140,23 @@ const clientLogRateGate = (req, res, next) => {
 if (AUTH_ENABLED) {
   app.use('/api', authRouter)
   bootstrapDeveloper(authRepo)
-    .then((b) => b && appendLog('info', `부트스트랩 개발자 계정: ${b.id} (초기 비밀번호는 AUTH_BOOTSTRAP_PASSWORD로 지정 권장)`))
+    .then(
+      (b) =>
+        b &&
+        appendLog(
+          'info',
+          `부트스트랩 개발자 계정: ${b.id} (초기 비밀번호는 AUTH_BOOTSTRAP_PASSWORD로 지정 권장)`,
+        ),
+    )
     .catch((e) => appendLog('error', 'auth bootstrap', { message: e.message }))
-  appendLog('info', `인증 활성(backend=${authRepo.backend}). 오프라인/단일HTML은 클라 로컬 모드로 우회.`)
+  // 본부별 예시 프로젝트 시드(온보딩용). 이미 있으면 건너뜀.
+  bootstrapSampleProjects(authRepo, DATA_DIR)
+    .then((c) => c.length && appendLog('info', `본부별 샘플 프로젝트 생성: ${c.length}건`))
+    .catch((e) => appendLog('error', 'sample bootstrap', { message: e.message }))
+  appendLog(
+    'info',
+    `인증 활성(backend=${authRepo.backend}). 오프라인/단일HTML은 클라 로컬 모드로 우회.`,
+  )
 }
 
 const idOk = (id) => typeof id === 'string' && /^[A-Za-z0-9_-]{1,80}$/.test(id)
@@ -185,7 +206,10 @@ const projectDeniedStatus = (req) =>
 const projectGate = async (req, res, next) => {
   try {
     const access = await resolveProjectAccess(req, req.params.id)
-    if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+    if (!access)
+      return res
+        .status(projectDeniedStatus(req))
+        .json({ error: '이 프로젝트 접근 권한이 없습니다.' })
     req.user = access.user
     req.projectGrant = access
     next()
@@ -263,31 +287,28 @@ app.get(
 )
 
 const sendProjectSnapshot = asyncRoute(async (req, res) => {
-    const { id } = req.params
-    if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
-    try {
-      const raw = await fs.readFile(fileFor(id), 'utf8')
-      res.type('application/json').send(raw)
-    } catch (e) {
-      if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
-      throw e
-    }
-  })
+  const { id } = req.params
+  if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
+  try {
+    const raw = await fs.readFile(fileFor(id), 'utf8')
+    res.type('application/json').send(raw)
+  } catch (e) {
+    if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
+    throw e
+  }
+})
 
 app.get('/api/projects/:id', projectGate, sendProjectSnapshot)
 app.get('/api/projects/:id/snapshot', projectGate, sendProjectSnapshot)
 
-app.put(
-  '/api/projects/:id',
-  projectGate,
-  (_req, res) => {
-    res.setHeader('Allow', 'GET')
-    res.status(405).json({
-      error: '전체 JSON PUT 저장은 종료되었습니다. 실시간 편집은 /collab을 사용하고 백업은 snapshot GET을 사용하세요.',
-      snapshot: '/api/projects/:id/snapshot',
-    })
-  },
-)
+app.put('/api/projects/:id', projectGate, (_req, res) => {
+  res.setHeader('Allow', 'GET')
+  res.status(405).json({
+    error:
+      '전체 JSON PUT 저장은 종료되었습니다. 실시간 편집은 /collab을 사용하고 백업은 snapshot GET을 사용하세요.',
+    snapshot: '/api/projects/:id/snapshot',
+  })
+})
 
 app.delete(
   '/api/projects/:id',
@@ -391,7 +412,10 @@ app.get(
       const raw = await fs.readFile(path.join(AUTOSAVE_DIR, `${name}.json`), 'utf8')
       const project = JSON.parse(raw)
       const access = idOk(project?.id) ? await resolveProjectAccess(req, project.id) : null
-      if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+      if (!access)
+        return res
+          .status(projectDeniedStatus(req))
+          .json({ error: '이 프로젝트 접근 권한이 없습니다.' })
       res.type('application/json').send(raw)
     } catch (e) {
       if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
@@ -407,7 +431,10 @@ app.post(
     if (!project || typeof project !== 'object' || !idOk(project.id))
       return res.status(400).json({ error: '잘못된 본문' })
     const access = await resolveProjectAccess(req, project.id)
-    if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+    if (!access)
+      return res
+        .status(projectDeniedStatus(req))
+        .json({ error: '이 프로젝트 접근 권한이 없습니다.' })
     const name = safeName(project.name)
     const file = path.join(AUTOSAVE_DIR, `${name}.json`)
     await serializeWrite(`autosave:${name}`, async () => {
@@ -432,7 +459,10 @@ app.delete(
       const file = path.join(AUTOSAVE_DIR, `${name}.json`)
       const project = JSON.parse(await fs.readFile(file, 'utf8'))
       const access = idOk(project?.id) ? await resolveProjectAccess(req, project.id) : null
-      if (!access) return res.status(projectDeniedStatus(req)).json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+      if (!access)
+        return res
+          .status(projectDeniedStatus(req))
+          .json({ error: '이 프로젝트 접근 권한이 없습니다.' })
       await fs.unlink(file)
       res.json({ ok: true })
     } catch (e) {
@@ -461,6 +491,7 @@ if (fssync.existsSync(CLIENT_DIST)) {
 }
 
 const served = fssync.existsSync(CLIENT_DIST)
+
 export { app, authRepo }
 
 export async function startServer(options = {}) {

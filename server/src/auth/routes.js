@@ -25,6 +25,7 @@ import {
   PROJECT_ROLES,
   sameDivision,
 } from './roles.js'
+import { sampleProjectId } from './sampleProjects.js'
 
 const COOKIE = 'hn_session'
 const parseCookies = (req) => {
@@ -219,6 +220,9 @@ export function createAuthRouter(repo, opts = {}) {
         active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
         pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
       })
+      // 소속 본부 샘플 프로젝트에 자동 배정 → 로그인 즉시 예시 공정표를 열어볼 수 있게(온보딩).
+      const sid = sampleProjectId(division)
+      if (await repo.getProject(sid)) await repo.addMember(sid, id, 'user', null)
       res.status(201).json({ ok: true, pending: isPm })
     }),
   )

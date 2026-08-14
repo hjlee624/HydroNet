@@ -1,0 +1,632 @@
+{
+  "id": "",
+  "name": "[샘플] 도로본부 — 도로(신설) 예시",
+  "kind": "construction",
+  "facility": "road-new",
+  "startDate": "2026-01-01",
+  "paper": {
+    "size": "A3",
+    "orientation": "landscape",
+    "marginMm": 10,
+    "dpi": 150,
+    "fitToPage": true
+  },
+  "view": {
+    "pxPerDay": 1.5,
+    "rowHeight": 46,
+    "labelWidth": 150,
+    "headerHeight": 56,
+    "scale": "month",
+    "showCriticalPath": true,
+    "showFloat": false,
+    "showGrid": true,
+    "showTitle": true,
+    "textStyles": {}
+  },
+  "categories": [
+    {
+      "id": "fc-0",
+      "name": "주요 마일스톤",
+      "color": "#6E8CA8",
+      "collapsed": false,
+      "order": 0
+    },
+    {
+      "id": "fc-1",
+      "name": "가설·부지정리",
+      "color": "#C9803B",
+      "collapsed": false,
+      "order": 1
+    },
+    {
+      "id": "fc-2",
+      "name": "토공",
+      "color": "#7FA06A",
+      "collapsed": false,
+      "order": 2
+    },
+    {
+      "id": "fc-3",
+      "name": "배수공",
+      "color": "#9A6FA6",
+      "collapsed": false,
+      "order": 3
+    },
+    {
+      "id": "fc-4",
+      "name": "구조물공",
+      "color": "#C36B6B",
+      "collapsed": false,
+      "order": 4
+    },
+    {
+      "id": "fc-5",
+      "name": "포장공",
+      "color": "#5E9CA0",
+      "collapsed": false,
+      "order": 5
+    },
+    {
+      "id": "fc-6",
+      "name": "부대공",
+      "color": "#B08A4F",
+      "collapsed": false,
+      "order": 6
+    },
+    {
+      "id": "fc-7",
+      "name": "시운전·준공",
+      "color": "#8089A8",
+      "collapsed": false,
+      "order": 7
+    }
+  ],
+  "tasks": [
+    {
+      "id": "ft-0-0-0",
+      "categoryId": "fc-0",
+      "name": "◆ 착공",
+      "start": 30,
+      "duration": 0,
+      "isMilestone": true,
+      "row": 0
+    },
+    {
+      "id": "ft-0-0-1",
+      "categoryId": "fc-0",
+      "name": "◆ 토공 착수",
+      "start": 90,
+      "duration": 0,
+      "isMilestone": true,
+      "row": 0
+    },
+    {
+      "id": "ft-0-0-2",
+      "categoryId": "fc-0",
+      "name": "◆ 구조물공 완료",
+      "start": 540,
+      "duration": 0,
+      "isMilestone": true,
+      "row": 0
+    },
+    {
+      "id": "ft-0-0-3",
+      "categoryId": "fc-0",
+      "name": "◆ 포장 표층 완료",
+      "start": 810,
+      "duration": 0,
+      "isMilestone": true,
+      "row": 0
+    },
+    {
+      "id": "ft-0-0-4",
+      "categoryId": "fc-0",
+      "name": "◆ 준공",
+      "start": 900,
+      "duration": 0,
+      "isMilestone": true,
+      "row": 0
+    },
+    {
+      "id": "ft-1-0-0",
+      "categoryId": "fc-1",
+      "name": "착공측량·기준점(TBM)측량",
+      "start": 30,
+      "duration": 30,
+      "isMilestone": false,
+      "row": 0,
+      "es": 30,
+      "ef": 60
+    },
+    {
+      "id": "ft-1-0-1",
+      "categoryId": "fc-1",
+      "name": "현장가설(가설사무소·가설도로)",
+      "start": 60,
+      "duration": 45,
+      "isMilestone": false,
+      "row": 0,
+      "es": 60,
+      "ef": 105
+    },
+    {
+      "id": "ft-1-0-2",
+      "categoryId": "fc-1",
+      "name": "교통처리(우회도로)·지장물 이설·수목이식",
+      "start": 105,
+      "duration": 45,
+      "isMilestone": false,
+      "row": 0,
+      "es": 105,
+      "ef": 150
+    },
+    {
+      "id": "ft-1-0-3",
+      "categoryId": "fc-1",
+      "name": "벌개제근·부지정리",
+      "start": 150,
+      "duration": 30,
+      "isMilestone": false,
+      "row": 0
+    },
+    {
+      "id": "ft-2-0-0",
+      "categoryId": "fc-2",
+      "name": "표토제거",
+      "start": 90,
+      "duration": 30,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "절토부",
+      "es": 90,
+      "ef": 120
+    },
+    {
+      "id": "ft-2-0-1",
+      "categoryId": "fc-2",
+      "name": "절토(리핑·발파)",
+      "start": 120,
+      "duration": 150,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "절토부",
+      "es": 120,
+      "ef": 270
+    },
+    {
+      "id": "ft-2-0-2",
+      "categoryId": "fc-2",
+      "name": "비탈면 정리·소단정리",
+      "start": 270,
+      "duration": 45,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "절토부"
+    },
+    {
+      "id": "ft-2-1-0",
+      "categoryId": "fc-2",
+      "name": "기초처리·성토·다짐",
+      "start": 150,
+      "duration": 180,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "성토부",
+      "es": 150,
+      "ef": 330
+    },
+    {
+      "id": "ft-2-1-1",
+      "categoryId": "fc-2",
+      "name": "노체·노상 마무리(현장다짐시험)",
+      "start": 330,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "성토부"
+    },
+    {
+      "id": "ft-3-0-0",
+      "categoryId": "fc-3",
+      "name": "종배수관·L형측구 설치",
+      "start": 180,
+      "duration": 120,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "종·횡배수",
+      "es": 180,
+      "ef": 300
+    },
+    {
+      "id": "ft-3-0-1",
+      "categoryId": "fc-3",
+      "name": "횡배수관 설치",
+      "start": 300,
+      "duration": 90,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "종·횡배수",
+      "es": 300,
+      "ef": 390
+    },
+    {
+      "id": "ft-3-0-2",
+      "categoryId": "fc-3",
+      "name": "집수정·맨홀·배수시설 마무리",
+      "start": 390,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "종·횡배수"
+    },
+    {
+      "id": "ft-4-0-0",
+      "categoryId": "fc-4",
+      "name": "기초굴착·버림콘크리트",
+      "start": 210,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "옹벽",
+      "es": 210,
+      "ef": 270
+    },
+    {
+      "id": "ft-4-0-1",
+      "categoryId": "fc-4",
+      "name": "철근조립·거푸집",
+      "start": 270,
+      "duration": 90,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "옹벽",
+      "es": 270,
+      "ef": 360
+    },
+    {
+      "id": "ft-4-0-2",
+      "categoryId": "fc-4",
+      "name": "옹벽 콘크리트 타설·양생",
+      "start": 360,
+      "duration": 120,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "옹벽",
+      "es": 360,
+      "ef": 480
+    },
+    {
+      "id": "ft-4-0-3",
+      "categoryId": "fc-4",
+      "name": "뒷채움·되메우기",
+      "start": 480,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "옹벽"
+    },
+    {
+      "id": "ft-4-1-0",
+      "categoryId": "fc-4",
+      "name": "터파기·기초공",
+      "start": 270,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "암거(BOX)",
+      "es": 270,
+      "ef": 330
+    },
+    {
+      "id": "ft-4-1-1",
+      "categoryId": "fc-4",
+      "name": "박스 철근·거푸집·타설·양생",
+      "start": 330,
+      "duration": 150,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "암거(BOX)",
+      "es": 330,
+      "ef": 480
+    },
+    {
+      "id": "ft-4-1-2",
+      "categoryId": "fc-4",
+      "name": "방수·되메우기",
+      "start": 480,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "암거(BOX)"
+    },
+    {
+      "id": "ft-5-0-0",
+      "categoryId": "fc-5",
+      "name": "동상방지층·보조기층 포설·다짐",
+      "start": 540,
+      "duration": 90,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "포장층",
+      "es": 540,
+      "ef": 630
+    },
+    {
+      "id": "ft-5-0-1",
+      "categoryId": "fc-5",
+      "name": "아스팔트 기층 포설",
+      "start": 630,
+      "duration": 90,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "포장층",
+      "es": 630,
+      "ef": 720
+    },
+    {
+      "id": "ft-5-0-2",
+      "categoryId": "fc-5",
+      "name": "표층 포설·다짐",
+      "start": 720,
+      "duration": 90,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "포장층",
+      "es": 720,
+      "ef": 810
+    },
+    {
+      "id": "ft-5-0-3",
+      "categoryId": "fc-5",
+      "name": "노면표시·시선유도시설",
+      "start": 810,
+      "duration": 30,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "포장층"
+    },
+    {
+      "id": "ft-6-0-0",
+      "categoryId": "fc-6",
+      "name": "가드레일·방호울타리 설치",
+      "start": 720,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "안전·교통",
+      "es": 720,
+      "ef": 780
+    },
+    {
+      "id": "ft-6-0-1",
+      "categoryId": "fc-6",
+      "name": "표지판·신호·조명설비",
+      "start": 780,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 0,
+      "subName": "안전·교통"
+    },
+    {
+      "id": "ft-6-1-0",
+      "categoryId": "fc-6",
+      "name": "비탈면 녹화·식재",
+      "start": 720,
+      "duration": 60,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "조경",
+      "es": 720,
+      "ef": 780
+    },
+    {
+      "id": "ft-6-1-1",
+      "categoryId": "fc-6",
+      "name": "환경정비·부대시설 마무리",
+      "start": 780,
+      "duration": 45,
+      "isMilestone": false,
+      "row": 1,
+      "subName": "조경"
+    },
+    {
+      "id": "ft-7-0-0",
+      "categoryId": "fc-7",
+      "name": "부대시설 시운전·기능점검",
+      "start": 840,
+      "duration": 30,
+      "isMilestone": false,
+      "row": 0,
+      "es": 840,
+      "ef": 870
+    },
+    {
+      "id": "ft-7-0-1",
+      "categoryId": "fc-7",
+      "name": "준공검사·정산·인계",
+      "start": 870,
+      "duration": 30,
+      "isMilestone": false,
+      "row": 0
+    }
+  ],
+  "links": [
+    {
+      "id": "fl-1",
+      "from": "ft-1-0-0",
+      "to": "ft-1-0-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-2",
+      "from": "ft-1-0-1",
+      "to": "ft-1-0-2",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-3",
+      "from": "ft-1-0-2",
+      "to": "ft-1-0-3",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-4",
+      "from": "ft-2-0-0",
+      "to": "ft-2-0-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-5",
+      "from": "ft-2-0-1",
+      "to": "ft-2-0-2",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-6",
+      "from": "ft-2-1-0",
+      "to": "ft-2-1-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-7",
+      "from": "ft-3-0-0",
+      "to": "ft-3-0-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-8",
+      "from": "ft-3-0-1",
+      "to": "ft-3-0-2",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-9",
+      "from": "ft-4-0-0",
+      "to": "ft-4-0-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-10",
+      "from": "ft-4-0-1",
+      "to": "ft-4-0-2",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-11",
+      "from": "ft-4-0-2",
+      "to": "ft-4-0-3",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-12",
+      "from": "ft-4-1-0",
+      "to": "ft-4-1-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-13",
+      "from": "ft-4-1-1",
+      "to": "ft-4-1-2",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-14",
+      "from": "ft-5-0-0",
+      "to": "ft-5-0-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-15",
+      "from": "ft-5-0-1",
+      "to": "ft-5-0-2",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-16",
+      "from": "ft-5-0-2",
+      "to": "ft-5-0-3",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-17",
+      "from": "ft-6-0-0",
+      "to": "ft-6-0-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-18",
+      "from": "ft-6-1-0",
+      "to": "ft-6-1-1",
+      "type": "FS",
+      "lag": 0
+    },
+    {
+      "id": "fl-19",
+      "from": "ft-7-0-0",
+      "to": "ft-7-0-1",
+      "type": "FS",
+      "lag": 0
+    }
+  ],
+  "rainySeasons": [
+    {
+      "id": "rs-1",
+      "label": "우기",
+      "startMonth": 6,
+      "startDay": 1,
+      "endMonth": 9,
+      "endDay": 30,
+      "efficiency": 0.7
+    }
+  ],
+  "palette": [
+    "#6E8CA8",
+    "#C9803B",
+    "#7FA06A",
+    "#9A6FA6",
+    "#C36B6B",
+    "#5E9CA0",
+    "#B08A4F",
+    "#8089A8",
+    "#E12D1B",
+    "#2E7D6B"
+  ],
+  "branding": {
+    "logos": [
+      {
+        "src": "data:image/gif;base64,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",
+        "w": 168,
+        "h": 60
+      }
+    ]
+  },
+  "commissioningEnabled": false,
+  "meta": {
+    "createdAt": "2026-08-14T03:50:51.488Z",
+    "updatedAt": "2026-08-14T03:50:51.488Z",
+    "schemaVersion": 1
+  },
+  "activeSheet": {
+    "id": "sh-cons",
+    "role": "milestone",
+    "name": "시공 공정표"
+  },
+  "sheets": []
+}
