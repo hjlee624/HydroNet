@@ -36,6 +36,9 @@ server/data/ydocs/
 /*마일스톤*.json
 
 # Local personnel rosters contain names/phone numbers and must never be committed.
+# 명부/개인정보 유출 방지 — 모든 .xlsx/.xls 는 추적 금지(샘플은 .csv 로 유지).
+*.xlsx
+*.xls
 DB/*.xlsx
 
 # Environment / editor / tooling

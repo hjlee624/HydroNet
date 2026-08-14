@@ -1,6 +1,7 @@
 // 인증/RBAC 라우터 — 로그인·세션·프로젝트 목록·접속코드 입장·관리(엑셀 업로드·멤버). ADR-002.
 import express from 'express'
 import { nanoid } from 'nanoid'
+import { notifyAdminRegistration } from '../notify.js'
 import {
   hashSecret,
   signCollabToken,
@@ -219,6 +220,10 @@ export function createAuthRouter(repo, opts = {}) {
         active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
         pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
       })
+      // 관리자(PM) 신청은 개발자에게 SMS 알림(서버 측 발송 — 개발자 로그인 불필요). 등록 흐름은 막지 않음.
+      if (isPm) {
+        void notifyAdminRegistration(repo, { id, name: String(name || '').trim(), division })
+      }
       res.status(201).json({ ok: true, pending: isPm })
     }),
   )
