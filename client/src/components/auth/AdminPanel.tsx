@@ -39,6 +39,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const approveUser = useAuth((s) => s.approveUser)
   const deleteAdminUser = useAuth((s) => s.deleteAdminUser)
   const currentUserId = useAuth((s) => s.user?.id)
+  const testNotify = useAuth((s) => s.testNotify)
 
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState<AddUserForm>({
@@ -50,6 +51,8 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   })
   const [addError, setAddError] = useState<string | null>(null)
   const [importMsg, setImportMsg] = useState<string | null>(null)
+  const [notifyMsg, setNotifyMsg] = useState<string | null>(null)
+  const [notifyBusy, setNotifyBusy] = useState(false)
   const [editingRole, setEditingRole] = useState<string | null>(null) // userId
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -120,6 +123,14 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     e.target.value = ''
   }
 
+  const handleTestNotify = async () => {
+    setNotifyMsg(null)
+    setNotifyBusy(true)
+    const r = await testNotify()
+    setNotifyBusy(false)
+    setNotifyMsg(r.ok ? '✅ 네이버웍스 알림 테스트 발송 완료' : `❌ ${r.error || '알림 발송 실패'}`)
+  }
+
   return (
     <div className="admin-overlay" role="dialog" aria-modal="true" aria-label="관리자 도구">
       <div className="admin-panel">
@@ -169,6 +180,15 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
             title="목록 새로고침"
           >
             🔄
+          </button>
+          <button
+            className="admin-btn"
+            type="button"
+            onClick={() => void handleTestNotify()}
+            disabled={notifyBusy}
+            title="네이버웍스 알림 연동 테스트 (개발자 본인에게 DM 발송)"
+          >
+            {notifyBusy ? '발송 중…' : '🔔 알림 테스트'}
           </button>
         </div>
 
@@ -281,13 +301,15 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
         )}
 
         {/* 알림 메시지 */}
-        {(adminError || importMsg) && (
+        {(notifyMsg || adminError || importMsg) && (
           <div
             className={
-              importMsg?.startsWith('✅') ? 'admin-msg admin-msg--ok' : 'admin-msg admin-msg--err'
+              (notifyMsg ?? adminError ?? importMsg ?? '').startsWith('✅')
+                ? 'admin-msg admin-msg--ok'
+                : 'admin-msg admin-msg--err'
             }
           >
-            {adminError ?? importMsg}
+            {notifyMsg ?? adminError ?? importMsg}
           </div>
         )}
 

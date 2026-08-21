@@ -10,6 +10,7 @@ import {
   verifyToken,
 } from './crypto.js'
 import { importUsers } from './importUsers.js'
+import { notifyRegistrationSafe, sendTestNotification } from '../notify/works.js'
 import { normalizeLoginId } from './phone.js'
 import {
   accessCodeExempt,
@@ -219,6 +220,11 @@ export function createAuthRouter(repo, opts = {}) {
         active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
         pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
       })
+      if (isPm) {
+        // 계정 사용 신청 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 발송 실패해도 등록은 성공.
+        // notifyRegistrationSafe 는 절대 throw 안 하지만, 리팩터링 안전망으로 .catch 도 건다.
+        void notifyRegistrationSafe({ name, id, role, division }).catch(() => {})
+      }
       // 체험존(본부 샘플) 접근은 본부 기준이라 별도 배정 불필요 — 로그인 즉시 열람·편집 가능.
       res.status(201).json({ ok: true, pending: isPm })
     }),
@@ -481,6 +487,15 @@ export function createAuthRouter(repo, opts = {}) {
         pending: false,
       })
       res.json({ ok: true, approved: approve })
+    }),
+  )
+  // ── 네이버웍스 알림 연동 테스트(개발자 전용) — 운영자 본인에게 테스트 DM 발송. ──
+  router.post(
+    '/admin/notify/test',
+    authMw,
+    requireAdmin,
+    wrap(async (_req, res) => {
+      res.json(await sendTestNotification()) // { ok, configured, error? } — 200 + 결과 페이로드
     }),
   )
 

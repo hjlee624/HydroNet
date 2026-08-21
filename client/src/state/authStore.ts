@@ -150,6 +150,8 @@ interface AuthState {
   deleteAdminUser: (id: string) => Promise<boolean>
   /** 엑셀/CSV 업로드(개발자 전용). */
   importUsersFile: (base64: string) => Promise<{ imported?: number; error?: string } | null>
+  /** 네이버웍스 알림 연동 테스트(개발자 전용) — 운영자 본인에게 테스트 DM 발송. */
+  testNotify: () => Promise<{ ok: boolean; configured?: boolean; error?: string }>
 }
 
 const j = async (path: string, init?: RequestInit) => {
@@ -465,5 +467,11 @@ export const useAuth = create<AuthState>((set, get) => ({
     } finally {
       set({ adminLoading: false })
     }
+  },
+
+  testNotify: async () => {
+    const r = await post('/api/admin/notify/test')
+    const d = (r.data ?? {}) as { ok?: boolean; configured?: boolean; error?: string }
+    return { ok: !!d.ok, configured: d.configured, error: d.error }
   },
 }))

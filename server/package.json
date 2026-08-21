@@ -9,6 +9,7 @@
     "dev": "node --watch src/index.js",
     "auth-smoke": "node scripts/auth-smoke.mjs",
     "collab-smoke": "node scripts/collab-smoke.mjs",
+    "works-smoke": "node scripts/works-smoke.mjs",
     "seed:roster": "node scripts/seed-roster.mjs"
   },
   "engines": {
