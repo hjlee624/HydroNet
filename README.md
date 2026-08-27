@@ -1,5 +1,9 @@
 # Sequence
 
+<p align="center">
+  <img src="docs/login-preview.gif" alt="Sequence — 로그인 화면(본부 회전 쇼케이스)" width="820">
+</p>
+
 **토목 설계·시공 공정표(예정공정표 · 마일스톤) 관리 프로그램**
 
 Sequence 는 토목 전 분야(도로·교량·터널·하천·상하수도·항만·철도·단지·지반·수자원/댐 등)의
