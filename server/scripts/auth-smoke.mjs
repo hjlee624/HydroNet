@@ -377,12 +377,12 @@ cookie = ''
 r = await call('POST', '/auth/register', {
   name: '등록사용자',
   phone: '010-7777-0001',
-  password: '1234',
+  password: 'Pass12!@',
   role: 'user',
   division: 'road',
 })
 ok(r.status === 201 && r.data.pending === false, '사용자 셀프등록(즉시 활성)')
-r = await call('POST', '/auth/login', { username: '010-7777-0001', password: '1234' })
+r = await call('POST', '/auth/login', { username: '010-7777-0001', password: 'Pass12!@' })
 ok(r.status === 200 && r.data.user.division === 'road', '등록 사용자 로그인 + 본부 반영')
 r = await call('GET', '/auth/projects')
 ok(
@@ -393,12 +393,12 @@ cookie = ''
 r = await call('POST', '/auth/register', {
   name: '등록관리자',
   phone: '010-7777-0002',
-  password: '1234',
+  password: 'Pass12!@',
   role: 'pm',
   division: 'road',
 })
 ok(r.status === 201 && r.data.pending === true, '관리자 셀프등록(승인 대기)')
-r = await call('POST', '/auth/login', { username: '010-7777-0002', password: '1234' })
+r = await call('POST', '/auth/login', { username: '010-7777-0002', password: 'Pass12!@' })
 ok(r.status === 401, '승인 전 관리자 로그인 거부')
 r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
 r = await call('GET', '/admin/pending')
@@ -406,10 +406,14 @@ ok(
   r.status === 200 && r.data.some((u) => u.id === '01077770002'),
   '개발자 승인대기 목록 노출(알림)',
 )
+ok(
+  typeof r.data.find((u) => u.id === '01077770002')?.requestedAt === 'number',
+  '승인 대기 항목에 요청 시각(requestedAt) 포함',
+)
 r = await call('POST', '/admin/users/01077770002/approve', { approve: true })
 ok(r.status === 200 && r.data.approved === true, '개발자 관리자 승인')
 cookie = ''
-r = await call('POST', '/auth/login', { username: '010-7777-0002', password: '1234' })
+r = await call('POST', '/auth/login', { username: '010-7777-0002', password: 'Pass12!@' })
 ok(r.status === 200 && r.data.user.role === 'pm', '승인 후 관리자 로그인')
 
 // 사용자 삭제(개발자 전용) — 본인 삭제 금지 + 실제 삭제·멤버십 정리
@@ -420,6 +424,87 @@ r = await call('DELETE', '/admin/users/010-7777-0001', {})
 ok(
   r.status === 200 && (await repo.getUser('01077770001')) === null,
   '개발자 사용자 삭제(200) + 저장소 제거',
+)
+
+// ── 비밀번호 정책 · 초기화 요청 · 변경(신규) ──
+cookie = ''
+r = await call('POST', '/auth/register', {
+  name: '약한암호',
+  phone: '010-7777-0003',
+  password: '123',
+  role: 'user',
+  division: 'road',
+})
+ok(r.status === 400, '약한 비밀번호 등록 거부(정책)')
+r = await call('POST', '/auth/register', {
+  name: '정상암호',
+  phone: '010-7777-0003',
+  password: 'Good12!@',
+  role: 'user',
+  division: 'road',
+})
+ok(r.status === 201, '정책 통과 비밀번호 등록(201)')
+cookie = ''
+r = await call('POST', '/auth/login', { username: '010-7777-0003', password: 'Good12!@' })
+ok(r.status === 200 && r.data.mustChangePassword === false, '정책 통과 로그인 — 강제변경 없음')
+
+// 초기화 요청(공개) → 관리자 목록 → 관리자 새 비밀번호 지정 → 새 비밀번호 로그인
+cookie = ''
+r = await call('POST', '/auth/reset-request', { phone: '010-7777-0003' })
+ok(r.status === 200, '비밀번호 초기화 요청 접수')
+r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
+r = await call('GET', '/admin/reset-requests')
+ok(r.status === 200 && r.data.some((u) => u.id === '01077770003'), '초기화 요청 목록 노출')
+ok(
+  typeof r.data.find((u) => u.id === '01077770003')?.requestedAt === 'number',
+  '초기화 요청 항목에 요청 시각(requestedAt) 포함',
+)
+r = await call('POST', '/admin/users/010-7777-0003/password', { password: 'ResetX9!' })
+ok(r.status === 200, '관리자 새 비밀번호 지정(200)')
+r = await call('GET', '/admin/reset-requests')
+ok(r.status === 200 && !r.data.some((u) => u.id === '01077770003'), '지정 후 요청 목록에서 제거')
+cookie = ''
+r = await call('POST', '/auth/login', { username: '010-7777-0003', password: 'ResetX9!' })
+ok(r.status === 200, '관리자 지정 비밀번호로 로그인')
+
+// 본인 비밀번호 변경 — 현재 비밀번호 검증 + 정책 + 새 비밀번호 로그인
+r = await call('POST', '/auth/change-password', {
+  currentPassword: 'Wrong9!x',
+  newPassword: 'Newpw12!',
+})
+ok(r.status === 401, '현재 비밀번호 불일치 변경 거부(401)')
+r = await call('POST', '/auth/change-password', {
+  currentPassword: 'ResetX9!',
+  newPassword: 'weak',
+})
+ok(r.status === 400, '약한 새 비밀번호 변경 거부(정책)')
+r = await call('POST', '/auth/change-password', {
+  currentPassword: 'ResetX9!',
+  newPassword: 'Newpw12!',
+})
+ok(r.status === 200, '본인 비밀번호 변경(200)')
+cookie = ''
+r = await call('POST', '/auth/login', { username: '010-7777-0003', password: 'Newpw12!' })
+ok(r.status === 200, '변경된 비밀번호로 로그인')
+
+// 구 정책(4자리) 비밀번호 사용자(roster 임포트) → 로그인 시 강제변경 플래그
+cookie = ''
+r = await call('POST', '/auth/login', {
+  username: parsedRoster[0].username,
+  password: parsedRoster[0].password,
+})
+ok(r.status === 200 && r.data.mustChangePassword === true, '구 정책 비밀번호 → 강제 변경 플래그')
+
+// 멤버 추가용 사용자 검색 — 본부(division) 포함(본부별 인원 선택 UI용)
+r = await call('POST', '/auth/login', { username: boot.id, password: boot.password })
+r = await call('GET', '/users/searchable')
+ok(
+  r.status === 200 && r.data.every((u) => 'division' in u),
+  '사용자 검색 결과에 division 포함',
+)
+ok(
+  r.data.find((u) => u.id === '01077770003')?.division === 'road',
+  '검색 결과 division 값 정확(road)',
 )
 
 // 비로그인 차단

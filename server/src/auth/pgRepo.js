@@ -15,6 +15,10 @@ export function createPgRepo(connectionString) {
       passwordHash: r.password_hash,
       active: r.active,
       pending: r.pending,
+      resetRequested: r.reset_requested,
+      mustChangePassword: r.must_change_password,
+      pendingAt: r.pending_at != null ? Number(r.pending_at) : null,
+      resetRequestedAt: r.reset_requested_at != null ? Number(r.reset_requested_at) : null,
     }
   const projRow = (r) =>
     r && {
@@ -39,12 +43,21 @@ export function createPgRepo(connectionString) {
       return (await q('SELECT * FROM users ORDER BY id')).rows.map(userRow)
     },
     async upsertUser(u) {
+      // reset_requested/must_change_password: INSERT 시 미제공이면 false, UPDATE 시 미제공(null)이면
+      // 기존 값 보존(COALESCE). 부분 upsert(예: /admin approve)에서도 플래그가 지워지지 않게 —
+      // 메모리 어댑터의 `u.x ?? prev.x ?? false` 와 동일한 의미.
       const r = await q(
-        `INSERT INTO users (id,name,role,division,password_hash,active,pending) VALUES ($1,$2,$3,$4,$5,$6,$7)
+        `INSERT INTO users (id,name,role,division,password_hash,active,pending,reset_requested,must_change_password,pending_at,reset_requested_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,false),COALESCE($9,false),$10,$11)
          ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name, role=EXCLUDED.role,
            division=COALESCE(EXCLUDED.division, users.division),
            password_hash=COALESCE(EXCLUDED.password_hash, users.password_hash),
-           active=EXCLUDED.active, pending=EXCLUDED.pending, updated_at=now()
+           active=EXCLUDED.active, pending=EXCLUDED.pending,
+           reset_requested=COALESCE($8, users.reset_requested),
+           must_change_password=COALESCE($9, users.must_change_password),
+           pending_at=COALESCE($10, users.pending_at),
+           reset_requested_at=COALESCE($11, users.reset_requested_at),
+           updated_at=now()
          RETURNING *`,
         [
           u.id,
@@ -54,6 +67,10 @@ export function createPgRepo(connectionString) {
           u.passwordHash ?? null,
           u.active ?? true,
           u.pending ?? false,
+          u.resetRequested ?? null,
+          u.mustChangePassword ?? null,
+          u.pendingAt ?? null,
+          u.resetRequestedAt ?? null,
         ],
       )
       return userRow(r.rows[0])

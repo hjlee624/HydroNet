@@ -1,6 +1,7 @@
 // 개발자 전용 관리자 패널 — 전체 사용자 목록·역할 변경·계정 추가·CSV/엑셀 업로드. ADR-002.
 import { type ChangeEvent, type FormEvent, useEffect, useRef, useState } from 'react'
 import { DIVISIONS, divisionLabel } from '../../data/divisions'
+import { PASSWORD_RULE_TEXT, validatePassword } from '../../utils/password'
 import { type AdminUser, useAuth } from '../../state/authStore'
 
 const ROLE_OPTS = [
@@ -18,6 +19,17 @@ const ROLE_CLASS: Record<string, string> = {
   pm: 'admin-badge admin-badge--pm',
   user: 'admin-badge admin-badge--user',
 }
+
+/** 요청 접수 시각 표시 — 예: "8월 27일 오후 2:32". 값이 없으면(구버전 데이터) 빈 문자열. */
+const formatRequestedAt = (ts?: number | null): string =>
+  ts == null
+    ? ''
+    : new Date(ts).toLocaleString('ko-KR', {
+        month: 'long',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
 
 interface AddUserForm {
   id: string
@@ -40,6 +52,9 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const deleteAdminUser = useAuth((s) => s.deleteAdminUser)
   const currentUserId = useAuth((s) => s.user?.id)
   const testNotify = useAuth((s) => s.testNotify)
+  const resetRequests = useAuth((s) => s.resetRequests)
+  const fetchResetRequests = useAuth((s) => s.fetchResetRequests)
+  const adminSetPassword = useAuth((s) => s.adminSetPassword)
 
   const [addOpen, setAddOpen] = useState(false)
   const [addForm, setAddForm] = useState<AddUserForm>({
@@ -54,12 +69,19 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
   const [notifyMsg, setNotifyMsg] = useState<string | null>(null)
   const [notifyBusy, setNotifyBusy] = useState(false)
   const [editingRole, setEditingRole] = useState<string | null>(null) // userId
+  // 비밀번호 직접 지정(초기화 요청 처리·임의 변경 공용) — 한 번에 한 사용자만 편집.
+  const [pwSetId, setPwSetId] = useState<string | null>(null) // 열린 슬롯 키(reset:id / row:id)
+  const [pwSetUserId, setPwSetUserId] = useState('') // 대상 사용자 id
+  const [pwSetVal, setPwSetVal] = useState('')
+  const [pwSetBusy, setPwSetBusy] = useState(false)
+  const [pwSetErr, setPwSetErr] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     void fetchAdminUsers()
     void fetchPendingApprovals()
-  }, [fetchAdminUsers, fetchPendingApprovals])
+    void fetchResetRequests()
+  }, [fetchAdminUsers, fetchPendingApprovals, fetchResetRequests])
 
   const handleRoleChange = async (user: AdminUser, role: string) => {
     setEditingRole(user.id)
@@ -92,6 +114,13 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     if (!addForm.id.trim()) {
       setAddError('아이디를 입력하세요.')
       return
+    }
+    if (addForm.password) {
+      const chk = validatePassword(addForm.password)
+      if (!chk.ok) {
+        setAddError(chk.reason ?? '비밀번호 정책을 확인하세요.')
+        return
+      }
     }
     const ok = await upsertAdminUser({
       id: addForm.id.trim(),
@@ -130,6 +159,58 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
     setNotifyBusy(false)
     setNotifyMsg(r.ok ? '✅ 네이버웍스 알림 테스트 발송 완료' : `❌ ${r.error || '알림 발송 실패'}`)
   }
+
+  const openPwSet = (key: string, userId: string) => {
+    setPwSetId(key)
+    setPwSetUserId(userId)
+    setPwSetVal('')
+    setPwSetErr(null)
+  }
+  const submitPwSet = async () => {
+    const chk = validatePassword(pwSetVal)
+    if (!chk.ok) {
+      setPwSetErr(chk.reason ?? '비밀번호 정책을 확인하세요.')
+      return
+    }
+    setPwSetBusy(true)
+    const ok = await adminSetPassword(pwSetUserId, pwSetVal)
+    setPwSetBusy(false)
+    if (ok) {
+      setPwSetId(null)
+      setPwSetVal('')
+    } else {
+      setPwSetErr('설정 실패 — 다시 시도하세요.')
+    }
+  }
+  // 초기화 요청 목록·사용자 표에서 공용으로 쓰는 인라인 새 비밀번호 입력.
+  const pwSetInline = (id: string) =>
+    pwSetId === id ? (
+      <span className="admin-pw-edit">
+        <input
+          type="text"
+          className="admin-pw-input"
+          value={pwSetVal}
+          maxLength={12}
+          onChange={(e) => setPwSetVal(e.target.value.slice(0, 12))}
+          placeholder={PASSWORD_RULE_TEXT}
+          aria-label="새 비밀번호"
+          // biome-ignore lint/a11y/noAutofocus: 관리자가 방금 연 인라인 입력
+          autoFocus
+        />
+        <button
+          className="admin-btn admin-btn--primary"
+          type="button"
+          disabled={pwSetBusy}
+          onClick={() => void submitPwSet()}
+        >
+          {pwSetBusy ? '…' : '저장'}
+        </button>
+        <button className="admin-btn" type="button" onClick={() => setPwSetId(null)}>
+          취소
+        </button>
+        {pwSetErr && <span className="admin-pw-edit__err">{pwSetErr}</span>}
+      </span>
+    ) : null
 
   return (
     <div className="admin-overlay" role="dialog" aria-modal="true" aria-label="관리자 도구">
@@ -247,10 +328,13 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                   초기 비밀번호 <em>(비워두면 로그인 불가)</em>
                 </span>
                 <input
-                  type="password"
+                  type="text"
+                  maxLength={12}
                   value={addForm.password}
-                  onChange={(e) => setAddForm((f) => ({ ...f, password: e.target.value }))}
-                  placeholder="선택"
+                  onChange={(e) =>
+                    setAddForm((f) => ({ ...f, password: e.target.value.slice(0, 12) }))
+                  }
+                  placeholder={PASSWORD_RULE_TEXT}
                 />
               </label>
             </div>
@@ -279,6 +363,7 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                   <span className="admin-pending__name">{p.name || p.id}</span>
                   <span className="admin-pending__meta">
                     {p.id} · {divisionLabel(p.division ?? undefined) || '본부 미지정'}
+                    {p.requestedAt != null && <> · 🕒 {formatRequestedAt(p.requestedAt)}</>}
                   </span>
                   <button
                     className="admin-btn admin-btn--primary"
@@ -294,6 +379,37 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                   >
                     거절
                   </button>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        {/* 비밀번호 초기화 요청 */}
+        {resetRequests.length > 0 && (
+          <div className="admin-pending admin-pending--reset">
+            <div className="admin-pending__title">
+              🔑 비밀번호 초기화 요청 ({resetRequests.length})
+            </div>
+            <ul className="admin-pending__list">
+              {resetRequests.map((p) => (
+                <li key={p.id} className="admin-pending__item">
+                  <span className="admin-pending__name">{p.name || p.id}</span>
+                  <span className="admin-pending__meta">
+                    {p.id} · {divisionLabel(p.division ?? undefined) || '본부 미지정'}
+                    {p.requestedAt != null && <> · 🕒 {formatRequestedAt(p.requestedAt)}</>}
+                  </span>
+                  {pwSetId === `reset:${p.id}` ? (
+                    pwSetInline(`reset:${p.id}`)
+                  ) : (
+                    <button
+                      className="admin-btn admin-btn--primary"
+                      type="button"
+                      onClick={() => openPwSet(`reset:${p.id}`, p.id)}
+                    >
+                      새 비밀번호 지정
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -377,9 +493,24 @@ export function AdminPanel({ onClose }: { onClose: () => void }) {
                       </button>
                     </td>
                     <td>
-                      <span className={u.hasPassword ? 'admin-pw-set' : 'admin-pw-none'}>
-                        {u.hasPassword ? '설정됨' : '미설정'}
-                      </span>
+                      {pwSetId === `row:${u.id}` ? (
+                        pwSetInline(`row:${u.id}`)
+                      ) : (
+                        <span className="admin-pw-cell">
+                          <span className={u.hasPassword ? 'admin-pw-set' : 'admin-pw-none'}>
+                            {u.hasPassword ? '설정됨' : '미설정'}
+                          </span>
+                          <button
+                            className="admin-btn admin-btn--xs"
+                            type="button"
+                            disabled={editingRole === u.id}
+                            onClick={() => openPwSet(`row:${u.id}`, u.id)}
+                            title="비밀번호 변경"
+                          >
+                            변경
+                          </button>
+                        </span>
+                      )}
                     </td>
                     <td>
                       {u.id === currentUserId ? (

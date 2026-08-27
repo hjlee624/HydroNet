@@ -183,6 +183,34 @@ export async function notifyRegistrationSafe(applicant) {
   }
 }
 
+/** 비밀번호 초기화 요청 알림 본문(순수 함수). */
+export function buildResetRequestText({ name, id, role, division } = {}, appUrl = '') {
+  const lines = [
+    '🔑 비밀번호 초기화 요청',
+    `이름: ${name || '(미입력)'}`,
+    `전화: ${formatPhone(id)}`,
+    `본부: ${divisionLabel(division)}`,
+    `역할: ${roleLabel(role)}`,
+    '',
+    '관리자 도구 › 비밀번호 초기화 요청에서 새 비밀번호를 지정하세요.',
+  ]
+  if (appUrl) lines.push(appUrl)
+  return lines.join('\n')
+}
+
+/** 초기화 요청 알림 발송(설정 시). 절대 throw 안 함 — reset-request 라우트에서 fire-and-forget. */
+export async function notifyResetRequestSafe(user) {
+  try {
+    const cfg = worksConfig()
+    if (!isConfigured(cfg)) return { ok: false, skipped: true }
+    await sendText(cfg, buildResetRequestText(user, cfg.appUrl))
+    return { ok: true }
+  } catch (e) {
+    console.warn('[works] 초기화 요청 알림 발송 실패:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
 /** 관리자 도구 '알림 테스트' — 결과를 구조화해 반환(에러/미설정을 UI에 노출). */
 export async function sendTestNotification() {
   const cfg = worksConfig()

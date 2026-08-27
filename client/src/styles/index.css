@@ -226,6 +226,10 @@ textarea {
 
 .topbar__spacer {
   flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center; /* 조회 전용 배지를 상단 줄 가운데(빈 공간)에 배치 */
+  min-width: 0;
 }
 .topbar__actions {
   display: flex;
@@ -2418,16 +2422,78 @@ textarea.input {
   color: var(--steel);
 }
 
-/* ── 조회 전용 배너 ── */
-.readonly-banner {
-  flex: 0 0 auto;
-  padding: 8px 16px;
+/* ── 조회 전용 배지(상단바 spacer 중앙) — 예전 full-width 배너 대체(레이아웃 밀림·겹침 방지). ── */
+.topbar__readonly {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 14px;
+  border-radius: 999px;
   background: rgba(120, 140, 170, 0.16);
-  border-bottom: 1px solid rgba(90, 110, 140, 0.28);
+  border: 1px solid rgba(90, 110, 140, 0.28);
   color: #3a4a63;
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
-  text-align: center;
+  white-space: nowrap;
+}
+
+/* ── 인증 화면 보조 문구 / 초기화 요청 ── */
+.auth-note {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--steel, #52627a);
+}
+.auth-note--warn {
+  color: #8e1b14;
+}
+.auth-reset {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--hairline-soft, rgba(0, 0, 0, 0.08));
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── 대시보드 헤더 버튼 묶음 ── */
+.proj-dash__actions {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+/* ── 관리자: 비밀번호 초기화 요청 / 인라인 지정 ── */
+.admin-pending--reset .admin-pending__title {
+  color: #7a4a10;
+}
+.admin-pw-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.admin-pw-edit {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.admin-pw-input {
+  font: inherit;
+  font-size: 12.5px;
+  padding: 4px 8px;
+  border: 1px solid var(--hairline, rgba(0, 0, 0, 0.15));
+  border-radius: 6px;
+  min-width: 160px;
+}
+.admin-pw-edit__err {
+  color: #8e1b14;
+  font-size: 11.5px;
+}
+.admin-btn--xs {
+  padding: 2px 8px;
+  font-size: 11px;
 }
 
 .proj-card--action {
@@ -2690,6 +2756,90 @@ textarea.input {
 .member-add-toggle:hover {
   border-color: var(--primary);
   background: var(--cream);
+}
+
+/* 멤버 추가: 본부 선택 → 소속 인원 체크박스 목록(인원별 권한) → 한 번에 추가 */
+.member-add-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+}
+.member-add-div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--steel);
+}
+.member-add-div select {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 13px;
+  background: var(--canvas);
+  color: var(--ink);
+}
+.member-pick-hint {
+  font-size: 12px;
+  color: var(--steel);
+  padding: 6px 2px;
+}
+.member-pick-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+.member-pick-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+}
+.member-pick-item.is-on {
+  border-color: var(--primary);
+  background: var(--cream-soft);
+}
+.member-pick-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+.member-pick-check input {
+  cursor: pointer;
+}
+.member-pick-name {
+  font-size: 13px;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.member-pick-id {
+  font-size: 11px;
+  color: var(--steel);
+  white-space: nowrap;
+}
+.member-add-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
 }
 
 /* ── 관리자 도구 열기 버튼(프로젝트 선택 화면 하단) ── */

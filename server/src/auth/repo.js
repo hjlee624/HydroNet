@@ -57,6 +57,10 @@ export function createMemoryRepo(file) {
         passwordHash: u.passwordHash ?? prev.passwordHash ?? null,
         active: u.active ?? prev.active ?? true,
         pending: u.pending ?? prev.pending ?? false,
+        resetRequested: u.resetRequested ?? prev.resetRequested ?? false,
+        mustChangePassword: u.mustChangePassword ?? prev.mustChangePassword ?? false,
+        pendingAt: u.pendingAt ?? prev.pendingAt ?? null,
+        resetRequestedAt: u.resetRequestedAt ?? prev.resetRequestedAt ?? null,
       }
       save()
       return clone(state.users[u.id])

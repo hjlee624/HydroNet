@@ -17,6 +17,7 @@ interface TopBarProps {
 
 export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps) {
   const name = useEditor((s) => s.project.name)
+  const readOnly = useEditor((s) => s.readOnly)
   const dirty = useEditor((s) => s.dirty)
   const zoom = useEditor((s) => s.zoom)
   const commissioning = useEditor((s) => s.project.commissioningEnabled)
@@ -139,7 +140,13 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </button>
       </div>
 
-      <div className="topbar__spacer" />
+      <div className="topbar__spacer">
+        {readOnly && (
+          <span className="topbar__readonly" role="status" title="편집 권한 없음 — 열람만 가능">
+            🔒 조회 전용
+          </span>
+        )}
+      </div>
 
       <div className="topbar__actions">
         <label className="toggle" title="선행 공정 변경 시 후행 공정 자동 이동">

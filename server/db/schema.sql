@@ -9,12 +9,20 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash TEXT,                             -- scrypt; NULL=비밀번호 미설정
   active        BOOLEAN NOT NULL DEFAULT TRUE,
   pending       BOOLEAN NOT NULL DEFAULT FALSE,   -- 관리자(PM) 셀프등록 후 개발자 승인 대기
+  reset_requested      BOOLEAN NOT NULL DEFAULT FALSE, -- 비밀번호 초기화 요청(관리자 처리 대기)
+  must_change_password BOOLEAN NOT NULL DEFAULT FALSE, -- 구 정책 비밀번호 → 다음 로그인 시 강제 변경
+  pending_at           BIGINT,                          -- 승인 요청(셀프등록) 시각(epoch ms)
+  reset_requested_at   BIGINT,                          -- 비밀번호 초기화 요청 시각(epoch ms)
   created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at    TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 -- 기존 DB 마이그레이션
 ALTER TABLE users ADD COLUMN IF NOT EXISTS division TEXT;
 ALTER TABLE users ADD COLUMN IF NOT EXISTS pending BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_requested BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS must_change_password BOOLEAN NOT NULL DEFAULT FALSE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS pending_at BIGINT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS reset_requested_at BIGINT;
 
 CREATE TABLE IF NOT EXISTS projects (
   id               TEXT PRIMARY KEY,

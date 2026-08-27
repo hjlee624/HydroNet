@@ -10,7 +10,9 @@ import {
   verifyToken,
 } from './crypto.js'
 import { importUsers } from './importUsers.js'
-import { notifyRegistrationSafe, sendTestNotification } from '../notify/works.js'
+import { notifyRegistrationSafe, notifyResetRequestSafe, sendTestNotification } from '../notify/works.js'
+import { createBoundedRateLimiter } from '../security.js'
+import { validatePassword } from './password.js'
 import { normalizeLoginId } from './phone.js'
 import {
   accessCodeExempt,
@@ -54,6 +56,12 @@ export function createAuthRouter(repo, opts = {}) {
   }
   const loginAttempts = new Map()
   let loginAttemptOps = 0
+  // 비밀번호 초기화 요청 남용 방지(IP당 5회/10분) — 알림 DoS·전화번호 열거 완화.
+  const resetLimiter = createBoundedRateLimiter({
+    limit: 5,
+    windowMs: 10 * 60 * 1000,
+    maxTracked: 5000,
+  })
   const setSession = (res, token) =>
     res.setHeader(
       'Set-Cookie',
@@ -87,7 +95,13 @@ export function createAuthRouter(repo, opts = {}) {
   }
   const rejectLockedLogin = (res, lockedUntil, now) => {
     res.setHeader('Retry-After', String(Math.max(1, Math.ceil((lockedUntil - now) / 1000))))
-    res.status(429).json({ error: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.' })
+    // locked:true — 클라이언트가 '비밀번호 초기화 요청' UI를 노출하도록.
+    res.status(429).json({ error: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.', locked: true })
+  }
+  // 특정 사용자에 대한 로그인 실패/잠금 기록 해제(비밀번호 재설정·변경 시 즉시 잠금 풀기).
+  const clearLockout = (userId) => {
+    const suffix = `\0${userId}`
+    for (const key of loginAttempts.keys()) if (key.endsWith(suffix)) loginAttempts.delete(key)
   }
 
   // 세션 미들웨어: 쿠키 JWT 검증 → req.user(저장소 최신). 없으면 401.
@@ -187,15 +201,69 @@ export function createAuthRouter(repo, opts = {}) {
         throw fail(401, '아이디 또는 비밀번호가 올바르지 않습니다.')
       }
       loginAttempts.delete(key)
+      // 구 정책 비밀번호(4자리 등 신 정책 미충족)면 다음 단계에서 강제 변경 유도. 로그인 자체는 성공.
+      const mustChangePassword = !!user.mustChangePassword || !validatePassword(password).ok
+      if (mustChangePassword && !user.mustChangePassword)
+        await repo.upsertUser({ ...user, mustChangePassword: true })
       setSession(res, await signSession(user))
-      res.json({ user: publicUser(user) })
+      res.json({ user: publicUser(user), mustChangePassword })
     }),
   )
   router.post('/auth/logout', (_req, res) => {
     clearSession(res)
     res.json({ ok: true })
   })
-  router.get('/auth/me', authMw, (req, res) => res.json({ user: publicUser(req.user) }))
+  router.get('/auth/me', authMw, (req, res) =>
+    res.json({ user: publicUser(req.user), mustChangePassword: !!req.user.mustChangePassword }),
+  )
+
+  // ── 비밀번호 변경(로그인 본인) — 강제 변경(mustChangePassword) 시 현재 비밀번호 확인 생략. ──
+  router.post(
+    '/auth/change-password',
+    authMw,
+    wrap(async (req, res) => {
+      const { currentPassword, newPassword } = req.body || {}
+      const u = await repo.getUser(req.user.id)
+      if (!u) throw fail(404, '사용자를 찾을 수 없습니다.')
+      // 강제 변경 상태는 이미 세션 인증됨 → 현재 비밀번호 재확인 생략. 그 외엔 현재 비밀번호 검증.
+      if (!u.mustChangePassword && !(await verifySecret(String(currentPassword || ''), u.passwordHash)))
+        throw fail(401, '현재 비밀번호가 올바르지 않습니다.')
+      const chk = validatePassword(newPassword)
+      if (!chk.ok) throw fail(400, chk.reason)
+      await repo.upsertUser({
+        ...u,
+        passwordHash: await hashSecret(String(newPassword)),
+        mustChangePassword: false,
+        resetRequested: false,
+      })
+      clearLockout(u.id)
+      res.json({ ok: true })
+    }),
+  )
+
+  // ── 비밀번호 초기화 요청(공개) — 5회 잠금 등으로 로그인 못할 때. 관리자에게 알림 + 요청 플래그. ──
+  router.post(
+    '/auth/reset-request',
+    wrap(async (req, res) => {
+      const id = normalizeLoginId(String(req.body?.phone || ''))
+      if (!/^010\d{8}$/.test(id)) throw fail(400, '전화번호(010########)를 정확히 입력하세요.')
+      const rl = resetLimiter.consume(req.socket?.remoteAddress || req.ip || 'unknown')
+      if (!rl.allowed) {
+        res.setHeader('Retry-After', String(rl.retryAfter))
+        throw fail(429, '초기화 요청이 너무 많습니다. 잠시 후 다시 시도하세요.')
+      }
+      const u = await repo.getUser(id)
+      // 계정 존재 여부와 무관하게 동일 응답(존재 노출 방지). 존재할 때만 플래그·알림.
+      // 알림은 await 안 함(fire-and-forget) — 응답 지연으로 계정 존재를 유추 못 하게.
+      if (u) {
+        await repo.upsertUser({ ...u, resetRequested: true, resetRequestedAt: Date.now() })
+        void notifyResetRequestSafe({ name: u.name, id, role: u.role, division: u.division }).catch(
+          () => {},
+        )
+      }
+      res.json({ ok: true })
+    }),
+  )
 
   // ── 셀프 등록(공개) — 관리자(PM)/사용자 + 본부 선택. 사용자는 즉시 활성, PM은 개발자 승인 대기. ──
   router.post(
@@ -204,8 +272,8 @@ export function createAuthRouter(repo, opts = {}) {
       const { name, phone, password, role, division } = req.body || {}
       const id = normalizeLoginId(String(phone || ''))
       if (!/^010\d{8}$/.test(id)) throw fail(400, '전화번호(010########)를 정확히 입력하세요.')
-      if (!/^\d{4}$/.test(String(password || '')))
-        throw fail(400, '비밀번호는 숫자 4자리로 입력하세요.')
+      const pwChk = validatePassword(password)
+      if (!pwChk.ok) throw fail(400, pwChk.reason)
       if (role !== 'pm' && role !== 'user') throw fail(400, '역할(관리자/사용자)을 선택하세요.')
       if (!isDivision(division)) throw fail(400, '본부를 선택하세요.')
       if (await repo.getUser(id))
@@ -219,6 +287,7 @@ export function createAuthRouter(repo, opts = {}) {
         passwordHash: await hashSecret(String(password)),
         active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
         pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
+        pendingAt: isPm ? Date.now() : null, // 승인 요청 시각(관리자 도구 표시용)
       })
       if (isPm) {
         // 계정 사용 신청 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 발송 실패해도 등록은 성공.
@@ -240,7 +309,7 @@ export function createAuthRouter(repo, opts = {}) {
       res.json(
         users
           .filter((u) => u.active !== false)
-          .map((u) => ({ id: u.id, name: u.name, role: u.role })),
+          .map((u) => ({ id: u.id, name: u.name, role: u.role, division: u.division ?? null })),
       )
     }),
   )
@@ -442,6 +511,10 @@ export function createAuthRouter(repo, opts = {}) {
     wrap(async (req, res) => {
       const { id, name, role, division, password, active } = req.body || {}
       if (!id || !isRole(role)) throw fail(400, 'id·role(developer|pm|user)이 필요합니다.')
+      if (password) {
+        const chk = validatePassword(password)
+        if (!chk.ok) throw fail(400, chk.reason)
+      }
       const passwordHash = password ? await hashSecret(String(password)) : undefined
       await repo.upsertUser({
         id: normalizeLoginId(id),
@@ -464,7 +537,13 @@ export function createAuthRouter(repo, opts = {}) {
       res.json(
         users
           .filter((u) => u.pending)
-          .map((u) => ({ id: u.id, name: u.name, role: u.role, division: u.division ?? null })),
+          .map((u) => ({
+            id: u.id,
+            name: u.name,
+            role: u.role,
+            division: u.division ?? null,
+            requestedAt: u.pendingAt ?? null,
+          })),
       )
     }),
   )
@@ -487,6 +566,47 @@ export function createAuthRouter(repo, opts = {}) {
         pending: false,
       })
       res.json({ ok: true, approved: approve })
+    }),
+  )
+  // ── 비밀번호 초기화 요청 목록 + 관리자 직접 재설정(개발자 전용) ──
+  router.get(
+    '/admin/reset-requests',
+    authMw,
+    requireAdmin,
+    wrap(async (_req, res) => {
+      const users = await repo.listUsers()
+      res.json(
+        users
+          .filter((u) => u.resetRequested)
+          .map((u) => ({
+            id: u.id,
+            name: u.name,
+            role: u.role,
+            division: u.division ?? null,
+            requestedAt: u.resetRequestedAt ?? null,
+          })),
+      )
+    }),
+  )
+  // 관리자가 새 비밀번호를 직접 지정(초기화 요청 처리 · 임의 변경 공용). 요청 플래그·잠금 해제.
+  router.post(
+    '/admin/users/:id/password',
+    authMw,
+    requireAdmin,
+    wrap(async (req, res) => {
+      const id = normalizeLoginId(req.params.id)
+      const u = await repo.getUser(id)
+      if (!u) throw fail(404, '사용자를 찾을 수 없습니다.')
+      const chk = validatePassword(req.body?.password)
+      if (!chk.ok) throw fail(400, chk.reason)
+      await repo.upsertUser({
+        ...u,
+        passwordHash: await hashSecret(String(req.body.password)),
+        resetRequested: false,
+        mustChangePassword: false,
+      })
+      clearLockout(id)
+      res.json({ ok: true })
     }),
   )
   // ── 네이버웍스 알림 연동 테스트(개발자 전용) — 운영자 본인에게 테스트 DM 발송. ──
@@ -598,7 +718,7 @@ export async function bootstrapDeveloper(repo) {
   const users = await repo.listUsers()
   if (users.length > 0) return null
   const id = process.env.AUTH_BOOTSTRAP_USER || 'admin'
-  const pw = process.env.AUTH_BOOTSTRAP_PASSWORD || 'sequence'
+  const pw = process.env.AUTH_BOOTSTRAP_PASSWORD || 'Sequence1!' // 정책 충족(영문+숫자+특수)
   await repo.upsertUser({
     id,
     name: '초기 개발자',

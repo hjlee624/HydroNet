@@ -9,6 +9,7 @@ import {
   type ProjectSummary,
   useAuth,
 } from '../../state/authStore'
+import { PASSWORD_RULE_TEXT, validatePassword } from '../../utils/password'
 import { AdminPanel } from './AdminPanel'
 import { AuthBackground } from './AuthBackground'
 
@@ -38,6 +39,7 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const user = useAuth((s) => s.user)
   const selected = useAuth((s) => s.selected)
   const entered = useAuth((s) => s.entered)
+  const mustChange = useAuth((s) => s.mustChangePassword)
   const init = useAuth((s) => s.init)
 
   useEffect(() => {
@@ -45,6 +47,14 @@ export function AuthGate({ children }: { children: ReactNode }) {
   }, [init])
 
   if (mode === 'local') return <>{children}</> // 오프라인/단일 HTML — 로그인 없이 편집
+  // 구 정책 비밀번호 → 새 정책으로 강제 변경(프로젝트 진입 전 차단).
+  if (user && mustChange)
+    return (
+      <>
+        <AuthBackground />
+        <ForcedPasswordChange />
+      </>
+    )
   if (user && entered)
     return (
       <div className="auth-app">
@@ -81,6 +91,7 @@ function AuthBar() {
   const entered = useAuth((s) => s.entered)
   const exitProject = useAuth((s) => s.exitProject)
   const logout = useAuth((s) => s.logout)
+  const [pwOpen, setPwOpen] = useState(false)
   return (
     <div className="authbar" data-export-hide="1">
       <span className="authbar__proj">📁 {entered?.name}</span>
@@ -88,12 +99,16 @@ function AuthBar() {
       <span className="authbar__user">
         {user?.name || user?.id} <em>· {ROLE_LABEL[user?.role ?? ''] ?? user?.role}</em>
       </span>
+      <button className="authbar__btn" type="button" onClick={() => setPwOpen(true)}>
+        비밀번호 변경
+      </button>
       <button className="authbar__btn" type="button" onClick={exitProject}>
         프로젝트 변경
       </button>
       <button className="authbar__btn" type="button" onClick={logout}>
         로그아웃
       </button>
+      {pwOpen && <ChangePasswordModal onClose={() => setPwOpen(false)} />}
     </div>
   )
 }
@@ -102,9 +117,13 @@ function LoginScreen() {
   const login = useAuth((s) => s.login)
   const loading = useAuth((s) => s.loading)
   const error = useAuth((s) => s.error)
+  const loginLocked = useAuth((s) => s.loginLocked)
+  const requestPasswordReset = useAuth((s) => s.requestPasswordReset)
   const [username, setU] = useState('')
   const [password, setP] = useState('')
   const [registerOpen, setRegisterOpen] = useState(false)
+  const [resetMsg, setResetMsg] = useState<string | null>(null)
+  const [resetBusy, setResetBusy] = useState(false)
   const validPhoneId = /^010\d{8}$/.test(loginPhoneDigits(username))
   const submit = (e: FormEvent) => {
     e.preventDefault()
@@ -148,6 +167,31 @@ function LoginScreen() {
         <button className="auth-link" type="button" onClick={() => setRegisterOpen(true)}>
           사용자 등록
         </button>
+        {loginLocked && (
+          <div className="auth-reset">
+            <p className="auth-note auth-note--warn">
+              로그인 5회 초과로 잠겼습니다. 관리자에게 비밀번호 초기화를 요청할 수 있습니다.
+            </p>
+            <button
+              className="auth-link"
+              type="button"
+              disabled={resetBusy || !validPhoneId}
+              onClick={async () => {
+                setResetBusy(true)
+                const ok = await requestPasswordReset(username)
+                setResetBusy(false)
+                setResetMsg(
+                  ok
+                    ? '관리자에게 초기화 요청을 보냈습니다. 처리되면 새 비밀번호를 안내받으세요.'
+                    : '요청 전송 실패 — 전화번호(아이디)를 확인하세요.',
+                )
+              }}
+            >
+              {resetBusy ? '요청 중…' : '비밀번호 초기화 요청'}
+            </button>
+            {resetMsg && <div className="auth-note">{resetMsg}</div>}
+          </div>
+        )}
       </form>
       {registerOpen && <RegisterModal onClose={() => setRegisterOpen(false)} />}
     </div>
@@ -168,7 +212,8 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
   const [done, setDone] = useState<{ pending: boolean } | null>(null)
 
   const validPhone = /^010\d{8}$/.test(loginPhoneDigits(phone))
-  const validPw = /^\d{4}$/.test(password)
+  const pwChk = validatePassword(password)
+  const validPw = pwChk.ok
   const canSubmit = validPhone && validPw && !!division && !!name.trim() && !busy
 
   const submit = async (e: FormEvent) => {
@@ -261,20 +306,185 @@ function RegisterModal({ onClose }: { onClose: () => void }) {
               />
             </label>
             <label className="auth-field">
-              <span>비밀번호 (숫자 4자리)</span>
+              <span>비밀번호</span>
               <input
                 type="password"
-                inputMode="numeric"
-                maxLength={4}
+                autoComplete="new-password"
+                maxLength={12}
                 value={password}
-                onChange={(e) => setPassword(e.target.value.replace(/\D/g, '').slice(0, 4))}
-                placeholder="숫자 4자리"
+                onChange={(e) => setPassword(e.target.value.slice(0, 12))}
+                placeholder={PASSWORD_RULE_TEXT}
               />
             </label>
+            {password && !validPw && (
+              <div className="auth-note auth-note--warn">{pwChk.reason}</div>
+            )}
             {err && <div className="auth-error">{err}</div>}
             <div className="proj-create__actions">
               <button className="auth-primary" type="submit" disabled={!canSubmit}>
                 {busy ? '등록 중…' : '등록'}
+              </button>
+              <button className="auth-link" type="button" onClick={onClose}>
+                취소
+              </button>
+            </div>
+          </>
+        )}
+      </form>
+    </div>
+  )
+}
+
+// 구 정책 비밀번호로 로그인 시 강제 변경 화면 — 세션은 인증됨이라 현재 비밀번호 없이 새 비밀번호만.
+function ForcedPasswordChange() {
+  const changePassword = useAuth((s) => s.changePassword)
+  const logout = useAuth((s) => s.logout)
+  const user = useAuth((s) => s.user)
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const pwChk = validatePassword(next)
+  const canSubmit = pwChk.ok && next === confirm && !busy
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit) return
+    setBusy(true)
+    setErr(null)
+    const r = await changePassword('', next)
+    setBusy(false)
+    if (!r.ok) setErr(r.error ?? '변경 실패')
+    // 성공 시 mustChangePassword=false → AuthGate가 다음 화면으로 전환.
+  }
+  return (
+    <div className="auth-screen">
+      <form className="auth-card" onSubmit={(e) => void submit(e)}>
+        <div className="auth-title">비밀번호 변경 필요</div>
+        <p className="auth-sub">
+          <b>{user?.name || user?.id}</b> 님, 보안 정책 변경으로 새 비밀번호 설정이 필요합니다.
+        </p>
+        <label className="auth-field">
+          <span>새 비밀번호</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            maxLength={12}
+            value={next}
+            onChange={(e) => setNext(e.target.value.slice(0, 12))}
+            placeholder={PASSWORD_RULE_TEXT}
+            autoFocus
+          />
+        </label>
+        {next && !pwChk.ok && <div className="auth-note auth-note--warn">{pwChk.reason}</div>}
+        <label className="auth-field">
+          <span>새 비밀번호 확인</span>
+          <input
+            type="password"
+            autoComplete="new-password"
+            maxLength={12}
+            value={confirm}
+            onChange={(e) => setConfirm(e.target.value.slice(0, 12))}
+          />
+        </label>
+        {confirm && next !== confirm && (
+          <div className="auth-note auth-note--warn">비밀번호가 일치하지 않습니다.</div>
+        )}
+        {err && <div className="auth-error">{err}</div>}
+        <button className="auth-primary" type="submit" disabled={!canSubmit}>
+          {busy ? '설정 중…' : '새 비밀번호 설정'}
+        </button>
+        <button className="auth-link" type="button" onClick={logout}>
+          로그아웃
+        </button>
+      </form>
+    </div>
+  )
+}
+
+// 본인 비밀번호 변경 모달 — 현재 비밀번호 확인 + 새 비밀번호(정책). 대시보드·상단바에서 호출.
+function ChangePasswordModal({ onClose }: { onClose: () => void }) {
+  const changePassword = useAuth((s) => s.changePassword)
+  const [cur, setCur] = useState('')
+  const [next, setNext] = useState('')
+  const [confirm, setConfirm] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [done, setDone] = useState(false)
+  const pwChk = validatePassword(next)
+  const canSubmit = !!cur && pwChk.ok && next === confirm && !busy
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit) return
+    setBusy(true)
+    setErr(null)
+    const r = await changePassword(cur, next)
+    setBusy(false)
+    if (!r.ok) setErr(r.error ?? '변경 실패')
+    else setDone(true)
+  }
+  return (
+    <div className="admin-overlay" onClick={onClose}>
+      <form
+        className="proj-create proj-create--modal"
+        onClick={(e) => e.stopPropagation()}
+        onSubmit={(e) => void submit(e)}
+      >
+        <div className="member-panel__header">
+          <span className="member-panel__title">🔑 비밀번호 변경</span>
+          <button className="member-panel__close" type="button" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
+        </div>
+        {done ? (
+          <div className="register-done">
+            <b>비밀번호가 변경되었습니다.</b>
+            <p>다음 로그인부터 새 비밀번호를 사용하세요.</p>
+            <div className="proj-create__actions">
+              <button className="auth-primary" type="button" onClick={onClose}>
+                확인
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <label className="auth-field">
+              <span>현재 비밀번호</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={cur}
+                onChange={(e) => setCur(e.target.value)}
+              />
+            </label>
+            <label className="auth-field">
+              <span>새 비밀번호</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                maxLength={12}
+                value={next}
+                onChange={(e) => setNext(e.target.value.slice(0, 12))}
+                placeholder={PASSWORD_RULE_TEXT}
+              />
+            </label>
+            {next && !pwChk.ok && <div className="auth-note auth-note--warn">{pwChk.reason}</div>}
+            <label className="auth-field">
+              <span>새 비밀번호 확인</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                maxLength={12}
+                value={confirm}
+                onChange={(e) => setConfirm(e.target.value.slice(0, 12))}
+              />
+            </label>
+            {confirm && next !== confirm && (
+              <div className="auth-note auth-note--warn">새 비밀번호가 일치하지 않습니다.</div>
+            )}
+            {err && <div className="auth-error">{err}</div>}
+            <div className="proj-create__actions">
+              <button className="auth-primary" type="submit" disabled={!canSubmit}>
+                {busy ? '변경 중…' : '변경'}
               </button>
               <button className="auth-link" type="button" onClick={onClose}>
                 취소
@@ -332,6 +542,7 @@ function ProjectSelectScreen() {
   const [memberProjectId, setMemberProjectId] = useState<string | null>(null)
   const [adminOpen, setAdminOpen] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
+  const [pwOpen, setPwOpen] = useState(false)
   const memberProj = projects.find((p) => p.id === memberProjectId)
 
   return (
@@ -356,9 +567,14 @@ function ProjectSelectScreen() {
               — 입장할 프로젝트를 선택하세요.
             </div>
           </div>
-          <button className="proj-dash__logout" type="button" onClick={logout}>
-            로그아웃
-          </button>
+          <div className="proj-dash__actions">
+            <button className="proj-dash__logout" type="button" onClick={() => setPwOpen(true)}>
+              비밀번호 변경
+            </button>
+            <button className="proj-dash__logout" type="button" onClick={logout}>
+              로그아웃
+            </button>
+          </div>
         </header>
 
         {error && <div className="auth-error">{error}</div>}
@@ -502,12 +718,14 @@ function ProjectSelectScreen() {
               projectId={memberProj.id}
               projectName={memberProj.name}
               canManage={canCreate}
+              defaultDivision={memberProj.division ?? ''}
               onClose={() => setMemberProjectId(null)}
             />
           </div>
         </div>
       )}
       {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
+      {pwOpen && <ChangePasswordModal onClose={() => setPwOpen(false)} />}
     </div>
   )
 }
@@ -517,11 +735,14 @@ function MemberPanel({
   projectId,
   projectName,
   canManage,
+  defaultDivision,
   onClose,
 }: {
   projectId: string
   projectName: string
   canManage: boolean
+  /** 프로젝트 소속 본부 — 멤버 추가 시 본부 선택 기본값. */
+  defaultDivision?: string | null
   onClose: () => void
 }) {
   const entered = useAuth((s) => s.entered)
@@ -531,7 +752,6 @@ function MemberPanel({
   const storeMembers = useAuth((s) => s.projectMembers)
   const membersLoading = useAuth((s) => s.membersLoading)
   const fetchProjectMembers = useAuth((s) => s.fetchProjectMembers)
-  const addMember = useAuth((s) => s.addMember)
   const removeMember = useAuth((s) => s.removeMember)
   const searchableUsers = useAuth((s) => s.searchableUsers)
   const fetchSearchableUsers = useAuth((s) => s.fetchSearchableUsers)
@@ -545,11 +765,16 @@ function MemberPanel({
   const members = isCurrent ? storeMembers : localMembers
   const loading = isCurrent ? membersLoading : localLoading
 
-  // 멤버 추가 UI
+  // 멤버 추가 UI — 본부 선택 → 소속 인원 체크박스(인원별 권한) → 한 번에 추가.
   const [addMode, setAddMode] = useState(false)
-  const [addUserId, setAddUserId] = useState('')
-  const [addRole, setAddRole] = useState<'pm' | 'user'>('user')
+  const [pickDivision, setPickDivision] = useState(defaultDivision ?? '')
+  const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set())
+  const [pickRoles, setPickRoles] = useState<Record<string, 'pm' | 'user'>>({})
   const [addBusy, setAddBusy] = useState(false)
+  const resetPick = () => {
+    setCheckedIds(new Set())
+    setPickRoles({})
+  }
 
   useEffect(() => {
     if (isCurrent) {
@@ -576,41 +801,56 @@ function MemberPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [projectId])
 
-  const handleAdd = async (e: FormEvent) => {
-    e.preventDefault()
-    if (!addUserId.trim()) return
+  // 멤버 목록 새로고침(현재 프로젝트=store, 그 외=직접 fetch). 추가/부분추가 후 공용.
+  const refreshMembers = async () => {
+    if (isCurrent) {
+      await fetchProjectMembers()
+      return
+    }
+    setLocalLoading(true)
+    try {
+      const list = await fetch(`/api/projects/${encodeURIComponent(projectId)}/members`, {
+        credentials: 'include',
+      }).then((r) => r.json())
+      setLocalMembers(
+        Array.isArray(list)
+          ? ((list as { role: string; userId: string; name: string }[]).filter(
+              (m) => (m.role as string) !== 'developer',
+            ) as ProjectMember[])
+          : [],
+      )
+    } finally {
+      setLocalLoading(false)
+    }
+  }
+
+  // 한 명 추가 — 멤버 엔드포인트는 세션(쿠키) 기반이라 현재/타 프로젝트 모두 동일하게 동작.
+  const addOne = async (userId: string, role: 'pm' | 'user') => {
+    const r = await fetch(`/api/projects/${encodeURIComponent(projectId)}/members`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ userId, role }),
+    })
+    if (!r.ok) {
+      const data = await r.json().catch(() => null)
+      throw new Error(data?.error || '멤버 추가에 실패했습니다.')
+    }
+  }
+
+  // 체크한 인원을 각자 선택한 권한으로 한 번에 추가. 일부 실패해도 목록은 갱신하고 오류만 표시.
+  const handleAddBatch = async () => {
+    const ids = [...checkedIds]
+    if (!ids.length) return
     setAddBusy(true)
     setActionError(null)
     try {
-      if (isCurrent) {
-        await addMember(addUserId.trim(), addRole)
-      } else {
-        const r = await fetch(`/api/projects/${encodeURIComponent(projectId)}/members`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({ userId: addUserId.trim(), role: addRole }),
-        })
-        const data = await r.json().catch(() => null)
-        if (!r.ok) throw new Error(data?.error || '멤버 추가에 실패했습니다.')
-        // 목록 갱신
-        setLocalLoading(true)
-        const list = await fetch(`/api/projects/${encodeURIComponent(projectId)}/members`, {
-          credentials: 'include',
-        }).then((r2) => r2.json())
-        setLocalMembers(
-          Array.isArray(list)
-            ? ((list as { role: string; userId: string; name: string }[]).filter(
-                (m) => (m.role as string) !== 'developer',
-              ) as ProjectMember[])
-            : [],
-        )
-        setLocalLoading(false)
-      }
+      for (const id of ids) await addOne(id, pickRoles[id] ?? 'user')
+      await refreshMembers()
       setAddMode(false)
-      setAddUserId('')
-      setAddRole('user')
+      resetPick()
     } catch (err) {
+      await refreshMembers().catch(() => {})
       setActionError(err instanceof Error ? err.message : '추가 오류')
     } finally {
       setAddBusy(false)
@@ -641,11 +881,22 @@ function MemberPanel({
     }
   }
 
-  // 자기 자신은 드롭다운에서 제외 (이미 멤버인 사람도 제외)
+  // 후보: 선택한 본부 소속 · 개발자 제외 · 이미 멤버 제외 · 본인 제외.
   const memberIds = new Set(members?.map((m) => m.userId) ?? [])
-  const addableUsers = searchableUsers.filter(
-    (u) => u.role !== 'developer' && !memberIds.has(u.id) && u.id !== user?.id,
+  const candidates = searchableUsers.filter(
+    (u) =>
+      u.role !== 'developer' &&
+      !memberIds.has(u.id) &&
+      u.id !== user?.id &&
+      (u.division ?? '') === pickDivision,
   )
+  const toggleCheck = (id: string) =>
+    setCheckedIds((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
 
   return (
     <div className="member-panel">
@@ -685,50 +936,87 @@ function MemberPanel({
         </ul>
       )}
 
-      {/* 멤버 추가 (관리자·개발자만) */}
+      {/* 멤버 추가 (관리자·개발자만) — 본부 선택 → 소속 인원 체크 → 인원별 권한 → 한 번에 추가 */}
       {canManage &&
         (addMode ? (
-          <form className="member-add-form" onSubmit={(e) => void handleAdd(e)}>
-            <select
-              className="member-add-select"
-              value={addUserId}
-              onChange={(e) => setAddUserId(e.target.value)}
-              aria-label="추가할 사용자 선택"
-            >
-              <option value="">— 사용자 선택 —</option>
-              {addableUsers.map((u) => (
-                <option key={u.id} value={u.id}>
-                  {u.name ? `${u.name} (${u.id})` : u.id}
-                </option>
-              ))}
-            </select>
-            <select
-              className="member-add-role"
-              value={addRole}
-              onChange={(e) => setAddRole(e.target.value as 'pm' | 'user')}
-              aria-label="역할 선택"
-            >
-              <option value="pm">관리자(PM)</option>
-              <option value="user">사용자</option>
-            </select>
-            <button
-              className="member-add-btn member-add-btn--confirm"
-              type="submit"
-              disabled={!addUserId || addBusy}
-            >
-              {addBusy ? '…' : '추가'}
-            </button>
-            <button
-              className="member-add-btn"
-              type="button"
-              onClick={() => {
-                setAddMode(false)
-                setAddUserId('')
-              }}
-            >
-              취소
-            </button>
-          </form>
+          <div className="member-add-panel">
+            <label className="member-add-div">
+              <span>본부</span>
+              <select
+                value={pickDivision}
+                onChange={(e) => {
+                  setPickDivision(e.target.value)
+                  resetPick()
+                }}
+                aria-label="본부 선택"
+              >
+                <option value="">— 본부 선택 —</option>
+                {DIVISIONS.map((d) => (
+                  <option key={d.key} value={d.key}>
+                    {d.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {pickDivision === '' ? (
+              <div className="member-pick-hint">본부를 선택하면 소속 인원이 표시됩니다.</div>
+            ) : candidates.length === 0 ? (
+              <div className="member-pick-hint">
+                추가할 수 있는 인원이 없습니다 (이미 멤버이거나 소속 인원 없음).
+              </div>
+            ) : (
+              <ul className="member-pick-list">
+                {candidates.map((u) => {
+                  const on = checkedIds.has(u.id)
+                  return (
+                    <li key={u.id} className={`member-pick-item${on ? ' is-on' : ''}`}>
+                      <label className="member-pick-check">
+                        <input type="checkbox" checked={on} onChange={() => toggleCheck(u.id)} />
+                        <span className="member-pick-name">{u.name || u.id}</span>
+                        {u.name && <span className="member-pick-id">{u.id}</span>}
+                      </label>
+                      <select
+                        className="member-add-role"
+                        value={pickRoles[u.id] ?? 'user'}
+                        disabled={!on}
+                        onChange={(e) =>
+                          setPickRoles((prev) => ({
+                            ...prev,
+                            [u.id]: e.target.value as 'pm' | 'user',
+                          }))
+                        }
+                        aria-label={`${u.name || u.id} 권한`}
+                      >
+                        <option value="user">사용자</option>
+                        <option value="pm">관리자(PM)</option>
+                      </select>
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            <div className="member-add-actions">
+              <button
+                className="member-add-btn member-add-btn--confirm"
+                type="button"
+                disabled={!checkedIds.size || addBusy}
+                onClick={() => void handleAddBatch()}
+              >
+                {addBusy ? '추가 중…' : `추가${checkedIds.size ? ` (${checkedIds.size})` : ''}`}
+              </button>
+              <button
+                className="member-add-btn"
+                type="button"
+                onClick={() => {
+                  setAddMode(false)
+                  resetPick()
+                  setPickDivision(defaultDivision ?? '')
+                }}
+              >
+                취소
+              </button>
+            </div>
+          </div>
         ) : (
           <button className="member-add-toggle" type="button" onClick={() => setAddMode(true)}>
             ＋ 멤버 추가

@@ -48,12 +48,14 @@ export interface EnteredProject {
   canEdit?: boolean
 }
 
-/** 개발자 승인 대기(셀프등록 관리자) 항목. */
+/** 개발자 승인 대기(셀프등록 관리자) · 비밀번호 초기화 요청 공용 항목. */
 export interface PendingUser {
   id: string
   name: string
   role: string
   division?: string | null
+  /** 요청 접수 시각(epoch ms). 구버전 데이터엔 없을 수 있음(null). */
+  requestedAt?: number | null
 }
 /** 셀프 등록 입력. */
 export interface RegisterInput {
@@ -74,6 +76,8 @@ export interface SearchableUser {
   id: string
   name: string
   role: string
+  /** 소속 본부 키(멤버 추가 시 본부별 필터용). 개발자는 null. */
+  division?: string | null
 }
 
 export interface AdminUser {
@@ -105,6 +109,12 @@ interface AuthState {
   adminUsers: AdminUser[]
   /** 개발자 승인 대기(셀프등록 관리자) 목록 — 대시보드/관리자도구 알림 배지. */
   pendingApprovals: PendingUser[]
+  /** 비밀번호 초기화 요청 목록(개발자 전용). */
+  resetRequests: PendingUser[]
+  /** 구 정책 비밀번호로 로그인 → 다음 단계에서 강제 변경 필요. */
+  mustChangePassword: boolean
+  /** 직전 로그인이 5회 초과 잠금(429)이었나 — 초기화 요청 UI 노출용. */
+  loginLocked: boolean
   adminLoading: boolean
   adminError: string | null
   init: () => Promise<void>
@@ -123,6 +133,17 @@ interface AuthState {
   fetchPendingApprovals: () => Promise<void>
   /** 관리자 셀프등록 승인/거절(개발자 전용). 성공 시 목록 갱신. */
   approveUser: (id: string, approve: boolean) => Promise<boolean>
+  /** 비밀번호 초기화 요청(공개) — 전화번호로. 성공 여부. */
+  requestPasswordReset: (phone: string) => Promise<boolean>
+  /** 본인 비밀번호 변경(강제변경 상태면 currentPassword 검증 생략). */
+  changePassword: (
+    currentPassword: string,
+    newPassword: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+  /** 비밀번호 초기화 요청 목록 로드(개발자 전용). */
+  fetchResetRequests: () => Promise<void>
+  /** 관리자가 사용자 비밀번호 직접 지정(초기화 처리·임의 변경). 성공 시 목록 갱신. */
+  adminSetPassword: (id: string, password: string) => Promise<boolean>
   select: (p: ProjectSummary) => Promise<void>
   enter: (code: string) => Promise<void>
   exitProject: () => void
@@ -197,6 +218,9 @@ export const useAuth = create<AuthState>((set, get) => ({
   searchableUsers: [],
   adminUsers: [],
   pendingApprovals: [],
+  resetRequests: [],
+  mustChangePassword: false,
+  loginLocked: false,
   adminLoading: false,
   adminError: null,
 
@@ -210,7 +234,7 @@ export const useAuth = create<AuthState>((set, get) => ({
     const me = await j('/api/auth/me').catch(() => ({ status: 0, ok: false, data: null }))
     if (me.ok && me.data?.user) {
       const u = me.data.user as SessionUser
-      set({ mode: 'server', user: u })
+      set({ mode: 'server', user: u, mustChangePassword: !!me.data.mustChangePassword })
       await get().refreshProjects()
       if (u.role === 'developer') await get().fetchPendingApprovals()
     } else {
@@ -219,15 +243,18 @@ export const useAuth = create<AuthState>((set, get) => ({
   },
 
   login: async (username, password) => {
-    set({ loading: true, error: null })
+    set({ loading: true, error: null, loginLocked: false })
     try {
       const r = await post('/api/auth/login', {
         username: normalizeLoginSubmission(username),
         password,
       })
-      if (!r.ok) throw new Error((r.data?.error as string) || '로그인에 실패했습니다.')
+      if (!r.ok) {
+        if (r.status === 429) set({ loginLocked: true }) // 5회 초과 잠금 → 초기화 요청 노출
+        throw new Error((r.data?.error as string) || '로그인에 실패했습니다.')
+      }
       const u = r.data?.user as SessionUser
-      set({ user: u, mode: 'server' })
+      set({ user: u, mode: 'server', mustChangePassword: !!r.data?.mustChangePassword })
       await get().refreshProjects()
       if (u?.role === 'developer') await get().fetchPendingApprovals()
     } catch (e) {
@@ -249,6 +276,9 @@ export const useAuth = create<AuthState>((set, get) => ({
       searchableUsers: [],
       adminUsers: [],
       pendingApprovals: [],
+      resetRequests: [],
+      mustChangePassword: false,
+      loginLocked: false,
     })
   },
 
@@ -322,6 +352,35 @@ export const useAuth = create<AuthState>((set, get) => ({
       return false
     }
     await get().fetchPendingApprovals()
+    return true
+  },
+
+  requestPasswordReset: async (phone) => {
+    const r = await post('/api/auth/reset-request', { phone: normalizeLoginSubmission(phone) })
+    return r.ok
+  },
+
+  changePassword: async (currentPassword, newPassword) => {
+    const r = await post('/api/auth/change-password', { currentPassword, newPassword })
+    if (!r.ok)
+      return { ok: false, error: (r.data?.error as string) || '비밀번호 변경에 실패했습니다.' }
+    set({ mustChangePassword: false })
+    return { ok: true }
+  },
+
+  fetchResetRequests: async () => {
+    const r = await j('/api/admin/reset-requests')
+    if (r.ok && Array.isArray(r.data)) set({ resetRequests: r.data as unknown as PendingUser[] })
+  },
+
+  adminSetPassword: async (id, password) => {
+    const r = await post(`/api/admin/users/${encodeURIComponent(id)}/password`, { password })
+    if (!r.ok) {
+      set({ adminError: (r.data?.error as string) || '비밀번호 설정에 실패했습니다.' })
+      return false
+    }
+    await get().fetchResetRequests()
+    await get().fetchAdminUsers()
     return true
   },
 
