@@ -12,6 +12,7 @@ import {
 import { PASSWORD_RULE_TEXT, validatePassword } from '../../utils/password'
 import { AdminPanel } from './AdminPanel'
 import { AuthBackground } from './AuthBackground'
+import { DivisionShowcase } from './DivisionShowcase'
 
 /** 본부 심볼(원형) — 이미지 애셋 + 색 원 폴백. presence 배지와 동일한 결. */
 function DivisionSymbol({ division, size = 28 }: { division?: string | null; size?: number }) {
@@ -130,69 +131,79 @@ function LoginScreen() {
     if (validPhoneId && password) login(username, password)
   }
   return (
-    <div className="auth-screen">
-      <form className="auth-card" onSubmit={submit}>
-        <div className="auth-brand">Sequence</div>
-        <div className="auth-title">로그인</div>
-        <p className="auth-sub">사내 계정으로 로그인하세요.</p>
-        <label className="auth-field">
-          <span>아이디</span>
-          <input
-            inputMode="numeric"
-            autoComplete="username"
-            maxLength={13}
-            value={username}
-            onChange={(e) => setU(formatLoginPhoneInput(e.target.value))}
-            placeholder="010-0000-0000"
-            aria-label="전화번호 아이디"
-          />
-        </label>
-        <label className="auth-field">
-          <span>비밀번호</span>
-          <input
-            type="password"
-            autoComplete="current-password"
-            value={password}
-            onChange={(e) => setP(e.target.value)}
-          />
-        </label>
-        {error && <div className="auth-error">{error}</div>}
-        <button
-          className="auth-primary"
-          type="submit"
-          disabled={loading || !validPhoneId || !password}
-        >
-          {loading ? '확인 중…' : '로그인'}
-        </button>
-        <button className="auth-link" type="button" onClick={() => setRegisterOpen(true)}>
-          사용자 등록
-        </button>
-        {loginLocked && (
-          <div className="auth-reset">
-            <p className="auth-note auth-note--warn">
-              로그인 5회 초과로 잠겼습니다. 관리자에게 비밀번호 초기화를 요청할 수 있습니다.
-            </p>
+    <div className="auth-screen auth-screen--split">
+      <div className="auth-brandmark">
+        <span className="auth-brandmark__name">Sequence</span>
+        <span className="auth-brandmark__tag">건설 공정 관리 · 예정공정표 · 마일스톤</span>
+      </div>
+      <div className="auth-split">
+        <div className="auth-split__left">
+          <DivisionShowcase />
+        </div>
+        <div className="auth-split__right">
+          <form className="auth-card" onSubmit={submit}>
+            <div className="auth-title">로그인</div>
+            <p className="auth-sub">사내 계정으로 로그인하세요.</p>
+            <label className="auth-field">
+              <span>아이디</span>
+              <input
+                inputMode="numeric"
+                autoComplete="username"
+                maxLength={13}
+                value={username}
+                onChange={(e) => setU(formatLoginPhoneInput(e.target.value))}
+                placeholder="010-0000-0000"
+                aria-label="전화번호 아이디"
+              />
+            </label>
+            <label className="auth-field">
+              <span>비밀번호</span>
+              <input
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setP(e.target.value)}
+              />
+            </label>
+            {error && <div className="auth-error">{error}</div>}
             <button
-              className="auth-link"
-              type="button"
-              disabled={resetBusy || !validPhoneId}
-              onClick={async () => {
-                setResetBusy(true)
-                const ok = await requestPasswordReset(username)
-                setResetBusy(false)
-                setResetMsg(
-                  ok
-                    ? '관리자에게 초기화 요청을 보냈습니다. 처리되면 새 비밀번호를 안내받으세요.'
-                    : '요청 전송 실패 — 전화번호(아이디)를 확인하세요.',
-                )
-              }}
+              className="auth-primary"
+              type="submit"
+              disabled={loading || !validPhoneId || !password}
             >
-              {resetBusy ? '요청 중…' : '비밀번호 초기화 요청'}
+              {loading ? '확인 중…' : '로그인'}
             </button>
-            {resetMsg && <div className="auth-note">{resetMsg}</div>}
-          </div>
-        )}
-      </form>
+            <button className="auth-link" type="button" onClick={() => setRegisterOpen(true)}>
+              사용자 등록
+            </button>
+            {loginLocked && (
+              <div className="auth-reset">
+                <p className="auth-note auth-note--warn">
+                  로그인 5회 초과로 잠겼습니다. 관리자에게 비밀번호 초기화를 요청할 수 있습니다.
+                </p>
+                <button
+                  className="auth-link"
+                  type="button"
+                  disabled={resetBusy || !validPhoneId}
+                  onClick={async () => {
+                    setResetBusy(true)
+                    const ok = await requestPasswordReset(username)
+                    setResetBusy(false)
+                    setResetMsg(
+                      ok
+                        ? '관리자에게 초기화 요청을 보냈습니다. 처리되면 새 비밀번호를 안내받으세요.'
+                        : '요청 전송 실패 — 전화번호(아이디)를 확인하세요.',
+                    )
+                  }}
+                >
+                  {resetBusy ? '요청 중…' : '비밀번호 초기화 요청'}
+                </button>
+                {resetMsg && <div className="auth-note">{resetMsg}</div>}
+              </div>
+            )}
+          </form>
+        </div>
+      </div>
       {registerOpen && <RegisterModal onClose={() => setRegisterOpen(false)} />}
     </div>
   )
@@ -545,6 +556,98 @@ function ProjectSelectScreen() {
   const [pwOpen, setPwOpen] = useState(false)
   const memberProj = projects.find((p) => p.id === memberProjectId)
 
+  // 개발자: 왼쪽 본부 목록에서 고른 본부만 프로젝트 표시(초기 미선택 → 안내만).
+  const [selectedDiv, setSelectedDiv] = useState<string | null>(null)
+  const countByDiv = new Map<string, number>()
+  for (const p of projects) {
+    const k = p.division ?? ''
+    countByDiv.set(k, (countByDiv.get(k) ?? 0) + 1)
+  }
+  const shownProjects =
+    selectedDiv == null ? [] : projects.filter((p) => (p.division ?? '') === selectedDiv)
+
+  // 프로젝트 카드 한 장 — 개발자(본부 필터) 그리드와 일반 그리드가 공용으로 쓴다.
+  const renderCard = (p: ProjectSummary, i: number) => (
+    <div
+      key={p.id}
+      className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
+    >
+      <button
+        className="proj-card__main"
+        type="button"
+        disabled={p.canEnter === false}
+        title={p.canEnter === false ? '할당된 프로젝트가 아닙니다 (입장 불가)' : undefined}
+        onClick={() => {
+          if (p.canEnter !== false) select(p)
+        }}
+      >
+        <span className="proj-card__icon" aria-hidden="true">
+          {projectIcon(p.name, i)}
+        </span>
+        <span className="proj-card__name">{p.name || p.id}</span>
+        {p.division && (
+          <span className="proj-card__div">
+            <DivisionSymbol division={p.division} size={16} />
+            {divisionLabel(p.division)}
+          </span>
+        )}
+        <span className="proj-card__foot">
+          {p.active === false && <span className="proj-card__inactive-badge">비활성</span>}
+          {p.sample ? (
+            <span className="proj-card__badge proj-card__badge--sample">체험존</span>
+          ) : p.canEnter === false ? (
+            <span className="proj-card__badge proj-card__badge--muted">미할당</span>
+          ) : p.canEdit === false ? (
+            <span className="proj-card__badge proj-card__badge--view">조회 전용</span>
+          ) : (
+            <span className="proj-card__badge proj-card__badge--edit">편집 가능</span>
+          )}
+          {p.role === 'user' && p.hasCode && p.canEnter !== false && (
+            <span className="proj-card__lock" title="접속코드 필요">
+              🔒
+            </span>
+          )}
+        </span>
+      </button>
+      {/* 카드 도구 — 멤버(개발자·PM), 활성토글·삭제(개발자 전용). */}
+      <div className="proj-card__tools">
+        {canCreate && (
+          <button
+            className="proj-card__tool"
+            type="button"
+            title="참여 인원 보기·관리"
+            aria-label={`${p.name} 멤버 관리`}
+            onClick={() => setMemberProjectId(p.id)}
+          >
+            👥
+          </button>
+        )}
+        {isDeveloper && (
+          <button
+            className="proj-card__tool"
+            type="button"
+            title={p.active === false ? '활성화' : '비활성화'}
+            aria-label={p.active === false ? '프로젝트 활성화' : '프로젝트 비활성화'}
+            onClick={() => void onToggleActive(p)}
+          >
+            {p.active === false ? '▶' : '⏸'}
+          </button>
+        )}
+        {isDeveloper && (
+          <button
+            className="proj-card__tool proj-card__tool--danger"
+            type="button"
+            title="프로젝트 삭제"
+            aria-label={`${p.name} 삭제`}
+            onClick={() => void onDeleteProject(p)}
+          >
+            🗑
+          </button>
+        )}
+      </div>
+    </div>
+  )
+
   return (
     <div className="auth-screen">
       <div className="auth-card auth-card--dash">
@@ -564,7 +667,7 @@ function ProjectSelectScreen() {
               {isDeveloper && pendingApprovals.length > 0
                 ? ` · 승인 대기 ${pendingApprovals.length}`
                 : ''}{' '}
-              — 입장할 프로젝트를 선택하세요.
+              — {isDeveloper ? '왼쪽에서 본부를 선택하세요.' : '입장할 프로젝트를 선택하세요.'}
             </div>
           </div>
           <div className="proj-dash__actions">
@@ -579,94 +682,94 @@ function ProjectSelectScreen() {
 
         {error && <div className="auth-error">{error}</div>}
 
-        {projects.length === 0 && !canCreate ? (
+        {isDeveloper ? (
+          <div className="proj-dash__body">
+            {/* 좌: 본부 목록 — 클릭한 본부의 프로젝트만 우측에 표시. + 개발자 도구. */}
+            <nav className="proj-divnav">
+              <div className="proj-divnav__title">본부</div>
+              <ul className="proj-divnav__list">
+                {DIVISIONS.map((d) => (
+                  <li key={d.key}>
+                    <button
+                      type="button"
+                      className={`proj-divnav__item${selectedDiv === d.key ? ' is-active' : ''}`}
+                      onClick={() => setSelectedDiv(d.key)}
+                    >
+                      <DivisionSymbol division={d.key} size={18} />
+                      <span className="proj-divnav__name">{d.label}</span>
+                      <span className="proj-divnav__count">{countByDiv.get(d.key) ?? 0}</span>
+                    </button>
+                  </li>
+                ))}
+                {(countByDiv.get('') ?? 0) > 0 && (
+                  <li>
+                    <button
+                      type="button"
+                      className={`proj-divnav__item${selectedDiv === '' ? ' is-active' : ''}`}
+                      onClick={() => setSelectedDiv('')}
+                    >
+                      <DivisionSymbol division={null} size={18} />
+                      <span className="proj-divnav__name">본부 미지정</span>
+                      <span className="proj-divnav__count">{countByDiv.get('') ?? 0}</span>
+                    </button>
+                  </li>
+                )}
+              </ul>
+              <div className="proj-divnav__tools">
+                <button
+                  type="button"
+                  className="proj-divnav__tool"
+                  onClick={() => setAdminOpen(true)}
+                >
+                  ⚙ 관리자 도구
+                </button>
+                {pendingApprovals.length > 0 && (
+                  <button
+                    type="button"
+                    className="proj-divnav__tool proj-divnav__tool--pending"
+                    onClick={() => setAdminOpen(true)}
+                    title="관리자 등록 승인 대기"
+                  >
+                    🔔 승인 대기 <b>{pendingApprovals.length}</b>
+                  </button>
+                )}
+              </div>
+            </nav>
+            {/* 우: 선택한 본부의 프로젝트 */}
+            <div className="proj-dash__main">
+              {selectedDiv == null ? (
+                <div className="proj-dash__hint">
+                  왼쪽에서 본부를 선택하면 해당 본부의 프로젝트가 표시됩니다.
+                </div>
+              ) : (
+                <>
+                  <div className="proj-dash__mainhead">
+                    <span className="proj-dash__maintitle">
+                      {selectedDiv === '' ? '본부 미지정' : divisionLabel(selectedDiv)}
+                      <span className="proj-dash__maincount"> · {shownProjects.length}</span>
+                    </span>
+                    <button
+                      type="button"
+                      className="proj-dash__new"
+                      onClick={() => setCreateOpen(true)}
+                    >
+                      ＋ 새 프로젝트
+                    </button>
+                  </div>
+                  {shownProjects.length === 0 ? (
+                    <div className="auth-empty">이 본부에 등록된 프로젝트가 없습니다.</div>
+                  ) : (
+                    <div className="proj-grid">{shownProjects.map((p, i) => renderCard(p, i))}</div>
+                  )}
+                </>
+              )}
+            </div>
+          </div>
+        ) : projects.length === 0 && !canCreate ? (
           <div className="auth-empty">접근 가능한 프로젝트가 없습니다. 관리자에게 문의하세요.</div>
         ) : (
           <div className="proj-grid">
-            {projects.map((p, i) => (
-              <div
-                key={p.id}
-                className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
-              >
-                <button
-                  className="proj-card__main"
-                  type="button"
-                  disabled={p.canEnter === false}
-                  title={
-                    p.canEnter === false ? '할당된 프로젝트가 아닙니다 (입장 불가)' : undefined
-                  }
-                  onClick={() => {
-                    if (p.canEnter !== false) select(p)
-                  }}
-                >
-                  <span className="proj-card__icon" aria-hidden="true">
-                    {projectIcon(p.name, i)}
-                  </span>
-                  <span className="proj-card__name">{p.name || p.id}</span>
-                  {p.division && (
-                    <span className="proj-card__div">
-                      <DivisionSymbol division={p.division} size={16} />
-                      {divisionLabel(p.division)}
-                    </span>
-                  )}
-                  <span className="proj-card__foot">
-                    {p.active === false && (
-                      <span className="proj-card__inactive-badge">비활성</span>
-                    )}
-                    {p.sample ? (
-                      <span className="proj-card__badge proj-card__badge--sample">체험존</span>
-                    ) : p.canEnter === false ? (
-                      <span className="proj-card__badge proj-card__badge--muted">미할당</span>
-                    ) : p.canEdit === false ? (
-                      <span className="proj-card__badge proj-card__badge--view">조회 전용</span>
-                    ) : (
-                      <span className="proj-card__badge proj-card__badge--edit">편집 가능</span>
-                    )}
-                    {p.role === 'user' && p.hasCode && p.canEnter !== false && (
-                      <span className="proj-card__lock" title="접속코드 필요">
-                        🔒
-                      </span>
-                    )}
-                  </span>
-                </button>
-                {/* 카드 도구 — 멤버(개발자·PM), 활성토글·삭제(개발자 전용). */}
-                <div className="proj-card__tools">
-                  {canCreate && (
-                    <button
-                      className="proj-card__tool"
-                      type="button"
-                      title="참여 인원 보기·관리"
-                      aria-label={`${p.name} 멤버 관리`}
-                      onClick={() => setMemberProjectId(p.id)}
-                    >
-                      👥
-                    </button>
-                  )}
-                  {isDeveloper && (
-                    <button
-                      className="proj-card__tool"
-                      type="button"
-                      title={p.active === false ? '활성화' : '비활성화'}
-                      aria-label={p.active === false ? '프로젝트 활성화' : '프로젝트 비활성화'}
-                      onClick={() => void onToggleActive(p)}
-                    >
-                      {p.active === false ? '▶' : '⏸'}
-                    </button>
-                  )}
-                  {isDeveloper && (
-                    <button
-                      className="proj-card__tool proj-card__tool--danger"
-                      type="button"
-                      title="프로젝트 삭제"
-                      aria-label={`${p.name} 삭제`}
-                      onClick={() => void onDeleteProject(p)}
-                    >
-                      🗑
-                    </button>
-                  )}
-                </div>
-              </div>
-            ))}
+            {projects.map((p, i) => renderCard(p, i))}
             {canCreate && (
               <button
                 className="proj-card proj-card--action"
@@ -679,38 +782,16 @@ function ProjectSelectScreen() {
                 <span className="proj-card__name">새 프로젝트</span>
               </button>
             )}
-            {isDeveloper && (
-              <button
-                className="proj-card proj-card--action"
-                type="button"
-                onClick={() => setAdminOpen(true)}
-              >
-                <span className="proj-card__icon" aria-hidden="true">
-                  ⚙
-                </span>
-                <span className="proj-card__name">관리자 도구</span>
-              </button>
-            )}
-            {isDeveloper && pendingApprovals.length > 0 && (
-              <button
-                className="proj-card proj-card--action proj-card--pending"
-                type="button"
-                onClick={() => setAdminOpen(true)}
-                title="관리자 등록 승인 대기"
-              >
-                <span className="proj-card__icon" aria-hidden="true">
-                  🔔
-                </span>
-                <span className="proj-card__name">
-                  관리자 승인 대기 <b>{pendingApprovals.length}</b>
-                </span>
-              </button>
-            )}
           </div>
         )}
       </div>
 
-      {createOpen && <ProjectCreateModal onClose={() => setCreateOpen(false)} />}
+      {createOpen && (
+        <ProjectCreateModal
+          onClose={() => setCreateOpen(false)}
+          defaultDivision={isDeveloper && selectedDiv ? selectedDiv : ''}
+        />
+      )}
       {memberProj && (
         <div className="admin-overlay" onClick={() => setMemberProjectId(null)}>
           <div className="member-modal" onClick={(e) => e.stopPropagation()}>
@@ -1027,14 +1108,21 @@ function MemberPanel({
 }
 
 // 새 프로젝트 생성(개발자·PM) 모달. 접속코드는 선택 — 비우면 코드 없이 입장.
-function ProjectCreateModal({ onClose }: { onClose: () => void }) {
+function ProjectCreateModal({
+  onClose,
+  defaultDivision,
+}: {
+  onClose: () => void
+  /** 개발자가 특정 본부를 보고 있을 때 그 본부를 기본 선택. */
+  defaultDivision?: string
+}) {
   const createProject = useAuth((s) => s.createProject)
   const loading = useAuth((s) => s.loading)
   const user = useAuth((s) => s.user)
   const isDeveloper = user?.role === 'developer'
   const [name, setName] = useState('')
   const [code, setCode] = useState('')
-  const [division, setDivision] = useState('')
+  const [division, setDivision] = useState(defaultDivision ?? '')
   // 개발자는 본부를 선택, PM 은 본인 본부로 고정.
   const effectiveDivision = isDeveloper ? division : (user?.division ?? '')
   const submit = async (e: FormEvent) => {
