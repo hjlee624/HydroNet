@@ -557,10 +557,23 @@ export function ChartCanvas() {
       const { y } = toContent(e.clientX, e.clientY)
       const dragged = model.tasks.find((lt) => lt.task.id === drag.taskId)
       const target = computeRowTarget(drag.taskId, y)
-      // A near-horizontal drag within the task's own row is a pure schedule move —
-      // don't restack rows.
+      // 같은 줄(한 줄 패키지)에 다른 공정과 함께 있으면(merged), 그 공정을 자기 줄로 떼어내는(구분)
+      // 세로 이동은 태생적으로 작다 — 특히 맨 아래 줄은 바로 아래에 여유 공간이 없어 "아래 밴드"가
+      // 자기 막대 중심 0.5행 이내에 들어온다. 이 경우 tinyVertical 가드가 분리 제스처를 삼켜버려,
+      // 다른 공종으로 옮겼다 되돌려야만 새 줄이 잡히는 버그가 있었다. → merged면 재배치를 허용한다.
+      const sharesRow =
+        !!dragged &&
+        model.tasks.some(
+          (lt) =>
+            lt.categoryId === dragged.categoryId &&
+            lt.task.id !== drag.taskId &&
+            lt.subRow === dragged.subRow,
+        )
+      // 혼자인 줄에서의 near-horizontal 드래그는 순수 일정 이동 — 줄 재배치 안 함(중간 공정이 맨 아래로
+      // 튀는 것 방지). merged면 위 이유로 이 가드를 풀어 작은 세로 이동으로도 분리되게 한다.
       const tinyVertical =
         !!dragged &&
+        !sharesRow &&
         target?.catId === dragged.categoryId &&
         Math.abs(y - dragged.cy) < model.rowHeight * 0.5
       // 미러(예정 연동) 공종 레인으로는 옮길 수 없다 — 실제 공종(현재 시트)만 드롭 대상.
