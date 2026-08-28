@@ -1,7 +1,7 @@
 # Sequence
 
 <p align="center">
-  <img src="docs/login-preview.gif" alt="Sequence — 로그인 화면(본부 회전 쇼케이스)" width="820">
+  <img src="docs/login-preview.gif" alt="Sequence — 로그인 화면(본부 회전 쇼케이스)" width="760">
 </p>
 
 **토목 설계·시공 공정표(예정공정표 · 마일스톤) 관리 프로그램**
