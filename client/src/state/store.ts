@@ -50,6 +50,7 @@ import {
 } from './crdt'
 import { saveProjectToFile } from './fileIO'
 import { logInfo, logWarn } from './logger'
+import type { ReviewDelta } from './reviewImport'
 
 interface LinkingState {
   fromId: ID
@@ -212,6 +213,13 @@ export interface EditorState {
   /** 공정 추가. opts.afterId가 있으면 그 공정 바로 다음에 끼워 넣는다(사이드바 행별 ➕ 삽입). */
   addTask: (categoryId: ID, partial?: Partial<Task>, opts?: { afterId?: ID }) => ID
   updateTask: (id: ID, patch: Partial<Task>, opts?: { history?: boolean }) => void
+  /** AI 검토 라운드트립(ADR-003) — 검증된 델타들의 duration 을 **단일 커밋(undo 1엔트리)**으로
+   *  반영한다. 커밋 시점에 from CAS 를 재검증해 프리뷰↔반영 사이의 동시편집 소실을 막고,
+   *  reschedule 은 절대 호출하지 않는다(수동 여유 보존). 반영/스킵 결과를 돌려준다. */
+  applyReviewDeltas: (deltas: ReviewDelta[]) => {
+    applied: number
+    skipped: Array<{ taskId: string; reason: string }>
+  }
   /** 여러 공정 색상을 한 번에 지정(다중 선택 색 변경). ids가 1개면 그 하나만. */
   setTasksColor: (ids: ID[], color: string, opts?: { history?: boolean }) => void
   /** 세부공종(WBS 2단계) 일괄 이름변경 — 한 공종 안에서 subName===oldSub 인 공정들의 subName을
@@ -1089,6 +1097,45 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { cascade: affectsSchedule, history: opts?.history ?? true },
       )
+    },
+    applyReviewDeltas: (deltas) => {
+      const skipped: Array<{ taskId: string; reason: string }> = []
+      let applied = 0
+      // 조회 전용은 파싱·감사보다 먼저 차단(부작용 0).
+      if (get().readOnly) {
+        for (const d of deltas) skipped.push({ taskId: d.taskId, reason: '조회 전용 — 반영 불가' })
+        return { applied: 0, skipped }
+      }
+      // 단일 commit = undo 1엔트리. mutate 의 p 는 최신 authoritativeShadow(=CRDT 진실)이라
+      // 여기서의 from 대조가 곧 반영 시점 CAS(프리뷰 이후 원격/타 검토자 변경 소실 방어).
+      commit(
+        (p) => {
+          const changed: ID[] = []
+          for (const d of deltas) {
+            const t = p.tasks.find((x) => x.id === d.taskId)
+            if (!t || t.isMilestone) {
+              skipped.push({ taskId: d.taskId, reason: '공정 없음/마일스톤' })
+              continue
+            }
+            if (t.duration !== d.from) {
+              skipped.push({ taskId: d.taskId, reason: `반영 중 값 변경(현재 ${t.duration}일)` })
+              continue
+            }
+            const to = Math.max(1, Math.round(d.to))
+            // durationLabel 무언파괴 방지: 자동 라벨(=`${from}일`)일 때만 비워 새 공기가 자동
+            // 표시되게 하고, 사용자가 넣은 수동 라벨("약 2개월" 등)은 그대로 둔다.
+            if (t.durationLabel != null && t.durationLabel === `${d.from}일`)
+              t.durationLabel = undefined
+            t.duration = to
+            changed.push(t.id)
+            applied++
+          }
+          // 반영된 공정들의 incoming 링크 지연을 새 위치에 맞춰 역산 — 전 델타 적용 후 배치 1회.
+          for (const id of changed) relinkIncoming(p, id)
+        },
+        { cascade: true, history: true },
+      )
+      return { applied, skipped }
     },
     setTasksColor: (ids, color, opts) => {
       const set = new Set(ids)

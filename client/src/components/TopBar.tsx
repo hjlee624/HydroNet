@@ -2,12 +2,12 @@
 // commissioning toggle and the export entry point.
 
 import { useEffect, useState } from 'react'
-import { downloadReviewRequest } from '../export/reviewRequest'
 import { useAuth } from '../state/authStore'
 import { openProjectFromFile } from '../state/fileIO'
 import { logWarn } from '../state/logger'
 import { useEditor } from '../state/store'
 import { HelpDialog } from './HelpDialog'
+import { ReviewDialog } from './ReviewDialog'
 import { TemplateDialog } from './TemplateDialog'
 
 interface TopBarProps {
@@ -40,6 +40,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
 
   const [helpOpen, setHelpOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
+  const [reviewOpen, setReviewOpen] = useState(false)
 
   // 사용자가 고른 .json 파일을 열어 현재 사업으로 교체(요구: 원하는 경로에서 불러오기).
   async function onLoadFromFile() {
@@ -124,8 +125,8 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </button>
         <button
           className="btn btn--sm btn--ghost"
-          title="현재 공정표의 공기 적정성을 외부 AI(GPT·Gemini 등)로 검토받을 .md 파일 내보내기"
-          onClick={() => void downloadReviewRequest(a().project)}
+          title="외부 AI(GPT·Gemini 등)로 공사기간 적정성을 검토받고 제안을 반영"
+          onClick={() => setReviewOpen(true)}
         >
           🤖 AI 검토
         </button>
@@ -269,6 +270,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
 
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
       {newOpen && <TemplateDialog onClose={() => setNewOpen(false)} />}
+      {reviewOpen && <ReviewDialog onClose={() => setReviewOpen(false)} />}
     </header>
   )
 }
