@@ -2,6 +2,7 @@
 // commissioning toggle and the export entry point.
 
 import { useEffect, useState } from 'react'
+import { downloadReviewRequest } from '../export/reviewRequest'
 import { useAuth } from '../state/authStore'
 import { openProjectFromFile } from '../state/fileIO'
 import { logWarn } from '../state/logger'
@@ -120,6 +121,13 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
           onClick={() => void onLoadFromFile()}
         >
           불러오기
+        </button>
+        <button
+          className="btn btn--sm btn--ghost"
+          title="현재 공정표의 공기 적정성을 외부 AI(GPT·Gemini 등)로 검토받을 .md 파일 내보내기"
+          onClick={() => void downloadReviewRequest(a().project)}
+        >
+          🤖 AI 검토
         </button>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
         <button
