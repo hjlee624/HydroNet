@@ -290,17 +290,17 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     const laneY = cursorY
 
     // Group tasks into visual rows (요구2). 세부공정(parentId 있음)은 **상위 공정 줄에 이어** 붙는다.
-    // 2패스: ① 상위/일반 공정(parentId 없음)에 줄 배정(명시 row=한 줄 패키지, 없으면 자기 줄) →
-    // ② 세부공정을 상위 공정(parentId)의 줄에 얹는다. id로 연결하므로 이름/순서와 무관하게 안정적.
+    // 2패스: ① 상위/일반 공정·마일스톤(parentId 없음)에 줄 배정 → ② 세부공정을 상위 공정(parentId)의
+    // 줄에 얹는다. id로 연결하므로 이름/순서와 무관하게 안정적.
+    //   ▸ **공정·마일스톤은 명시 row와 무관하게 한 줄에 하나씩**(id 기준) 내린다 — 같은 줄에 여러 개를
+    //     쌓으면 좌측 공정명(cy 동일)·마일스톤 이름이 서로 겹치기 때문. 레인(공종)은 아래로 확장될 뿐
+    //     범위는 넘지 않으며, 순차 공정은 화살표(FS)로 이어진다.
     let auto = 0
     const rawRowOf = new Map<string, number>()
-    const groupRow = new Map<string, number>()
     const taskRow = new Map<string, number>() // task id → 줄(세부공정 상위 매칭용)
     for (const t of catTasks) {
       if (t.parentId) continue
-      const key = typeof t.row === 'number' ? `row:${t.row}` : `id:${t.id}`
-      if (!groupRow.has(key)) groupRow.set(key, auto++)
-      const r = groupRow.get(key)!
+      const r = auto++
       rawRowOf.set(t.id, r)
       taskRow.set(t.id, r)
     }
