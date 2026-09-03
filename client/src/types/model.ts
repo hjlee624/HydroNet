@@ -63,10 +63,9 @@ export interface Task {
   /** Duration in days. Milestones use 0. */
   duration: number
   isMilestone: boolean
-  /** Explicit sub-row WITHIN the lane (0-based). Tasks sharing the same row sit on
-   *  one horizontal line, positioned by start/duration — so a package like 상부댐 can
-   *  run 굴착→축조→페이스슬라브→충수 as adjacent bars on a single row. Undefined =
-   *  auto (one task per row, in array order) for backward compatibility. */
+  /** @deprecated 레거시 sub-row 힌트. 이제 **공정·마일스톤은 이름이 서로 겹치지 않도록 row와 무관하게
+   *  한 줄에 하나씩** 내려 배치된다(layout.ts) — 순서는 화살표(FS)로 잇는다. 세부공정은 parentId로 상위
+   *  공정 줄에 붙는다. 저장 파일 호환을 위해 필드는 남겨두지만 레이아웃은 이 값을 사용하지 않는다. */
   row?: number
   color?: string
   labelPosition?: LabelPosition
@@ -92,6 +91,18 @@ export interface Task {
    *  실제 작업이 아닌 연결/대기 구간임을 나타낸다. CPM 계산엔 일반 공정과 동일하게
    *  참여(기간·선후행 유지). undefined/false = 일반 공정. */
   isDummy?: boolean
+
+  // ── 물량 기반 공기 적정성(도메인 연동) ─────────────────────────────────────────
+  // 「공공 건설공사의 공사기간 산정기준」(국토부고시 제2024-1021호)의 법정 산정식과 정합:
+  //   작업일수 = 작업수량(quantity) ÷ 1일 작업량(부록4, workCode로 조회) — 주공정선 한정.
+  // engine/adequacy.ts가 이 필드 + data/standardRates.ts 로 이론 작업일수·편차·근거를 계산한다.
+  /** 이 공정의 시공 수량(물량). 표준 일작업량과 단위를 맞춰야 이론 작업일수가 유효. undefined = 미입력. */
+  quantity?: number
+  /** 물량 단위(㎥·㎡·m·ton·본·개소 등). 표준 일작업량(부록4)의 단위와 일치해야 함. */
+  unit?: string
+  /** 표준 일작업량 DB(data/standardRates.ts) 매핑 키 — 공종/세부작업 코드(조달청 세부공종분류코드 호환).
+   *  이 코드로 부록4의 1일 작업량을 찾아 물량÷생산성으로 이론 작업일수를 산출한다. undefined = 미매핑. */
+  workCode?: string
 
   /** 비영속 표시 플래그 — 예정공정표↔마일스톤 연동(augmentForMirror)으로 마일스톤 차트에
    *  '함께 표시'된 예정 공정임을 나타낸다. 렌더 시점에만 부여되며 저장되지 않는다. 표시 전용
@@ -266,4 +277,5 @@ export interface Project {
 /** Hard cap on the favourite-colour palette (2 rows × 5). */
 export const PALETTE_MAX = 10
 
-export const SCHEMA_VERSION = 1
+// v2: Task에 물량 기반 공기 적정성 필드(quantity·unit·workCode) 추가(추가·optional, 마이그레이션 불요).
+export const SCHEMA_VERSION = 2

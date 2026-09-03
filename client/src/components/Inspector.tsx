@@ -12,6 +12,8 @@ import { useEditor } from '../state/store'
 import { FONT_FAMILY_OPTIONS, TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS } from '../styles/theme'
 import type { LinkStyle, LinkType, PaperSize, TextRole } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
+import { assessTaskAdequacy } from '../engine/adequacy'
+import { STANDARD_RATE_OPTIONS, findStandardRate } from '../data/standardRates'
 
 /** 4개 속성 탭(요구사항 3) — 도면·프로젝트 / 텍스트 / 공정 / 연결. SAMPLE.png 형태,
  *  색은 현 Sequence 크림/오렌지. 차트에서 항목을 클릭하면 해당 탭으로 자동 전환된다. */
@@ -21,6 +23,14 @@ const INSPECTOR_TABS: { key: InspectorTab; label: string }[] = [
   { key: 'task', label: '공정 속성' },
   { key: 'link', label: '연결 속성' },
 ]
+
+/** 적정성 판정 뱃지 색 — engine/adequacy.ts 판정값별. */
+const VERDICT_COLOR: Record<string, string> = {
+  적정: '#1f9d63',
+  과소: '#c33b3b',
+  과다: '#c98a1b',
+  판정불가: '#8a94a0',
+}
 
 export function Inspector({ width }: { width: number }) {
   const tab = useEditor((s) => s.inspectorTab)
@@ -161,6 +171,45 @@ function PtInput({
   )
 }
 
+/** 물량 등 실수 입력 — blur/Enter에서 커밋. 빈 값이면 undefined(미입력)로 지운다. */
+function FloatField({
+  value,
+  onCommit,
+  placeholder,
+}: {
+  value?: number
+  onCommit: (v: number | undefined) => void
+  placeholder?: string
+}) {
+  const [text, setText] = useState(value == null ? '' : String(value))
+  useEffect(() => {
+    setText(value == null ? '' : String(value))
+  }, [value])
+  function commit() {
+    const t = text.trim()
+    if (t === '') {
+      onCommit(undefined)
+      return
+    }
+    const v = Number(t)
+    if (Number.isFinite(v) && v >= 0) onCommit(v)
+    else setText(value == null ? '' : String(value))
+  }
+  return (
+    <input
+      className="input"
+      inputMode="decimal"
+      value={text}
+      placeholder={placeholder}
+      onChange={(e) => setText(e.target.value)}
+      onBlur={commit}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter') e.currentTarget.blur()
+      }}
+    />
+  )
+}
+
 function TextStyleInspector({ role }: { role: TextRole }) {
   const styles = useEditor((s) => s.project.view.textStyles)
   const showTitle = useEditor((s) => s.project.view.showTitle) !== false
@@ -265,6 +314,8 @@ function TaskInspector({ id }: { id: string }) {
   const currentColor =
     task.color ?? project.categories.find((c) => c.id === task.categoryId)?.color ?? '#7c93a8'
   const palette = project.palette ?? []
+  // 물량 기반 공기 적정성(법정 산정식) — 마일스톤은 기간 개념이 없어 제외.
+  const adq = task.isMilestone ? null : assessTaskAdequacy(task)
 
   return (
     <>
@@ -445,6 +496,133 @@ function TaskInspector({ id }: { id: string }) {
           </span>
         </div>
       </div>
+
+      {adq && (
+        <div
+          style={{
+            border: '1px solid var(--hairline)',
+            borderRadius: 8,
+            padding: '10px 12px',
+            margin: '6px 0 12px',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+            <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--charcoal)' }}>
+              물량 · 공기 적정성
+            </span>
+            <span
+              className="badge"
+              style={{ background: '#3b6ea5', color: '#fff', fontSize: 10, fontWeight: 700 }}
+            >
+              법정 산정기준
+            </span>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label>물량(수량)</label>
+              <FloatField
+                value={task.quantity}
+                placeholder="예: 1200"
+                onCommit={(v) => a().updateTask(id, { quantity: v }, { history: false })}
+              />
+            </div>
+            <div className="field" style={{ maxWidth: 84 }}>
+              <label>단위</label>
+              <input
+                className="input"
+                value={task.unit ?? ''}
+                placeholder="㎥"
+                onChange={(e) =>
+                  a().updateTask(id, { unit: e.target.value || undefined }, { history: false })
+                }
+              />
+            </div>
+          </div>
+          <div className="field">
+            <label>표준 일작업량 (가이드라인 부록4 공종)</label>
+            <select
+              className="select"
+              value={task.workCode ?? ''}
+              onChange={(e) => {
+                const code = e.target.value || undefined
+                const rate = findStandardRate(code)
+                a().updateTask(
+                  id,
+                  { workCode: code, ...(rate ? { unit: rate.unit } : {}) },
+                  { history: false },
+                )
+              }}
+            >
+              <option value="">(미지정)</option>
+              {STANDARD_RATE_OPTIONS.map((o) => (
+                <option key={o.code} value={o.code}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div
+            style={{
+              fontSize: 11.5,
+              lineHeight: 1.55,
+              color: 'var(--slate)',
+              background: 'var(--cream)',
+              borderRadius: 6,
+              padding: '8px 10px',
+              marginTop: 4,
+            }}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                marginBottom: 6,
+              }}
+            >
+              <span style={{ fontWeight: 600 }}>적정성 판정</span>
+              <span
+                className="badge"
+                style={{ color: '#fff', background: VERDICT_COLOR[adq.verdict], fontWeight: 700 }}
+              >
+                {adq.verdict}
+              </span>
+            </div>
+            {adq.theoretical != null ? (
+              <div style={{ marginBottom: 6 }}>
+                현 공기 <b>{adq.current}일</b> · 이론 작업일수 <b>{adq.theoretical}일</b>
+                {adq.deviationPct != null && (
+                  <>
+                    {' · 편차 '}
+                    <b
+                      style={{
+                        color:
+                          adq.verdict === '적정'
+                            ? 'var(--primary-deep)'
+                            : VERDICT_COLOR[adq.verdict],
+                      }}
+                    >
+                      {adq.deviationPct > 0 ? '+' : ''}
+                      {adq.deviationPct}%
+                    </b>
+                  </>
+                )}
+              </div>
+            ) : (
+              <div style={{ marginBottom: 6, color: 'var(--stone)' }}>
+                물량과 표준 일작업량을 연결하면 이론 작업일수가 자동 계산됩니다.
+              </div>
+            )}
+            <div style={{ borderTop: '1px dashed var(--hairline)', paddingTop: 6 }}>
+              {adq.basis.map((b, i) => (
+                <div key={i} style={{ margin: '2px 0' }}>
+                  · {b}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
 
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteTask(id)}>
         공정 삭제

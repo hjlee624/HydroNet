@@ -4,6 +4,7 @@
 
 import { nanoid } from 'nanoid'
 import type { Category, Link, Project, ProjectKind, Sheet, Task } from '../types/model'
+import { SCHEMA_VERSION } from '../types/model'
 import { dateToDay, parseISO } from '../engine/dates'
 import { applyCascade } from '../engine/scheduling'
 import { lanePalette, DEFAULT_PALETTE } from '../styles/theme'
@@ -79,7 +80,7 @@ function projectShell(
     palette: [...DEFAULT_PALETTE],
     branding: { logos: [{ src: DEFAULT_CI, w: 168, h: 60 }] },
     commissioningEnabled: false,
-    meta: { createdAt: now, updatedAt: now, schemaVersion: 1 },
+    meta: { createdAt: now, updatedAt: now, schemaVersion: SCHEMA_VERSION },
   }
 }
 

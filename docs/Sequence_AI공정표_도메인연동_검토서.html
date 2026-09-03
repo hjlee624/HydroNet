@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sequence — 실시간 AI 검토 + 도메인 데이터 연동 통합 설계 검토서</title>
+<style>
+  :root{
+    --navy:#0b1f33; --navy-2:#0f2a44; --ink:#16222e; --muted:#5b6b7a;
+    --line:#e2e8ee; --paper:#f6f9fb; --card:#ffffff;
+    --teal:#0ea5a4; --cyan:#2b91d6; --cyan-soft:#e8f3fb;
+    --gold:#c98a1b; --gold-soft:#fbf1dc;
+    --green:#1f9d63; --green-soft:#e5f5ec;
+    --red:#c33b3b; --red-soft:#fbe9e9;
+    --p0:#c33b3b; --p1:#c98a1b; --p2:#2b7bbf;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,34,50,.06),0 8px 28px rgba(16,34,50,.07);
+    --font:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,
+           'Segoe UI','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+    --mono:'SF Mono',Consolas,'D2Coding','D2Coding ligature',monospace;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;font-family:var(--font);color:var(--ink);background:var(--paper);
+    line-height:1.72;font-size:16px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  .wrap{max-width:1020px;margin:0 auto;padding:0 22px;}
+  a{color:var(--cyan);text-decoration:none;} a:hover{text-decoration:underline;}
+  code{font-family:var(--mono);background:#eef2f6;padding:1px 6px;border-radius:5px;font-size:.86em;color:#334;}
+
+  header.hero{
+    background:radial-gradient(1100px 480px at 82% -8%,rgba(43,145,214,.34),transparent 60%),
+      radial-gradient(900px 420px at 6% 8%,rgba(14,165,164,.30),transparent 55%),
+      linear-gradient(160deg,#0a1c2e 0%,#0d2540 58%,#0b1f33 100%);
+    color:#eaf2f8;position:relative;overflow:hidden;border-bottom:3px solid var(--teal);}
+  header.hero::after{content:"";position:absolute;inset:0;opacity:.10;pointer-events:none;
+    background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
+    background-size:34px 34px;mask-image:linear-gradient(180deg,#000,transparent 78%);}
+  .hero .wrap{padding:52px 22px 46px;position:relative;z-index:1;}
+  .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:#8fd0d6;font-weight:700;border:1px solid rgba(143,208,214,.4);
+    padding:5px 12px;border-radius:999px;background:rgba(143,208,214,.08);}
+  h1.title{font-size:clamp(26px,4.2vw,42px);line-height:1.2;margin:18px 0 12px;font-weight:800;letter-spacing:-.01em;color:#fff;}
+  h1.title .accent{color:#67d6d3;}
+  .subtitle{font-size:clamp(15px,1.9vw,18px);color:#c4d6e4;max-width:78ch;margin:0 0 24px;}
+  .meta-row{display:flex;flex-wrap:wrap;gap:10px;}
+  .chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:#dbe8f2;padding:7px 13px;border-radius:10px;}
+  .chip b{color:#fff;} .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);}
+
+  main{padding:12px 0 60px;}
+  section{padding:38px 0 8px;}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px;}
+  .sec-num{font-size:14px;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums;letter-spacing:.06em;}
+  h2{font-size:clamp(21px,2.7vw,28px);margin:0 0 4px;font-weight:800;color:var(--navy);letter-spacing:-.01em;}
+  .lede{color:var(--muted);font-size:15.5px;margin:2px 0 22px;max-width:84ch;}
+  h3{font-size:18.5px;margin:26px 0 10px;font-weight:700;color:var(--navy-2);}
+  h4{font-size:15.5px;margin:16px 0 6px;font-weight:700;color:var(--ink);}
+  p{margin:10px 0;}
+
+  .card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);
+    padding:22px 24px;box-shadow:var(--shadow);margin:16px 0;}
+  .card.accent{border-left:4px solid var(--teal);}
+  .grid{display:grid;gap:16px;}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr);}
+  .grid.cols-2{grid-template-columns:repeat(2,1fr);}
+  @media(max-width:840px){.grid.cols-3,.grid.cols-2{grid-template-columns:1fr;}}
+
+  .keycard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);}
+  .keycard .k-idx{font-size:12px;font-weight:800;color:#fff;background:var(--navy);width:26px;height:26px;
+    display:grid;place-items:center;border-radius:8px;margin-bottom:12px;}
+  .keycard h4{margin:0 0 8px;font-size:16.5px;color:var(--navy);}
+  .keycard p{margin:0;font-size:14.3px;color:var(--muted);}
+  .keycard .k-tag{display:inline-block;margin-top:12px;font-size:12px;font-weight:700;color:var(--teal);
+    background:var(--cyan-soft);padding:4px 10px;border-radius:7px;}
+
+  .badge{display:inline-block;font-size:11.5px;font-weight:800;letter-spacing:.02em;padding:3px 9px;border-radius:999px;vertical-align:middle;white-space:nowrap;}
+  .b-p0{color:#fff;background:var(--p0);} .b-p1{color:#fff;background:var(--p1);} .b-p2{color:#fff;background:var(--p2);}
+  .b-now{color:var(--green);background:var(--green-soft);border:1px solid #bfe6cf;}
+  .b-front{color:var(--gold);background:var(--gold-soft);border:1px solid #f0d9a8;}
+  .b-law{color:#fff;background:#3b6ea5;}
+  .b-refuted{color:var(--red);background:var(--red-soft);}
+
+  .have-have{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
+  @media(max-width:840px){.have-have{grid-template-columns:1fr;}}
+  .have-col{padding:20px 22px;}
+  .have-col.pos{background:linear-gradient(180deg,#f2fbf6,#fff);}
+  .have-col.gap{background:linear-gradient(180deg,#fdf4f4,#fff);border-left:1px solid var(--line);}
+  @media(max-width:840px){.have-col.gap{border-left:none;border-top:1px solid var(--line);}}
+  .have-col h4{display:flex;align-items:center;gap:8px;margin-top:0;}
+  .have-col ul{margin:8px 0 0;padding-left:0;list-style:none;}
+  .have-col li{position:relative;padding:6px 0 6px 26px;font-size:14.2px;border-top:1px dashed var(--line);}
+  .have-col li:first-child{border-top:none;}
+  .have-col.pos li::before{content:"✓";position:absolute;left:2px;top:6px;color:var(--green);font-weight:800;}
+  .have-col.gap li::before{content:"✕";position:absolute;left:2px;top:6px;color:var(--red);font-weight:800;}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:14px 0;background:var(--card);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top;}
+  thead th{background:var(--navy);color:#eaf2f8;font-weight:700;font-size:13px;letter-spacing:.02em;border-bottom:none;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:nth-child(even){background:#fafcfe;}
+  td strong{color:var(--navy-2);}
+  .tick{color:var(--green);font-weight:800;} .cross{color:var(--red);font-weight:800;} .part{color:var(--gold);font-weight:800;}
+
+  .feat{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow);margin:18px 0;overflow:hidden;}
+  .feat-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 22px;background:linear-gradient(180deg,#f9fbfd,#fff);border-bottom:1px solid var(--line);}
+  .feat-head .f-id{font-size:13px;font-weight:800;color:#fff;background:var(--navy);padding:4px 10px;border-radius:8px;letter-spacing:.03em;}
+  .feat-head .f-name{font-size:17px;font-weight:800;color:var(--navy);flex:1 1 auto;}
+  .feat-body{padding:18px 22px;}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:6px;}
+  @media(max-width:840px){.row2{grid-template-columns:1fr;}}
+  .tier{border-radius:11px;padding:14px 16px;}
+  .tier.now{background:var(--green-soft);border:1px solid #c7e8d5;}
+  .tier.front{background:var(--gold-soft);border:1px solid #f0dcac;}
+  .tier h5{margin:0 0 7px;font-size:13.5px;font-weight:800;display:flex;align-items:center;gap:8px;}
+  .tier.now h5{color:#137a4b;} .tier.front h5{color:#9a6a12;}
+  .tier ul{margin:0;padding-left:18px;font-size:13.8px;} .tier li{margin:5px 0;}
+  .impl{margin-top:16px;font-size:13.6px;background:#f4f7fa;border-left:3px solid var(--cyan);border-radius:0 8px 8px 0;padding:11px 14px;color:#33465a;}
+  .impl b{color:var(--navy);}
+  .src-line{margin-top:11px;font-size:12.5px;color:var(--muted);}
+  sup.ref{font-size:11px;font-weight:700;} sup.ref a{color:var(--cyan);}
+
+  .formula{background:linear-gradient(180deg,#0e2540,#0b1f33);color:#eaf2f8;border-radius:var(--radius);padding:22px 24px;margin:16px 0;box-shadow:var(--shadow);}
+  .formula .f-eq{font-size:clamp(15px,2.1vw,19px);font-weight:700;text-align:center;line-height:1.9;color:#fff;}
+  .formula .f-eq b{color:#67d6d3;}
+  .formula .f-sub{font-size:13px;color:#a9c2d6;text-align:center;margin-top:10px;}
+  .formula .hl{background:rgba(103,214,211,.16);padding:2px 8px;border-radius:6px;}
+
+  .flow{display:flex;flex-wrap:wrap;align-items:stretch;gap:10px;margin:16px 0;}
+  .flow .node{flex:1 1 150px;min-width:140px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:13px 14px;box-shadow:var(--shadow);}
+  .flow .node .n-t{font-size:13.5px;font-weight:800;color:var(--navy);}
+  .flow .node .n-d{font-size:12px;color:var(--muted);margin-top:3px;}
+  .flow .arrow{align-self:center;color:var(--teal);font-weight:800;font-size:18px;}
+
+  .road{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;}
+  @media(max-width:840px){.road{grid-template-columns:1fr;}}
+  .phase{border-radius:var(--radius);padding:20px;color:#eaf2f8;position:relative;overflow:hidden;box-shadow:var(--shadow);}
+  .phase.p1{background:linear-gradient(160deg,#0e4a4a,#0b3a3a);}
+  .phase.p2{background:linear-gradient(160deg,#134a72,#0e3956);}
+  .phase.p3{background:linear-gradient(160deg,#2a2f5a,#1c2142);}
+  .phase .ph-when{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.82;}
+  .phase .ph-title{font-size:17px;font-weight:800;margin:6px 0 3px;color:#fff;}
+  .phase .ph-goal{font-size:13px;opacity:.9;margin-bottom:12px;}
+  .phase ul{margin:0;padding-left:17px;font-size:13.4px;} .phase li{margin:6px 0;}
+
+  .callout{border-radius:var(--radius);padding:18px 22px;margin:16px 0;font-size:14.4px;}
+  .callout.warn{background:var(--red-soft);border:1px solid #f0c9c9;}
+  .callout.moat{background:linear-gradient(180deg,#eef8f8,#fff);border:1px solid #c9e8e7;border-left:4px solid var(--teal);}
+  .callout.note{background:#f4f7fa;border:1px solid var(--line);border-left:4px solid var(--cyan);}
+  .callout.law{background:linear-gradient(180deg,#eef3fa,#fff);border:1px solid #c9d8ec;border-left:4px solid #3b6ea5;}
+  .callout h4{margin-top:0;display:flex;align-items:center;gap:8px;}
+  .callout ul{margin:8px 0 0;padding-left:20px;} .callout li{margin:6px 0;}
+
+  .refuted-item{border:1px solid #f0d3d3;border-radius:10px;padding:12px 15px;margin:10px 0;background:#fdf7f7;font-size:13.6px;}
+  .refuted-item .r-top{display:flex;align-items:center;gap:10px;margin-bottom:5px;}
+  .refuted-item .r-vote{font-size:11.5px;font-weight:800;color:var(--red);font-variant-numeric:tabular-nums;}
+
+  ol.sources{font-size:13.3px;color:var(--muted);padding-left:26px;}
+  ol.sources li{margin:8px 0;padding-left:4px;word-break:break-word;}
+  ol.sources .q{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.03em;padding:1px 7px;border-radius:5px;margin-right:7px;vertical-align:middle;}
+  .q.primary{background:var(--green-soft);color:var(--green);}
+  .q.secondary{background:var(--cyan-soft);color:var(--cyan);}
+  .q.blog{background:#f0eef7;color:#6b5ca8;}
+  ol.sources a{color:var(--navy-2);}
+
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0;}
+  @media(max-width:840px){.stats{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center;box-shadow:var(--shadow);}
+  .stat .n{font-size:24px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums;}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  footer{background:var(--navy);color:#9fb4c6;padding:28px 0;font-size:13px;}
+  footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:center;}
+  footer b{color:#eaf2f8;}
+
+  @media print{
+    body{background:#fff;font-size:12px;}
+    header.hero,.formula,.phase{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
+    .card,.feat,.keycard,table,.phase{box-shadow:none;break-inside:avoid;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:#67d6d3;display:inline-block"></span> 통합 설계 검토서 · 실시간 AI + 도메인 연동</span>
+    <h1 class="title">공정표를 <span class="accent">도메인과 유기적으로</span>:<br>실시간 AI 검토 + 물량기반 공기 적정성 검증</h1>
+    <p class="subtitle">
+      "검토를 누르면 화면에 즉시 반영"되는 실시간 AI(<b>Part A</b>)와, 과업지시서·수량산출서를 근거로 각 공정의 공사기간이
+      적정한지 <b>법정 산정기준</b>으로 즉시 확인(<b>Part B</b>)하는 두 축을, 현행 <b>Sequence</b>(CPM 엔진·시설물 템플릿·방금 구축한 AI 검토 라운드트립) 위에
+      통합 설계로 얹기 위해 <b>무엇을 추가·수정해야 하는가</b>를 근거와 함께 정리한다.
+    </p>
+    <div class="meta-row">
+      <span class="chip"><span class="dot"></span> 작성일 <b>2026-08-31</b></span>
+      <span class="chip">대상 <b>Sequence / HydroNET</b></span>
+      <span class="chip">근거 <b>딥리서치 23개 출처 · 23개 주장 검증</b></span>
+      <span class="chip">초점 <b>실시간 반영 + 도메인 데이터 (동등)</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 00 요약 -->
+  <section id="summary">
+    <div class="sec-head"><span class="sec-num">00</span><h2>핵심 요약 — 세 가지 결론</h2></div>
+    <p class="lede">
+      리서치가 결정적 사실 하나를 확인해줬다: 당신이 원하는 "물량÷일작업량으로 공기 적정성 판정"은 <b>이미 대한민국 법정 산정기준</b>이며,
+      그 공식이 <b>주공정선(critical path) 상의 작업에 한정</b>된다 — 즉 <b>우리 CPM 엔진과 정확히 맞물린다.</b>
+    </p>
+    <div class="grid cols-3">
+      <div class="keycard">
+        <div class="k-idx">1</div>
+        <h4>실시간 반영엔 MCP가 정답이 아니다</h4>
+        <p>단일 로컬 앱이 스스로 반영하는 시나리오의 정석은 <b>인-프로세스 함수콜링 + 결정론 엔진 + 사람 승인</b>. MCP는 "여러 외부 AI 클라이언트가 공유"할 때의 도구고, 시간민감·결정론 작업엔 오히려 오버헤드다.<sup class="ref"><a href="#s1">[1]</a></sup><sup class="ref"><a href="#s2">[2]</a></sup></p>
+        <span class="k-tag">이미 만든 검토 파이프라인을 로컬 호출로 승격</span>
+      </div>
+      <div class="keycard">
+        <div class="k-idx">2</div>
+        <h4>공기 적정성엔 "법정 공식"이 있다</h4>
+        <p>「공공 건설공사의 공사기간 산정기준」(국토부고시 2024-1021호): <b>작업일수 = 물량 ÷ 1일 생산성(표준품셈)</b>, 주공정선 한정. 총공사기간 = 준비+작업일수+비작업일수+정리.<sup class="ref"><a href="#s10">[10]</a></sup><sup class="ref"><a href="#s11">[11]</a></sup></p>
+        <span class="k-tag">우리 CPM·우기 밴드와 그대로 정합</span>
+      </div>
+      <div class="keycard">
+        <div class="k-idx">3</div>
+        <h4>표준 데이터: 공식은 있으나 "깨끗한 DB"는 없다</h4>
+        <p>표준품셈은 data.go.kr에 <b>무료·무제한 라이선스</b>로 있으나<sup class="ref"><a href="#s7">[7]</a></sup>, 공종별 "일작업량"을 바로 쓸 수 있는 형태는 <b>아님(검증에서 기각)</b>. 문서에서 추출·구조화 + 조달청 공종코드 매핑이 실제 과제.<sup class="ref"><a href="#s13">[13]</a></sup></p>
+        <span class="k-tag">DB 구축이 이 프로젝트의 진짜 노동</span>
+      </div>
+    </div>
+    <div class="callout law" style="margin-top:22px;">
+      <h4>⚖️ 이 검토서를 관통하는 한 문장</h4>
+      <p style="margin:0;">
+        <b>"법정 공사기간 산정식(물량÷일작업량, 주공정선 한정)을 표준품셈 로컬 DB로 계산해, 막대 클릭 시 근거로 띄우고,
+        AI 제안은 로컬 함수콜링으로 받아 결정론 엔진이 재계산 후 화면에 즉시 반영한다."</b><br>
+        — MCP는 나중에 외부 에이전트용 어댑터로만. 코어는 우리가 이미 절반 지었다.
+      </p>
+    </div>
+  </section>
+
+  <!-- 01 현황 -->
+  <section id="diagnosis">
+    <div class="sec-head"><span class="sec-num">01</span><h2>현황 진단 — 어디에 붙나</h2></div>
+    <p class="lede">코드 실측 기준. 스케줄 코어와 AI 검토 골격은 있으나, <b>도메인 데이터(물량·공종코드·표준 일작업량)와 실시간 호출 경로는 전면 공백</b>이다.</p>
+    <div class="have-have">
+      <div class="have-col pos">
+        <h4>✅ 이미 있는 것 (붙일 자리)</h4>
+        <ul>
+          <li><b>CPM 엔진</b> — 주공정선·여유 자동 계산 <code>engine/scheduling.ts</code> → 법정 "주공정선 한정" 공기 검증과 정합</li>
+          <li><b>AI 검토 라운드트립</b> — <code>buildReviewPlan</code>/<code>applyReviewDeltas</code>·<code>ReviewDialog</code>(방금 구축) → 실시간 경로의 재사용 코어</li>
+          <li><b>공정 클릭 → Inspector 「공정 속성」 탭</b> <code>Inspector.tsx</code> → "근거 팝업"이 얹힐 자리</li>
+          <li><b>시설물 표준 공정 템플릿</b>(33+9종) → "유사 실적·표준 대비" 판정의 기반</li>
+          <li><b>우기(강우) 밴드</b> <code>RainySeason</code> → 법정 "비작업일수(기상)"와 연결점</li>
+        </ul>
+      </div>
+      <div class="have-col gap">
+        <h4>❌ 없는 것 (추가 대상)</h4>
+        <ul>
+          <li><b>물량·단위·공종코드 데이터 모델</b> — <code>Task</code>에 수량 필드 없음 → 산정식 계산 불가</li>
+          <li><b>표준 일작업량(생산성) 로컬 DB</b> — 표준품셈 기반 기준 데이터 없음</li>
+          <li><b>과업지시서·수량산출서·내역서(BoQ) 취입</b> — HWP/PDF/Excel 파싱·매핑 없음</li>
+          <li><b>막대 호버 툴팁</b> — 현재 바에 hover 팝업 인프라 없음(신규)</li>
+          <li><b>실시간 LLM 호출 경로</b> — 지금은 .md 수동 왕복. 앱 내 직접 호출 없음</li>
+          <li><b>적정성 판정 엔진</b> — 4방식(산정식·표준대비·법적준수·LLM) 없음</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 Part A -->
+  <section id="partA">
+    <div class="sec-head"><span class="sec-num">02</span><h2>Part A · 실시간 AI 반영 — MCP냐 다른 방법이냐</h2></div>
+    <p class="lede">
+      직접 물으신 것: "MCP를 붙이면 되냐, 아니면 다른 방법이냐?" 리서치 결론은 명확하다 — <b>이 시나리오의 정답은 MCP가 아니다.</b>
+    </p>
+
+    <h3>결정 휴리스틱: "호출자가 누구냐"로 갈린다</h3>
+    <table>
+      <thead><tr><th style="width:150px">방식</th><th>언제 맞나</th><th style="width:180px">Sequence 적합성</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><b>인-프로세스 함수콜링</b></td>
+          <td>단일 앱 하나만 그 로직을 쓰면 됨 — 앱 내부에서 LLM이 도구(함수)를 호출<sup class="ref"><a href="#s1">[1]</a></sup></td>
+          <td><span class="tick">✓ 최적 (권장)</span></td>
+        </tr>
+        <tr>
+          <td><b>로컬 REST API</b></td>
+          <td>비(非)LLM 호출자(서비스·크론·웹훅)나 시간민감·결정론 작업 — 예측 가능한 성능<sup class="ref"><a href="#s1">[1]</a></sup></td>
+          <td><span class="part">보조 (서버 프록시)</span></td>
+        </tr>
+        <tr>
+          <td><b>MCP</b></td>
+          <td><b>여러 외부 AI 클라이언트</b>(Claude Desktop 등)가 같은 도구를 공유해야 할 때. 프로토콜 오버헤드 존재<sup class="ref"><a href="#s2">[2]</a></sup></td>
+          <td><span class="cross">✕ 코어엔 과함</span> · 향후 어댑터</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="callout note">
+      <p style="margin:0;">
+        <b>핵심:</b> "검토 누르면 <u>이 앱 화면에</u> 즉시 반영" = <b>단일 앱 내부 시나리오</b>. 여기에 MCP를 쓰면 프로토콜 계층만 늘고 얻는 게 없다.
+        MCP는 "시간민감·결정론 작업엔 직접 호출이 더 예측 가능"<sup class="ref"><a href="#s1">[1]</a></sup>하다는 원칙에 정면으로 걸린다. 만약 MCP를 쓴다면, 로컬 단일 사용자엔
+        <b>stdio 트랜스포트</b>가 정석(네트워크·소켓·인증 불필요)이나<sup class="ref"><a href="#s3">[3]</a></sup>, 그건 <b>외부 AI를 붙일 때</b> 얘기다.
+      </p>
+    </div>
+
+    <h3>권장 아키텍처 — "로컬 함수콜링 + 결정론 엔진 + 승인 게이트"</h3>
+    <div class="flow">
+      <div class="node"><div class="n-t">① 사용자</div><div class="n-d">[AI 검토] 클릭</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n-t">② 서버 프록시</div><div class="n-d">로컬 Node가 LLM API 호출(BYO 키)<br>공정표+근거를 컨텍스트로</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n-t">③ LLM = 제안만</div><div class="n-d">구조화 델타(duration 등)<br><b>날짜·CPM 계산 안 함</b></div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n-t">④ 승인 게이트</div><div class="n-d">ReviewDialog diff<br>사람이 선택</div></div>
+      <div class="arrow">→</div>
+      <div class="node"><div class="n-t">⑤ 결정론 엔진</div><div class="n-d">applyReviewDeltas→CPM 재계산<br><b>화면 즉시 반영</b></div></div>
+    </div>
+    <div class="callout note">
+      <p style="margin:0;">
+        ③~⑤는 <b>이미 구축됨</b>(<code>buildReviewPlan</code>/<code>applyReviewDeltas</code>/<code>ReviewDialog</code>). 실시간화는 <b>②(수동 .md 왕복 → 앱 내 직접 호출)만 추가</b>하면 된다.
+        승인 게이트는 학계·업계 정설과 일치: "정책/승인 결정은 모델이 아니라 <b>게이트웨이 계층</b>이 한다 — 모델은 제안만"<sup class="ref"><a href="#s5">[5]</a></sup>. OpenAI Agents SDK도 <code>needs_approval</code>로
+        승인 필요 시 실행을 일시정지(interruptions)시키는 <b>사람 개입 루프</b>를 표준 제공한다<sup class="ref"><a href="#s4">[4]</a></sup> — 우리 <code>ReviewDialog</code>가 바로 그 게이트웨이다.
+      </p>
+    </div>
+    <div class="row2">
+      <div class="tier now">
+        <h5>🟢 실무형 (6–12개월)</h5>
+        <ul>
+          <li>서버에 LLM 프록시 라우트(<code>server/src</code>) — BYO 키, 로컬 저장</li>
+          <li>[AI 검토] → 직접 호출 → 델타 → 기존 ReviewDialog로 즉시 프리뷰·반영</li>
+          <li>파일 왕복 방식은 폐쇄망·오프라인 백업으로 <b>병존 유지</b></li>
+        </ul>
+      </div>
+      <div class="tier front">
+        <h5>🟡 프런티어 (문샷)</h5>
+        <ul>
+          <li>외부 에이전트용 <b>MCP stdio 어댑터</b> — 동일 도구(propose/apply) 노출, 승인은 여전히 앱 내</li>
+          <li>대화형 반복 루프(제안→재계산→재제안) 에이전트</li>
+          <li>로컬 소형 LLM 내장(완전 오프라인 검토)</li>
+        </ul>
+      </div>
+    </div>
+    <p class="src-line">근거: MCP/API/함수콜링 선택 휴리스틱 <sup class="ref"><a href="#s1">[1]</a></sup> · stdio vs HTTP 트랜스포트 <sup class="ref"><a href="#s2">[2]</a></sup><sup class="ref"><a href="#s3">[3]</a></sup> · 사람 승인 게이트웨이·<code>needs_approval</code> <sup class="ref"><a href="#s4">[4]</a></sup><sup class="ref"><a href="#s5">[5]</a></sup><sup class="ref"><a href="#s6">[6]</a></sup></p>
+  </section>
+
+  <!-- 03 Part B -->
+  <section id="partB">
+    <div class="sec-head"><span class="sec-num">03</span><h2>Part B · 도메인 연동 + 공기 적정성 검증</h2></div>
+    <p class="lede">
+      공정표는 수량·내역이 정리된 뒤 마지막에 짠다 — 그래서 도메인 자료와 유기적으로 물려야 한다. 리서치가 이걸 <b>추측이 아니라 법정 공식</b>으로 뒷받침한다.
+    </p>
+
+    <h3>중심축: 법정 공사기간 산정식 = 우리 CPM에 그대로 얹힌다</h3>
+    <div class="formula">
+      <div class="f-eq">
+        총공사기간 = 준비기간 + <b>작업일수</b> + 비작업일수 + 정리기간
+      </div>
+      <div class="f-eq" style="margin-top:14px;">
+        <span class="hl"><b>작업일수</b> = 단위작업 물량 ÷ 1일 생산성(작업량)</span>　·　<b>주공정선(critical path) 상의 작업에 한정</b>
+      </div>
+      <div class="f-sub">
+        「공공 건설공사의 공사기간 산정기준」(국토교통부고시 제2024-1021호, 시행 2025.1.6) · 「건설기술 진흥법」 제45조의2 — 발주청의 법정 의무<sup class="ref" style="color:#67d6d3"><a href="#s10" style="color:#67d6d3">[10]</a></sup><sup class="ref" style="color:#67d6d3"><a href="#s11" style="color:#67d6d3">[11]</a></sup>
+      </div>
+    </div>
+    <div class="callout law">
+      <h4>⚖️ 왜 이게 결정적인가</h4>
+      <ul>
+        <li>"단위작업별 물량을 생산성으로 나누어 공기를 산정하며, <b>전체 공사기간에 영향을 미치는 작업은 주공정선 상에 한정</b>되므로 단위공기 산정도 해당 공종에 한정한다"<sup class="ref"><a href="#s11">[11]</a></sup> — <b>우리 엔진이 이미 주공정을 계산</b>하므로, 검증 대상 공정을 그대로 특정할 수 있다.</li>
+        <li>1일 생산성(작업량)은 <b>건설공사 표준품셈으로 도출</b>한다<sup class="ref"><a href="#s11">[11]</a></sup> → 표준품셈 로컬 DB의 존재 이유.</li>
+        <li>비작업일수는 월별 기상(혹서·동절·강우·바람·미세먼지) + 공휴일로 산정<sup class="ref"><a href="#s12">[12]</a></sup> → <b>우리 우기 밴드(<code>RainySeason</code>)의 정식 확장 근거</b>.</li>
+        <li>기준은 <b>작업일수 산정 근거의 문서화</b>를 요구 → "막대 클릭 시 근거 표시"가 실무 요구와 정확히 일치.</li>
+      </ul>
+    </div>
+
+    <h3>네 가지 적정성 판정 — 모두 이 축 위에 얹는다</h3>
+    <table>
+      <thead><tr><th style="width:150px">판정 방식</th><th>구현</th><th style="width:120px">근거</th></tr></thead>
+      <tbody>
+        <tr><td><b>① 산정식 계산</b><br><span style="font-size:12px;color:var(--muted)">물량÷일작업량</span></td>
+          <td>수량산출서 물량 × 표준품셈 일작업량 → 이론 작업일수 산출 → 현 공기와 비교(주공정선 한정)</td>
+          <td><span class="badge b-law">법정</span></td></tr>
+        <tr><td><b>② 표준 템플릿 대비</b></td>
+          <td>시설물 유형별 표준 공정(<code>civilFacilities</code>)·과거 실적 범위와 비교 — <b>이미 부분 보유</b></td>
+          <td><span class="badge b-now">보유</span></td></tr>
+        <tr><td><b>③ 법적·기준 준수</b></td>
+          <td>공사기간 산정기준·비작업일수·환경/인허가 리드타임 등 제약 충족 여부 체크</td>
+          <td><span class="badge b-law">법정</span></td></tr>
+        <tr><td><b>④ LLM 종합 판단</b></td>
+          <td>①~③ 근거를 컨텍스트로 LLM이 "적정/과소/과다 + 사유"를 서술(Part A 경로 재사용)</td>
+          <td><span class="badge b-p1">AI</span></td></tr>
+      </tbody>
+    </table>
+
+    <!-- BF1 데이터 모델 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">B1</span><span class="f-name">데이터 모델: 물량·공종코드 + 표준 일작업량 DB</span><span class="badge b-p0">P0</span></div>
+      <div class="feat-body">
+        <p><code>Task</code>에 <b>물량·단위·공종코드</b>를 붙이고(또는 사이드 테이블), 로컬에 <b>표준 일작업량 DB</b>를 둔다. 서버가 사용자 PC이므로 로컬 저장이 자연스럽다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형</h5>
+            <ul>
+              <li><code>Task</code>에 <code>quantity·unit·workCode</code>(공종코드) 필드 추가</li>
+              <li>로컬 표준 DB 스키마: <code>{공종코드, 항목, 단위, 1일생산성, 출처, 개정일}</code></li>
+              <li>내역서(BoQ) 표준 구조(항목·단위·수량·단가·금액)를 그대로 매핑<sup class="ref"><a href="#s19">[19]</a></sup></li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어</h5>
+            <ul>
+              <li>표준품셈 개정 자동 반영·버전 관리</li>
+              <li>공종코드↔표준품셈↔BoQ 3중 자동 매핑</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> <code>types/model.ts</code> <code>Task</code> 확장(schemaVersion↑) + 신규 <code>data/standardRates</code> 로컬 DB. <b>공종 표준 코드는 조달청 '공사원가 세부공종분류코드' 데이터셋</b>(공공데이터포털, CSV·XML·JSON)을 매핑 키로 사용<sup class="ref"><a href="#s13">[13]</a></sup>.
+        </div>
+      </div>
+    </div>
+
+    <!-- BF2 표준 데이터 확보 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">B2</span><span class="f-name">표준 데이터 확보 — 현실 점검(중요)</span><span class="badge b-p0">P0</span></div>
+      <div class="feat-body">
+        <p>이 프로젝트의 <b>진짜 노동은 여기</b>다. 좋은 소식과 나쁜 소식이 있다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 확인된 것 (좋은 소식)</h5>
+            <ul>
+              <li>건설공사 표준품셈이 data.go.kr에 <b>무료·"이용허락범위 제한 없음"</b>으로 공개<sup class="ref"><a href="#s7">[7]</a></sup></li>
+              <li>조달청 <b>세부공종분류코드</b> 데이터셋 CSV·XML·JSON 제공(공종 매핑 키)<sup class="ref"><a href="#s13">[13]</a></sup></li>
+              <li>법정 산정식·비작업일수 규칙이 조문화되어 결정론 계산 가능<sup class="ref"><a href="#s10">[10]</a></sup></li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🔴 주의 (나쁜 소식 · 검증에서 기각)</h5>
+            <ul>
+              <li>공개 표준품셈 데이터셋이 <b>공종별 "일작업량"을 바로 쓸 형태로 담고 있지는 않음</b> — 문서에서 추출·구조화 필요</li>
+              <li>S-Construction 2030 디지털화가 <b>자동 물량산출 목적은 아님</b> — 과대 기대 금물</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> 표준품셈 원문(한국건설기술연구원 발간 문서)에서 공종별 품·생산성을 <b>반자동 추출</b>(파싱+검수) → 로컬 DB 적재. 국내 문서는 <b>HWP</b>가 많으므로 HWP/HWPX 파서 필요<sup class="ref"><a href="#s15">[15]</a></sup>. 초기엔 <b>주요 공종부터</b> 부분 구축하고 커버리지를 넓힌다(전량 일괄 금물).
+        </div>
+      </div>
+    </div>
+
+    <!-- BF3 문서 취입 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">B3</span><span class="f-name">과업지시서·수량산출서·내역서(BoQ) 취입</span><span class="badge b-p1">P1</span></div>
+      <div class="feat-body">
+        <p>공정표 앞단 자료를 읽어 <b>물량을 공정에 결합</b>하고, 마일스톤 적절성 검토의 입력으로 삼는다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형</h5>
+            <ul>
+              <li>내역서/수량산출서(Excel) import — 표준 열(항목·단위·수량) 매핑</li>
+              <li>공종코드로 공정↔물량 자동 연결(수동 보정 가능)</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어</h5>
+            <ul>
+              <li>HWP/PDF 과업지시서에서 마일스톤·제약 자동 추출(LLM)<sup class="ref"><a href="#s15">[15]</a></sup></li>
+              <li>과업 기반 마일스톤 적정성 자동 검토</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl"><b>구현 접근:</b> Excel(내역서)이 가장 구조적이라 1순위. HWP는 파서 경유. 취입 데이터는 B1 물량 필드로 흘러들어 B4 판정의 입력이 된다.</div>
+      </div>
+    </div>
+
+    <!-- BF4 근거 팝업 UX -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">B4</span><span class="f-name">막대 클릭/호버 → 적정성·근거 팝업</span><span class="badge b-p1">P1</span></div>
+      <div class="feat-body">
+        <p>각 공정 막대를 클릭(또는 호버)하면 그 공종의 공기가 적정한지 <b>근거와 함께</b> 즉시 뜬다 — 당신이 그린 바로 그 UX.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형</h5>
+            <ul>
+              <li><b>클릭 → Inspector 「공정 속성」 탭</b>에 "적정성·근거" 섹션 추가(<code>Inspector.tsx</code>) — 지금도 클릭 시 이 탭이 뜸</li>
+              <li>표시: 이론 작업일수(물량÷생산성) vs 현 공기 · 표준대비 % · 근거(표준품셈 항목·법정 조문)</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어</h5>
+            <ul>
+              <li>막대 <b>호버 툴팁</b>(신규 레이어) — 마우스만 올려도 요약 근거</li>
+              <li>부적정(과소/과다) 공정 색·아이콘 자동 경보</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> 클릭 경로는 <b>기존 <code>selectTask</code>→Inspector 탭</b>을 그대로 활용(최소 변경). 호버 툴팁은 SVG 캔버스에 신규 레이어. 패턴 참고: Frappe Gantt(MIT)는 <code>custom_popup_html: (task)=>HTML</code>로 클릭/호버 시 임의 HTML 팝업을 제공<sup class="ref"><a href="#s16">[16]</a></sup> — 우리는 자체 캔버스에 동일 패턴을 구현.
+        </div>
+      </div>
+    </div>
+
+    <!-- BF5 판정 엔진 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">B5</span><span class="f-name">적정성 판정 엔진 (4방식 통합)</span><span class="badge b-p0">P0</span></div>
+      <div class="feat-body">
+        <p>순수 함수로 <b>공정 → 적정성 판정</b>을 계산. Part A(AI)와 B4(팝업) 양쪽이 이 엔진을 소비한다.</p>
+        <div class="impl">
+          <b>구현 접근:</b> 신규 <code>engine/adequacy.ts</code> — 입력(공정 물량·공종코드·현 공기 + 표준 DB + CPM 결과), 출력(<code>{이론작업일수, 편차%, 판정, 근거[]}</code>). 결정론(①②③)이 먼저 계산하고, ④ LLM은 그 근거를 받아 서술만 — <b>뉴로-심볼릭 경계 유지</b>(엔진이 진실, LLM은 설명·제안).
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 통합 아키텍처 -->
+  <section id="integrated">
+    <div class="sec-head"><span class="sec-num">04</span><h2>통합 아키텍처 — A와 B가 만나는 지점</h2></div>
+    <p class="lede">두 축은 <b>하나의 판정 엔진과 하나의 결정론 CPM</b>을 공유한다. 그래서 "통합 설계"다.</p>
+    <div class="card accent">
+      <div class="flow" style="margin:0;">
+        <div class="node"><div class="n-t">도메인 데이터</div><div class="n-d">수량산출서·BoQ·과업지시서<br>+ 표준품셈 로컬 DB + 공종코드</div></div>
+        <div class="arrow">→</div>
+        <div class="node"><div class="n-t">적정성 판정 엔진<br>(B5)</div><div class="n-d">물량÷일작업량·표준대비·법적준수</div></div>
+        <div class="arrow">→</div>
+        <div class="node"><div class="n-t">두 소비처</div><div class="n-d">① 막대 클릭 근거 팝업(B4)<br>② LLM 검토 컨텍스트(A)</div></div>
+        <div class="arrow">→</div>
+        <div class="node"><div class="n-t">결정론 CPM 엔진</div><div class="n-d">주공정·날짜 재계산<br>화면 즉시 반영</div></div>
+      </div>
+    </div>
+    <div class="callout moat">
+      <p style="margin:0;">
+        <b>해자:</b> 이 구조에서 AI 검토(A)는 "감"이 아니라 <b>법정 산정식·표준품셈 근거를 쥔 채</b> 제안한다. 즉 LLM이
+        "이 공정 과소" 라고 할 때 <b>물량÷일작업량 이론치와 표준품셈 조문을 함께</b> 내밀 수 있다 — 범용 툴이 흉내 못 내는 국내 도메인 정합성. §이전 세계우위 보고서의 F1(뉴로-심볼릭)·F4(품셈)를 실체화하는 경로.
+      </p>
+    </div>
+  </section>
+
+  <!-- 05 로드맵 -->
+  <section id="roadmap">
+    <div class="sec-head"><span class="sec-num">05</span><h2>로드맵</h2></div>
+    <div class="road">
+      <div class="phase p1">
+        <div class="ph-when">Phase 1 · 0–4개월</div>
+        <div class="ph-title">실시간화 + 골격</div>
+        <div class="ph-goal">"검토 누르면 즉시 반영" + 물량 필드</div>
+        <ul>
+          <li><b>A:</b> 서버 LLM 프록시 → [AI 검토] 직접 호출(기존 ReviewDialog 재사용)</li>
+          <li><b>B1:</b> Task 물량·단위·공종코드 필드 + 로컬 DB 스키마</li>
+          <li><b>B2:</b> 주요 공종 표준 일작업량 부분 구축 착수</li>
+        </ul>
+      </div>
+      <div class="phase p2">
+        <div class="ph-when">Phase 2 · 4–9개월</div>
+        <div class="ph-title">적정성 검증 실체화</div>
+        <div class="ph-goal">막대 클릭 → 법정 근거 팝업</div>
+        <ul>
+          <li><b>B5:</b> 적정성 판정 엔진(①산정식 ②표준대비 ③법적준수)</li>
+          <li><b>B4:</b> Inspector 근거 섹션 + 부적정 경보</li>
+          <li><b>B3:</b> 내역서(Excel) 물량 취입</li>
+          <li><b>A:</b> ④ LLM 종합 판단을 근거와 함께</li>
+        </ul>
+      </div>
+      <div class="phase p3">
+        <div class="ph-when">Phase 3 · 9–18개월</div>
+        <div class="ph-title">자동화·확장</div>
+        <div class="ph-goal">문서→공정 + 외부 에이전트</div>
+        <ul>
+          <li><b>B3+:</b> HWP/PDF 과업지시서·수량산출서 자동 추출</li>
+          <li><b>B4+:</b> 막대 호버 툴팁 · 비작업일수(기상) 정식 반영</li>
+          <li><b>A+:</b> MCP stdio 어댑터(외부 AI) · 대화형 반복 루프</li>
+          <li>표준품셈 전 공종 커버리지·버전 관리</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 06 무엇을 추가/수정 -->
+  <section id="changes">
+    <div class="sec-head"><span class="sec-num">06</span><h2>무엇을 추가·수정하나 — 파일 단위</h2></div>
+    <table>
+      <thead><tr><th style="width:220px">파일/모듈</th><th>추가·수정</th><th style="width:70px">축</th></tr></thead>
+      <tbody>
+        <tr><td><code>types/model.ts</code> <span class="badge b-p0">P0</span></td><td><code>Task</code>에 <code>quantity·unit·workCode</code> 추가(schemaVersion↑)</td><td>B</td></tr>
+        <tr><td><code>data/standardRates.ts</code> <span style="color:var(--green)">(신규)</span></td><td>표준품셈 일작업량 로컬 DB + 조달청 공종코드 매핑</td><td>B</td></tr>
+        <tr><td><code>engine/adequacy.ts</code> <span style="color:var(--green)">(신규)</span></td><td>적정성 판정(물량÷일작업량·표준대비·법적준수) 순수 함수</td><td>B</td></tr>
+        <tr><td><code>components/Inspector.tsx</code></td><td>「공정 속성」 탭에 "적정성·근거" 섹션</td><td>B</td></tr>
+        <tr><td><code>components/ChartCanvas.tsx</code></td><td>막대 호버 툴팁 레이어(프런티어)</td><td>B</td></tr>
+        <tr><td><code>state/reviewImport.ts</code> <span style="color:var(--muted)">(재사용)</span></td><td>LLM 델타 파싱·검증 — 이미 있음, 그대로</td><td>A</td></tr>
+        <tr><td><code>server/src</code> LLM 프록시 <span style="color:var(--green)">(신규)</span></td><td>BYO 키 로컬 LLM 호출 라우트 → 델타 반환</td><td>A</td></tr>
+        <tr><td>내역서 import <span style="color:var(--green)">(신규)</span></td><td>Excel(BoQ) → 물량 취입 · HWP 파서(프런티어)</td><td>B</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- 07 기각·주의 -->
+  <section id="caveats">
+    <div class="sec-head"><span class="sec-num">07</span><h2>기각된 주장 · 냉정한 주의</h2></div>
+    <p class="lede">적대적 검증(주장당 3표)에서 <b>기각된 2건</b> — 로드맵의 기대치를 과장하지 않기 위해 명시한다.</p>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      공개 표준품셈 데이터셋이 <b>공종별 노무·장비·자재 투입량 + 작업량(일작업량)을 그대로</b> 담아 "물량기반 공기 산정기"에 바로 쓸 수 있다는 주장. → <b>아니오.</b> 문서 추출·구조화가 필요(B2).<sup class="ref"><a href="#s7">[7]</a></sup>
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      S-Construction 2030의 표준품셈·건설기준 디지털화가 <b>자동 물량산출·공사비 산정(+BIM 연계)을 명시적 목적</b>으로 한다는 주장. → 디지털화(1,079개 건설기준)는 사실이나<sup class="ref"><a href="#s8">[8]</a></sup>, 그 목적 주장은 근거 부족.
+    </div>
+    <div class="callout warn">
+      <h4>⚠️ 실행 시 주의</h4>
+      <ul>
+        <li><b>표준품셈 DB는 "한 번에 전량" 금물</b> — 주요 공종부터 부분 구축, 커버리지 로그를 남겨 "검증됨/미검증" 구분.</li>
+        <li><b>산정식은 주공정선 한정</b>(법정) — 모든 공정에 무차별 적용하면 실무와 어긋난다. 우리 CPM의 critical 플래그를 판정 대상 필터로.</li>
+        <li><b>법정 기준 인용은 개정 추적</b> 필요(고시 개정·시행일). 근거 팝업에 조문·개정일 함께 표기.</li>
+        <li><b>LLM은 끝까지 "제안·설명"</b> — 산정·날짜·주공정은 결정론 엔진이 유일 진실.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 08 출처 -->
+  <section id="sources">
+    <div class="sec-head"><span class="sec-num">08</span><h2>출처</h2></div>
+    <p class="lede" style="margin-bottom:8px;">
+      <span class="q primary">PRIMARY</span> 1차(법령·공공데이터·공식문서·오픈소스)
+      &nbsp;<span class="q secondary">SECONDARY</span> 2차
+      &nbsp;<span class="q blog">BLOG</span> 해설
+    </p>
+    <ol class="sources">
+      <li id="s1"><span class="q blog">BLOG</span> <i>When to use — MCP vs API vs Function/Tool call</i>(호출자 기준 선택 휴리스틱). <a href="https://jamwithai.substack.com/p/when-to-use-mcp-vs-api-vs-functiontool">jamwithai.substack.com</a></li>
+      <li id="s2"><span class="q blog">BLOG</span> TrueFoundry, <i>MCP stdio vs Streamable HTTP</i>. <a href="https://www.truefoundry.com/blog/mcp-stdio-vs-streamable-http-enterprise">truefoundry.com</a></li>
+      <li id="s3"><span class="q blog">BLOG</span> Padiso, <i>stdio vs SSE vs HTTP — MCP transport trade-offs</i>(로컬 단일사용자=stdio). <a href="https://www.padiso.co/blog/stdio-vs-sse-vs-http-mcp-transport-trade-offs/">padiso.co</a></li>
+      <li id="s4"><span class="q primary">PRIMARY</span> OpenAI Agents SDK — <i>Human-in-the-loop</i>(<code>needs_approval</code>·interruptions). <a href="https://openai.github.io/openai-agents-python/human_in_the_loop/">openai.github.io</a></li>
+      <li id="s5"><span class="q blog">BLOG</span> Maxim, <i>Manual approval vs autonomous tool execution</i>(게이트웨이가 승인 결정). <a href="https://www.getmaxim.ai/articles/manual-approval-vs-autonomous-tool-execution-designing-safe-ai-agent-loops/">getmaxim.ai</a></li>
+      <li id="s6"><span class="q secondary">SECONDARY</span> Temporal, <i>Adding HITL to MCP tools</i>. <a href="https://learn.temporal.io/tutorials/ai/building-mcp-tools-with-temporal/adding-hitl-to-mcp-tools/">learn.temporal.io</a></li>
+      <li id="s7"><span class="q primary">PRIMARY</span> 공공데이터포털 — 건설공사 표준품셈/표준단가(무료·이용허락 제한없음). <a href="https://www.data.go.kr/data/15034638/fileData.do">data.go.kr/15034638</a></li>
+      <li id="s8"><span class="q primary">PRIMARY</span> 국토교통부 — 스마트건설 S-Construction 2030(건설기준 1,079개 디지털화). <a href="https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?id=95086971">molit.go.kr</a></li>
+      <li id="s9"><span class="q primary">PRIMARY</span> 건설기술정보시스템(CODIL) — 공사기간 산정 자료. <a href="https://www.codil.or.kr">codil.or.kr</a></li>
+      <li id="s10"><span class="q primary">PRIMARY</span> 국가법령정보센터 — 「공공 건설공사의 공사기간 산정기준」(국토부고시 제2024-1021호, 시행 2025.1.6). <a href="https://www.law.go.kr/행정규칙/공공건설공사의공사기간산정기준">law.go.kr</a></li>
+      <li id="s11"><span class="q primary">PRIMARY</span> CODIL — 물량기반 공기 산정 방법론(작업일수=물량÷생산성, 주공정선 한정; 표준품셈 생산성 도출). <a href="https://www.codil.or.kr/filebank/original/RK/OTKCRK200477/OTKCRK200477.pdf">codil.or.kr(PDF)</a></li>
+      <li id="s12"><span class="q primary">PRIMARY</span> 공사기간 산정 예시(준비+작업일수+비작업일수+정리; 기상 비작업일수 산정). 나라장터(g2b) 첨부. <a href="https://www.g2b.go.kr">g2b.go.kr</a></li>
+      <li id="s13"><span class="q primary">PRIMARY</span> 공공데이터포털 — 조달청 공사원가 세부공종분류코드(CSV·XML·JSON). <a href="https://www.data.go.kr/data/15151207/fileData.do">data.go.kr/15151207</a></li>
+      <li id="s15"><span class="q secondary">SECONDARY</span> <code>hwp-hwpx-parser</code>(한글 HWP/HWPX 파서, PyPI). <a href="https://libraries.io/pypi/hwp-hwpx-parser">libraries.io</a></li>
+      <li id="s16"><span class="q primary">PRIMARY</span> Frappe Gantt(MIT) — 클릭/호버 팝업 <code>custom_popup_html</code>. <a href="https://github.com/frappe/frappe-gantt">github.com/frappe/frappe-gantt</a></li>
+      <li id="s19"><span class="q secondary">SECONDARY</span> Bill of Quantities 표준 구조(항목·단위·수량·단가·금액). <a href="https://people.tamu.edu/~i-choudhury/boq.htm">people.tamu.edu</a></li>
+    </ol>
+  </section>
+
+  <div class="callout note" style="margin-top:26px;">
+    <h4>📌 방법론 · 정직성 고지</h4>
+    <p style="margin:0;font-size:13.6px;color:var(--muted)">
+      경쟁·근거는 딥리서치 하니스(5개 각도 → 23개 출처 → 107개 주장 추출 → 주장당 3표 적대적 검증)로 수집·검증했다(105 에이전트·23개 확인·2개 기각).
+      <b>참고:</b> 이 실행에서 최종 자동 합성 단계가 플레이스홀더로 오작동해, 본 검토서는 <b>검증 로그의 확정 주장·인용문과 제품 코드 실측</b>에서 직접 재구성했다.
+      법정 기준 인용(고시·조문)은 실행 시점 기준이며 <b>개정 여부를 별도 확인</b> 요망. 표준 데이터 확보(B2)는 검증에서 난이도가 확인된 실질 과제다.
+    </p>
+  </div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>Sequence</b> · 실시간 AI 검토 + 도메인 데이터 연동 통합 설계 검토서</span>
+    <span>2026-08-31 · 딥리서치 근거 · 제품 코드 실측 기반</span>
+  </div>
+</footer>
+
+</body>
+</html>
