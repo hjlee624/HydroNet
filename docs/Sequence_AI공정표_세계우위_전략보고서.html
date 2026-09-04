@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sequence — AI 시대 토목·물 인프라 공정표 소프트웨어 세계 우위 전략 보고서</title>
+<style>
+  :root{
+    --navy:#0b1f33; --navy-2:#0f2a44; --ink:#16222e; --muted:#5b6b7a;
+    --line:#e2e8ee; --paper:#f6f9fb; --card:#ffffff;
+    --teal:#0ea5a4; --cyan:#2b91d6; --cyan-soft:#e8f3fb;
+    --gold:#c98a1b; --gold-soft:#fbf1dc;
+    --green:#1f9d63; --green-soft:#e5f5ec;
+    --red:#c33b3b; --red-soft:#fbe9e9;
+    --p0:#c33b3b; --p1:#c98a1b; --p2:#2b7bbf;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,34,50,.06),0 8px 28px rgba(16,34,50,.07);
+    --font:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,
+           'Segoe UI','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo',
+           'Noto Sans KR',sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{
+    margin:0; font-family:var(--font); color:var(--ink);
+    background:var(--paper); line-height:1.72; font-size:16px;
+    -webkit-font-smoothing:antialiased; text-rendering:optimizeLegibility;
+  }
+  .wrap{max-width:1000px; margin:0 auto; padding:0 22px;}
+  a{color:var(--cyan); text-decoration:none;}
+  a:hover{text-decoration:underline;}
+
+  /* ── Hero ── */
+  header.hero{
+    background:
+      radial-gradient(1100px 480px at 82% -8%, rgba(43,145,214,.34), transparent 60%),
+      radial-gradient(900px 420px at 6% 8%, rgba(14,165,164,.30), transparent 55%),
+      linear-gradient(160deg,#0a1c2e 0%,#0d2540 58%,#0b1f33 100%);
+    color:#eaf2f8; position:relative; overflow:hidden;
+    border-bottom:3px solid var(--teal);
+  }
+  header.hero::after{
+    content:""; position:absolute; inset:0; opacity:.10; pointer-events:none;
+    background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
+    background-size:34px 34px; mask-image:linear-gradient(180deg,#000,transparent 78%);
+  }
+  .hero .wrap{padding:56px 22px 48px; position:relative; z-index:1;}
+  .eyebrow{
+    display:inline-flex; align-items:center; gap:9px; font-size:12.5px; letter-spacing:.14em;
+    text-transform:uppercase; color:#8fd0d6; font-weight:700;
+    border:1px solid rgba(143,208,214,.4); padding:5px 12px; border-radius:999px;
+    background:rgba(143,208,214,.08);
+  }
+  h1.title{font-size:clamp(27px,4.4vw,44px); line-height:1.18; margin:20px 0 12px; font-weight:800; letter-spacing:-.01em; color:#fff;}
+  h1.title .accent{color:#67d6d3;}
+  .subtitle{font-size:clamp(15px,1.9vw,18.5px); color:#c4d6e4; max-width:74ch; margin:0 0 26px;}
+  .meta-row{display:flex; flex-wrap:wrap; gap:10px; margin-top:6px;}
+  .chip{
+    display:inline-flex; align-items:center; gap:7px; font-size:13px; font-weight:600;
+    background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.16);
+    color:#dbe8f2; padding:7px 13px; border-radius:10px;
+  }
+  .chip b{color:#fff;}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);}
+
+  /* ── Section scaffolding ── */
+  main{padding:12px 0 60px;}
+  section{padding:40px 0 8px;}
+  .sec-head{display:flex; align-items:baseline; gap:14px; margin-bottom:6px;}
+  .sec-num{font-size:14px; font-weight:800; color:var(--teal); font-variant-numeric:tabular-nums; letter-spacing:.06em;}
+  h2{font-size:clamp(21px,2.7vw,28px); margin:0 0 4px; font-weight:800; color:var(--navy); letter-spacing:-.01em;}
+  .lede{color:var(--muted); font-size:15.5px; margin:2px 0 22px; max-width:82ch;}
+  h3{font-size:18.5px; margin:26px 0 10px; font-weight:700; color:var(--navy-2);}
+  h4{font-size:15.5px; margin:16px 0 6px; font-weight:700; color:var(--ink);}
+  p{margin:10px 0;}
+  .divider{height:1px;background:linear-gradient(90deg,transparent,var(--line) 12%,var(--line) 88%,transparent);margin:8px 0;}
+
+  /* ── Cards ── */
+  .card{
+    background:var(--card); border:1px solid var(--line); border-radius:var(--radius);
+    padding:22px 24px; box-shadow:var(--shadow); margin:16px 0;
+  }
+  .card.accent{border-left:4px solid var(--teal);}
+  .grid{display:grid; gap:16px;}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr);}
+  .grid.cols-2{grid-template-columns:repeat(2,1fr);}
+  @media(max-width:820px){.grid.cols-3,.grid.cols-2{grid-template-columns:1fr;}}
+
+  /* ── Executive summary key cards ── */
+  .keycard{background:var(--card); border:1px solid var(--line); border-radius:var(--radius); padding:20px; box-shadow:var(--shadow); position:relative;}
+  .keycard .k-idx{font-size:12px; font-weight:800; color:#fff; background:var(--navy); width:26px;height:26px; display:grid;place-items:center; border-radius:8px; margin-bottom:12px;}
+  .keycard h4{margin:0 0 8px; font-size:16.5px; color:var(--navy);}
+  .keycard p{margin:0; font-size:14.3px; color:var(--muted);}
+  .keycard .k-tag{display:inline-block; margin-top:12px; font-size:12px; font-weight:700; color:var(--teal); background:var(--cyan-soft); padding:4px 10px; border-radius:7px;}
+
+  /* ── Badges ── */
+  .badge{display:inline-block; font-size:11.5px; font-weight:800; letter-spacing:.02em; padding:3px 9px; border-radius:999px; vertical-align:middle; white-space:nowrap;}
+  .b-p0{color:#fff;background:var(--p0);} .b-p1{color:#fff;background:var(--p1);} .b-p2{color:#fff;background:var(--p2);}
+  .b-now{color:var(--green);background:var(--green-soft); border:1px solid #bfe6cf;}
+  .b-front{color:var(--gold);background:var(--gold-soft); border:1px solid #f0d9a8;}
+  .b-high{color:var(--green);background:var(--green-soft);}
+  .b-med{color:var(--gold);background:var(--gold-soft);}
+  .b-refuted{color:var(--red);background:var(--red-soft);}
+
+  /* ── Diagnosis two-col ── */
+  .have-have{display:grid; grid-template-columns:1fr 1fr; gap:0; border:1px solid var(--line); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);}
+  @media(max-width:820px){.have-have{grid-template-columns:1fr;}}
+  .have-col{padding:20px 22px;}
+  .have-col.pos{background:linear-gradient(180deg,#f2fbf6,#fff);}
+  .have-col.gap{background:linear-gradient(180deg,#fdf4f4,#fff); border-left:1px solid var(--line);}
+  @media(max-width:820px){.have-col.gap{border-left:none;border-top:1px solid var(--line);}}
+  .have-col h4{display:flex;align-items:center;gap:8px;margin-top:0;}
+  .have-col ul{margin:8px 0 0; padding-left:0; list-style:none;}
+  .have-col li{position:relative; padding:6px 0 6px 26px; font-size:14.3px; border-top:1px dashed var(--line);}
+  .have-col li:first-child{border-top:none;}
+  .have-col.pos li::before{content:"✓"; position:absolute; left:2px; top:6px; color:var(--green); font-weight:800;}
+  .have-col.gap li::before{content:"✕"; position:absolute; left:2px; top:6px; color:var(--red); font-weight:800;}
+  .have-col code{background:#eef2f6; padding:1px 6px; border-radius:5px; font-size:12.5px; color:#334; font-family:'SF Mono',Consolas,'D2Coding',monospace;}
+
+  /* ── Table ── */
+  table{width:100%; border-collapse:collapse; font-size:14px; margin:14px 0; background:var(--card); border-radius:var(--radius); overflow:hidden; box-shadow:var(--shadow);}
+  th,td{text-align:left; padding:12px 14px; border-bottom:1px solid var(--line); vertical-align:top;}
+  thead th{background:var(--navy); color:#eaf2f8; font-weight:700; font-size:13px; letter-spacing:.02em; border-bottom:none;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:nth-child(even){background:#fafcfe;}
+  td strong{color:var(--navy-2);}
+  .tick{color:var(--green);font-weight:800;} .cross{color:var(--red);font-weight:800;} .part{color:var(--gold);font-weight:800;}
+
+  /* ── Player cards ── */
+  .player{border:1px solid var(--line); border-radius:12px; padding:18px 20px; background:var(--card); box-shadow:var(--shadow);}
+  .player .p-name{font-weight:800; color:var(--navy); font-size:16px; display:flex;align-items:center;gap:9px;}
+  .player .p-cat{font-size:11.5px; font-weight:800; letter-spacing:.05em; text-transform:uppercase; color:var(--teal);}
+  .player p{font-size:14px; color:var(--muted); margin:9px 0 0;}
+  .player .p-metric{margin-top:12px; font-size:13px; background:var(--cyan-soft); border-radius:8px; padding:8px 11px; color:var(--navy-2);}
+
+  /* ── Feature blocks ── */
+  .feat{border:1px solid var(--line); border-radius:var(--radius); background:var(--card); box-shadow:var(--shadow); margin:18px 0; overflow:hidden;}
+  .feat-head{display:flex; align-items:center; gap:12px; flex-wrap:wrap; padding:16px 22px; background:linear-gradient(180deg,#f9fbfd,#fff); border-bottom:1px solid var(--line);}
+  .feat-head .f-id{font-size:13px; font-weight:800; color:#fff; background:var(--navy); padding:4px 10px; border-radius:8px; letter-spacing:.03em;}
+  .feat-head .f-name{font-size:17.5px; font-weight:800; color:var(--navy); flex:1 1 auto;}
+  .feat-body{padding:18px 22px;}
+  .feat-body .row2{display:grid; grid-template-columns:1fr 1fr; gap:18px; margin-top:6px;}
+  @media(max-width:820px){.feat-body .row2{grid-template-columns:1fr;}}
+  .tier{border-radius:11px; padding:14px 16px;}
+  .tier.now{background:var(--green-soft); border:1px solid #c7e8d5;}
+  .tier.front{background:var(--gold-soft); border:1px solid #f0dcac;}
+  .tier h5{margin:0 0 7px; font-size:13.5px; font-weight:800; display:flex;align-items:center;gap:8px; letter-spacing:.01em;}
+  .tier.now h5{color:#137a4b;} .tier.front h5{color:#9a6a12;}
+  .tier ul{margin:0; padding-left:18px; font-size:13.8px;}
+  .tier li{margin:5px 0;}
+  .impl{margin-top:16px; font-size:13.6px; background:#f4f7fa; border-left:3px solid var(--cyan); border-radius:0 8px 8px 0; padding:11px 14px; color:#33465a;}
+  .impl b{color:var(--navy);}
+  .impl code{background:#e7edf3; padding:1px 6px; border-radius:5px; font-size:12.3px; font-family:'SF Mono',Consolas,'D2Coding',monospace;}
+  .src-line{margin-top:11px; font-size:12.5px; color:var(--muted);}
+  sup.ref{font-size:11px; font-weight:700; color:var(--cyan); cursor:pointer;}
+  sup.ref a{color:var(--cyan);}
+
+  /* ── Roadmap ── */
+  .road{display:grid; grid-template-columns:repeat(3,1fr); gap:16px; margin-top:18px;}
+  @media(max-width:820px){.road{grid-template-columns:1fr;}}
+  .phase{border-radius:var(--radius); padding:20px; color:#eaf2f8; position:relative; overflow:hidden; box-shadow:var(--shadow);}
+  .phase.p1{background:linear-gradient(160deg,#0e4a4a,#0b3a3a);}
+  .phase.p2{background:linear-gradient(160deg,#134a72,#0e3956);}
+  .phase.p3{background:linear-gradient(160deg,#2a2f5a,#1c2142);}
+  .phase .ph-when{font-size:12px; font-weight:800; letter-spacing:.08em; text-transform:uppercase; opacity:.82;}
+  .phase .ph-title{font-size:18px; font-weight:800; margin:6px 0 3px; color:#fff;}
+  .phase .ph-goal{font-size:13px; opacity:.9; margin-bottom:12px;}
+  .phase ul{margin:0; padding-left:17px; font-size:13.6px;}
+  .phase li{margin:6px 0;}
+  .phase .ph-tag{position:absolute; top:14px; right:14px; font-size:11px; font-weight:800; background:rgba(255,255,255,.16); padding:3px 9px; border-radius:999px;}
+
+  /* ── Callout boxes ── */
+  .callout{border-radius:var(--radius); padding:18px 22px; margin:16px 0; font-size:14.4px;}
+  .callout.warn{background:var(--red-soft); border:1px solid #f0c9c9;}
+  .callout.moat{background:linear-gradient(180deg,#eef8f8,#fff); border:1px solid #c9e8e7; border-left:4px solid var(--teal);}
+  .callout.note{background:#f4f7fa; border:1px solid var(--line); border-left:4px solid var(--cyan);}
+  .callout h4{margin-top:0; display:flex; align-items:center; gap:8px;}
+  .callout ul{margin:8px 0 0; padding-left:20px;}
+  .callout li{margin:6px 0;}
+
+  /* ── Refuted list ── */
+  .refuted-item{border:1px solid #f0d3d3; border-radius:10px; padding:12px 15px; margin:10px 0; background:#fdf7f7; font-size:13.6px;}
+  .refuted-item .r-top{display:flex; align-items:center; gap:10px; margin-bottom:5px;}
+  .refuted-item .r-vote{font-size:11.5px; font-weight:800; color:var(--red); font-variant-numeric:tabular-nums;}
+
+  /* ── Sources ── */
+  ol.sources{font-size:13.3px; color:var(--muted); padding-left:26px;}
+  ol.sources li{margin:8px 0; padding-left:4px; word-break:break-word;}
+  ol.sources .q{display:inline-block; font-size:10.5px; font-weight:800; letter-spacing:.03em; padding:1px 7px; border-radius:5px; margin-right:7px; vertical-align:middle;}
+  .q.primary{background:var(--green-soft); color:var(--green);}
+  .q.secondary{background:var(--cyan-soft); color:var(--cyan);}
+  .q.blog{background:#f0eef7; color:#6b5ca8;}
+  ol.sources a{color:var(--navy-2);}
+
+  /* ── Stat strip ── */
+  .stats{display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin:18px 0;}
+  @media(max-width:820px){.stats{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; text-align:center; box-shadow:var(--shadow);}
+  .stat .n{font-size:26px; font-weight:800; color:var(--navy); font-variant-numeric:tabular-nums;}
+  .stat .l{font-size:12px; color:var(--muted); margin-top:2px;}
+
+  footer{background:var(--navy); color:#9fb4c6; padding:30px 0; font-size:13px;}
+  footer .wrap{display:flex; flex-wrap:wrap; justify-content:space-between; gap:14px; align-items:center;}
+  footer b{color:#eaf2f8;}
+
+  @media print{
+    body{background:#fff; font-size:12px;}
+    header.hero{background:var(--navy)!important; -webkit-print-color-adjust:exact; print-color-adjust:exact;}
+    .card,.feat,.player,.phase,.keycard,table{box-shadow:none; break-inside:avoid;}
+    section{break-inside:auto;}
+    .phase,.thead th{-webkit-print-color-adjust:exact; print-color-adjust:exact;}
+  }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:#67d6d3;display:inline-block"></span> 전략 · 기술 로드맵 보고서</span>
+    <h1 class="title">토목·물 인프라 <span class="accent">공정표 소프트웨어</span>,<br>AI 시대에 세계 우위를 선점하는 길</h1>
+    <p class="subtitle">
+      현행 제품 <b>Sequence</b>(CPM 기반 공정표·마일스톤 협업 도구)의 코드 베이스라인을 진단하고,
+      글로벌 스케줄링 강자(Primavera P6·MS Project·Asta)와 AI 신흥주자(ALICE·nPlan·Buildots·Doxel)의
+      검증된 경쟁 지형을 근거로, <b>무엇을 더해야 세계 우위를 확보하는가</b>를 실무형(6–12개월)과
+      프런티어(문샷)로 나누어 제시한다.
+    </p>
+    <div class="meta-row">
+      <span class="chip"><span class="dot"></span> 작성일 <b>2026-08-30</b></span>
+      <span class="chip">대상 제품 <b>Sequence / HydroNET</b></span>
+      <span class="chip">근거 <b>딥리서치 24개 출처 · 25개 주장 적대적 검증</b></span>
+      <span class="chip">경쟁 기준 <b>글로벌 강자 + 국내 수자원 특화</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- ════════ 0. Executive Summary ════════ -->
+  <section id="summary">
+    <div class="sec-head"><span class="sec-num">00</span><h2>핵심 요약 — 세 가지 전략 결론</h2></div>
+    <p class="lede">
+      결론부터. 세계 시장의 "AI 공정표" 경쟁은 이미 세 축으로 굳어졌고, Sequence는 아직 <b>결정론적 CPM</b> 단계에 있다.
+      그러나 승부처는 순수 LLM이 아니라 <b>뉴로-심볼릭(LLM + 우리 CPM 엔진)</b>이며, 이 지점에서 우리는 오히려 유리한 출발선에 서 있다.
+      진짜 해자는 <b>한국 수자원·댐·하천·상하수도 실적 데이터</b>다.
+    </p>
+
+    <div class="grid cols-3">
+      <div class="keycard">
+        <div class="k-idx">1</div>
+        <h4>시장은 이미 3축으로 굳어졌다</h4>
+        <p>① 생성형·최적화 스케줄링(ALICE, 수백만 시나리오로 공기 최대 20%↓)<sup class="ref"><a href="#s1">[1]</a></sup>,
+           ② 과거 빅데이터 기반 ML 지연예측(nPlan, 75만+ 공정 파일·GNN)<sup class="ref"><a href="#s3">[3]</a></sup>,
+           ③ 상용 CPM의 내장 몬테카를로+AI 리스크(Oracle Primavera Cloud)<sup class="ref"><a href="#s7">[7]</a></sup>.</p>
+        <span class="k-tag">우리는 아직 결정론적 CPM 단계</span>
+      </div>
+      <div class="keycard">
+        <div class="k-idx">2</div>
+        <h4>승부는 "뉴로-심볼릭"에서 난다</h4>
+        <p>학계 결론은 명확하다 — LLM 단독 계획은 실패(PlanBench &lt;12%)하고, LLM 프런트엔드를
+           <b>고전 CPM/심볼릭 엔진</b>과 결합해야 진짜 성능이 나온다.<sup class="ref"><a href="#s11">[11]</a></sup><sup class="ref"><a href="#s12">[12]</a></sup>
+           우리는 이미 견고한 CPM 엔진(<code>scheduling.ts</code>)을 보유 — 절반은 이미 지었다.</p>
+        <span class="k-tag">엔진은 있다 · LLM 프런트엔드만 얹으면 된다</span>
+      </div>
+      <div class="keycard">
+        <div class="k-idx">3</div>
+        <h4>세계 우위의 해자 = 국내 데이터</h4>
+        <p>범용 글로벌 툴이 못 가진 것: <b>한국 표준품셈·수자원공사·댐·하천·상하수도 실적</b>.
+           S-Construction 2030으로 표준품셈·건설기준 약 1,079개가 기계판독화되는 중<sup class="ref"><a href="#s21">[21]</a></sup> —
+           도메인 특화 학습의 원료가 제도적으로 열린다.</p>
+        <span class="k-tag">글로벌 기능 × 국내 데이터 튜닝 = 대체 불가</span>
+      </div>
+    </div>
+
+    <div class="callout note" style="margin-top:22px;">
+      <h4>🧭 한 문장 전략</h4>
+      <p style="margin:0;">
+        <b>"검증된 글로벌 AI 스케줄링 기능(생성형 최적화·확률 예측·BIM 연동)을, 우리 CPM 엔진 위에 뉴로-심볼릭으로 얹고,
+        한국 수자원·표준품셈 데이터로 튜닝한다."</b> — 이것이 카피 불가능한 세계 우위의 공식이다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════ 1. 현황 진단 ════════ -->
+  <section id="diagnosis">
+    <div class="sec-head"><span class="sec-num">01</span><h2>현황 진단 — 지금 우리가 선 자리</h2></div>
+    <p class="lede">
+      Sequence의 코드베이스를 실측했다. 결론: <b>스케줄링 "코어"는 세계 수준에 손색없이 견고</b>하나,
+      <b>"지능(AI)"과 "상호운용성"은 전면 공백</b>이다. 이 공백이 그대로 로드맵의 뼈대가 된다.
+    </p>
+
+    <div class="have-have">
+      <div class="have-col pos">
+        <h4>✅ 이미 갖춘 것 — 강점 (출발선)</h4>
+        <ul>
+          <li><b>진짜 CPM 엔진</b> — 전진/후진 패스, ES·EF·LS·LF, 총여유(float), 주공정선 자동 판정 <code>engine/scheduling.ts</code></li>
+          <li><b>4종 의존관계 + lag</b> — FS/SS/FF/SF, 연쇄수정(cascade)·자동 리스케줄·순환 감지</li>
+          <li><b>시설물 유형별 표준 공정 템플릿</b> — 댐·수력 9종 + 토목 다분야 ~33종(도로·교량·터널·하천·상하수도·항만·철도) <code>data/civilFacilities.ts</code></li>
+          <li><b>실시간 협업(CRDT)</b> — Yjs + Hocuspocus, 본부 RBAC, 네이버웍스 알림</li>
+          <li><b>기후 인식의 씨앗</b> — 우기(강우) 효율 밴드 <code>RainySeason.efficiency</code>, 진척률 <code>Task.progress</code></li>
+        </ul>
+      </div>
+      <div class="have-col gap">
+        <h4>❌ 아직 없는 것 — AI·지능 공백 (기회)</h4>
+        <ul>
+          <li><b>AI/ML 전무</b> — 자연어→공정표, 공기 예측, 지연 리스크 예측, 자동 최적화 없음</li>
+          <li><b>자원·인력·장비·원가·물량(품셈) 런타임 모델 없음</b> → 자원 평준화 불가 (Task에 자원 필드 부재)</li>
+          <li><b>확률/리스크 시뮬레이션 없음</b> — 몬테카를로·P50/P80 완공확률 곡선 없음</li>
+          <li><b>글로벌 상호운용성 부재</b> — P6 XER / MS Project XML / IFC import·export 없음 (독자 JSON + SVG/PNG/PDF/DXF만)</li>
+          <li><b>BIM/4D·현장 진척 자동 인식 없음</b> — 드론/영상/센서 연동 없음</li>
+        </ul>
+      </div>
+    </div>
+    <p style="font-size:13px;color:var(--muted);margin-top:10px;">
+      * 흥미로운 자산: 현재 시설물 템플릿은 이미 딥리서치 워크플로로 저작된다(<code>scripts/gen-civil.mjs</code>).
+      즉 <b>AI를 "저작 시점"에 쓰는 문화·파이프라인은 이미 사내에 존재</b>한다 — 이를 "런타임 제품 기능"으로 승격하는 것이 이 로드맵의 골자다.
+    </p>
+  </section>
+
+  <!-- ════════ 2. 경쟁 지형 ════════ -->
+  <section id="landscape">
+    <div class="sec-head"><span class="sec-num">02</span><h2>세계 경쟁 지형 — 벤치마크</h2></div>
+    <p class="lede">
+      "AI 공정표"는 마케팅 구호가 아니라 이미 매출과 실증이 붙은 세 갈래다. 각 축의 대표 주자와 <b>검증된 사실</b>만 정리한다
+      (벤더 자체 발표 수치는 반드시 그 출처에 귀속해 읽는다 → §6).
+    </p>
+
+    <div class="grid cols-3">
+      <div class="player">
+        <span class="p-cat">축 A · 생성형·최적화</span>
+        <div class="p-name">🧮 ALICE Technologies</div>
+        <p>노동·장비·자재·공간·시퀀스를 <b>조정 변수</b>로 두고 수백만 개의 시퀀싱·자원배분 시나리오를 시뮬레이션해
+           비용·공기·리스크를 트레이드오프. McKinsey와 35+ 고객에 도입.</p>
+        <div class="p-metric">📉 공기 <b>최대 20% 단축</b> + 비용 절감 <span style="color:var(--muted)">(ALICE·McKinsey 자체 발표)</span><sup class="ref"><a href="#s1">[1]</a></sup></div>
+      </div>
+      <div class="player">
+        <span class="p-cat">축 B · ML 확률 예측</span>
+        <div class="p-name">📈 nPlan</div>
+        <p>75만+ as-planned/as-built 공정 파일로 딥러닝·GNN 학습 → 임의 공정표의 <b>모든 활동 성과·지연확률</b>을 예측.
+           스케줄을 DAG(노드=태스크, 엣지=제약)로 표현.</p>
+        <div class="p-metric">🌐 $11B 규모 영국 철도 등 배치 · ENR 보도<sup class="ref"><a href="#s3">[3]</a></sup><sup class="ref"><a href="#s6">[6]</a></sup></div>
+      </div>
+      <div class="player">
+        <span class="p-cat">축 C · 상용 CPM 내장 AI</span>
+        <div class="p-name">🏛️ Oracle Primavera Cloud</div>
+        <p>CPM + 현장 태스크 통합 위에 <b>애드온 없이 최대 30,000개 리스크</b> 몬테카를로 정량 분석,
+           Construction Intelligence Cloud로 착수 전 스케줄 건강도·학습형 리스크 예측.</p>
+        <div class="p-metric">🎲 내장 몬테카를로 → 공기·비용 <b>확률곡선</b><sup class="ref"><a href="#s7">[7]</a></sup><sup class="ref"><a href="#s8">[8]</a></sup></div>
+      </div>
+    </div>
+
+    <h3>현장 인식(비전) 계열 — 디지털 트윈의 입력</h3>
+    <div class="grid cols-2">
+      <div class="player">
+        <div class="p-name">📷 Doxel</div>
+        <p>현장 스캔·영상을 컴퓨터 비전으로 분석해 실제 진척을 자동 측정하고 계획 대비 편차를 추적.<sup class="ref"><a href="#s24">[24]</a></sup></p>
+      </div>
+      <div class="player">
+        <div class="p-name">🎥 Buildots</div>
+        <p>헬멧 360° 카메라로 현장을 자동 캡처, 공정 진척을 자동 인식해 지연을 조기 경보.<sup class="ref"><a href="#s25">[25]</a></sup></p>
+      </div>
+    </div>
+
+    <h3>성숙도 계층으로 본 우리 위치</h3>
+    <p style="font-size:14.5px;color:var(--muted);margin-top:2px;">
+      업계 분석은 AI 스케줄링을 4단계로 나눈다.<sup class="ref"><a href="#s26">[26]</a></sup> 우리는 아직 0단계(수동 CPM 작도)에 가깝다.
+    </p>
+    <table>
+      <thead><tr><th style="width:80px">단계</th><th>성숙도</th><th>대표 기능</th><th style="width:150px">Sequence 현 상태</th></tr></thead>
+      <tbody>
+        <tr><td><b>Tier 1</b></td><td>자연어 질의</td><td>"주공정 지연 작업 보여줘" 등 대화형 조회 — 이미 상용 가능</td><td><span class="cross">✕</span> 없음</td></tr>
+        <tr><td><b>Tier 2</b></td><td>에이전트 모니터링</td><td>공정표를 상시 감시해 이상·리스크 자동 경보</td><td><span class="cross">✕</span> 없음</td></tr>
+        <tr><td><b>Tier 3</b></td><td>진척 자동 수집</td><td>현장 영상·센서로 as-built 자동 반영</td><td><span class="cross">✕</span> 없음</td></tr>
+        <tr><td><b>Tier 4</b></td><td>생성형·최적화</td><td>수백만 시나리오로 최적 공정 생성/리스케줄</td><td><span class="cross">✕</span> 없음</td></tr>
+        <tr style="background:#eef7f7"><td><b>기반</b></td><td>결정론적 CPM</td><td>ES·EF·주공정·연쇄수정·템플릿</td><td><span class="tick">✓</span> <b>보유(견고)</b></td></tr>
+      </tbody>
+    </table>
+
+    <h3>기능 격차 매트릭스</h3>
+    <table>
+      <thead><tr><th>기능</th><th style="width:120px">Sequence</th><th style="width:110px">P6 / MSP</th><th style="width:110px">ALICE</th><th style="width:110px">nPlan</th></tr></thead>
+      <tbody>
+        <tr><td>CPM · 주공정 · 여유</td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="part">부분</span></td></tr>
+        <tr><td>실시간 협업(CRDT)</td><td><span class="tick">✓ 강점</span></td><td><span class="part">부분</span></td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td></tr>
+        <tr><td>도메인 시설물 템플릿</td><td><span class="tick">✓ 강점</span></td><td><span class="part">부분</span></td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td></tr>
+        <tr><td>자원·원가 로딩 / 평준화</td><td><span class="cross">✕</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="cross">✕</span></td></tr>
+        <tr><td>몬테카를로 리스크</td><td><span class="cross">✕</span></td><td><span class="tick">✓</span></td><td><span class="part">부분</span></td><td><span class="tick">✓</span></td></tr>
+        <tr><td>ML 지연·공기 예측</td><td><span class="cross">✕</span></td><td><span class="part">CIC</span></td><td><span class="cross">✕</span></td><td><span class="tick">✓ 강점</span></td></tr>
+        <tr><td>생성형·최적화 스케줄링</td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td><td><span class="tick">✓ 강점</span></td><td><span class="cross">✕</span></td></tr>
+        <tr><td>자연어→공정표</td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td></tr>
+        <tr><td>P6/MSP/IFC 상호운용</td><td><span class="cross">✕</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td><td><span class="tick">✓</span></td></tr>
+        <tr><td>국내 표준품셈·수자원 특화</td><td><span class="part">잠재</span></td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td><td><span class="cross">✕</span></td></tr>
+      </tbody>
+    </table>
+    <p style="font-size:13px;color:var(--muted);">
+      * 표의 "자연어→공정표"가 <b>전 열에서 공백</b>인 점에 주목 — 아직 아무도 확실히 선점하지 못한, 뉴로-심볼릭으로 열리는 무주공산.
+    </p>
+  </section>
+
+  <!-- ════════ 3. 무엇을 더할 것인가 ════════ -->
+  <section id="features">
+    <div class="sec-head"><span class="sec-num">03</span><h2>무엇을 더할 것인가 — 기술 로드맵</h2></div>
+    <p class="lede">
+      7개 기능 영역. 각각 <span class="badge b-now">실무형 6–12개월</span> 과 <span class="badge b-front">프런티어 · 문샷</span> 으로 나누고,
+      우선순위(<span class="badge b-p0">P0</span> 필수기반 · <span class="badge b-p1">P1</span> 차별화 · <span class="badge b-p2">P2</span> 문샷)와
+      <b>우리 코드에 어떻게 붙는지</b>까지 명시한다.
+    </p>
+
+    <!-- F1 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F1</span>
+        <span class="f-name">자연어 → 공정표 초안 생성 (뉴로-심볼릭)</span>
+        <span class="badge b-p0">P0</span>
+      </div>
+      <div class="feat-body">
+        <p>"40m 콘크리트 중력댐, 착공 2026-03, 우기 6–9월, 공기 40개월" 같은 <b>자연어 한 문장</b>에서 시설물 유형·공종·개략 물량을 파싱해
+           초안 공정표를 자동 생성. 핵심 설계 원칙: <b>LLM은 절대 날짜·CPM을 직접 계산하지 않는다</b>. LLM은 구조(공종/공정/의존성/개략 기간)만 뽑고,
+           실제 스케줄 계산은 우리 CPM 엔진이 한다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (6–12개월)</h5>
+            <ul>
+              <li>LLM이 자연어 → 구조화 출력(공종·공정·FS/SS 의존성·개략 duration)</li>
+              <li>기존 <code>CIVIL_FACILITIES</code> 템플릿을 RAG 앵커로 사용 → 환각 억제</li>
+              <li>대화형 편집("여수로를 2개월 당겨줘") → 엔진이 재계산</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>완전 자동 WBS 생성(설계 문서·시방서 → 공정 네트워크)</li>
+              <li>LLM-Modulo식 강결합(엔진이 위반을 LLM에 되먹임하며 반복 정련)</li>
+              <li>양방향: 도면/BOQ + 자연어 → 통합 초안</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> LLM 출력 스키마 = 우리 <code>Task[] / Link[]</code> 형태로 직결. 생성 후 <code>applyCascade()</code>→<code>computeSchedule()</code>가
+          ES/EF/주공정을 계산하므로 <b>LLM의 산술 오류가 스케줄에 침투하지 못한다</b>. 이미 있는 템플릿→cascade 파이프라인에 얹기 가장 쉬운 첫 기능.
+        </div>
+        <p class="src-line">근거: 뉴로-심볼릭 원칙 <sup class="ref"><a href="#s11">[11]</a></sup><sup class="ref"><a href="#s12">[12]</a></sup> · 건설 도메인 실증 CONSTRUCTA <sup class="ref"><a href="#s13">[13]</a></sup> · 멀티에이전트 WBS 생성 <sup class="ref"><a href="#s14">[14]</a></sup></p>
+      </div>
+    </div>
+
+    <!-- F2 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F2</span>
+        <span class="f-name">몬테카를로 리스크 시뮬레이션 (확률형 공정표)</span>
+        <span class="badge b-p0">P0</span>
+      </div>
+      <div class="feat-body">
+        <p>결정론적 "한 줄 공기"를 넘어, 각 공정에 불확실성 분포(낙관·최빈·비관)를 주고 몬테카를로로 굴려
+           <b>완공일 P50/P80 확률곡선</b>과 <b>주공정 확률(criticality index)</b>을 산출. Oracle이 이미 표준화한, 세계 무대의 최소 자격 요건.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (6–12개월)</h5>
+            <ul>
+              <li><code>Task</code>에 3점 추정(min/likely/max) 필드 추가</li>
+              <li><code>computeSchedule()</code> 위에 MC 반복(수천 회) 레이어 → 완공확률 S-곡선</li>
+              <li>공정별 criticality %, 지연 기여도 토네이도 차트</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>베이지안-몬테카를로 <b>연속 갱신</b>: 현장 진척이 들어올 때마다 분포 자동 업데이트</li>
+              <li>기후·규제 리스크를 분포 파라미터에 결합(→ F7)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> 엔진이 순수 함수(새 데이터 반환)라 MC 반복에 이상적 — 워커 스레드에서 <code>computeSchedule()</code>를 N회 호출.
+          우기 밴드(<code>RainySeason.efficiency</code>)를 확률 변수로 승격하면 <b>강우 리스크가 정량적으로 완공확률에 반영</b>된다(국내 특화 연결점).
+        </div>
+        <p class="src-line">근거: 상용 내장 몬테카를로 표준 <sup class="ref"><a href="#s7">[7]</a></sup><sup class="ref"><a href="#s8">[8]</a></sup> · 베이지안-MC 연속 갱신 <span class="badge b-med">중간 확신</span><sup class="ref"><a href="#s17">[17]</a></sup><sup class="ref"><a href="#s18">[18]</a></sup></p>
+      </div>
+    </div>
+
+    <!-- F3 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F3</span>
+        <span class="f-name">과거 실적 기반 공기·지연 리스크 예측 (nPlan식)</span>
+        <span class="badge b-p1">P1</span>
+      </div>
+      <div class="feat-body">
+        <p>우리가 협업 서버에 쌓는 프로젝트(계획 vs 실적)를 학습해, <b>새 공정표의 활동별 지연확률·현실적 공기</b>를 예측.
+           nPlan의 핵심은 데이터 규모지만, 우리는 <b>국내 수자원·댐 실적</b>이라는 좁고 깊은 데이터로 시작한다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (6–12개월)</h5>
+            <ul>
+              <li>as-planned vs as-built 수집 파이프라인(진척 데이터 축적)</li>
+              <li>공종·시설물 유형별 공기 편차 통계 → "이 유형 평균 지연" 벤치마크 경보</li>
+              <li>SBERT 의미유사도로 유사 과거공정 공기 추정</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>GNN(스케줄 DAG) 학습형 활동 성과 예측</li>
+              <li>"인간 추정 대체" 수준의 자동 리스크 스코어링</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> 데이터 자산이 선결. 협업 서버(<code>pg</code>/Yjs 스냅샷)에 계획·실적 버전을 남기는 것부터 시작 →
+          초기엔 통계·유사도(경량)로, 데이터가 쌓이면 GNN으로 승격. <b>지금 데이터 로깅을 시작하지 않으면 이 해자는 못 만든다.</b>
+        </div>
+        <p class="src-line">근거: nPlan GNN·75만 공정 학습 <sup class="ref"><a href="#s3">[3]</a></sup><sup class="ref"><a href="#s5">[5]</a></sup> · SBERT 공기추정 <sup class="ref"><a href="#s15">[15]</a></sup></p>
+      </div>
+    </div>
+
+    <!-- F4 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F4</span>
+        <span class="f-name">자원·원가(품셈) 모델 + 자동 자원 평준화·최적화</span>
+        <span class="badge b-p0">P0 <span style="opacity:.7">데이터모델</span></span>
+        <span class="badge b-p2">P2 <span style="opacity:.7">최적화</span></span>
+      </div>
+      <div class="feat-body">
+        <p><b>현재 가장 큰 단일 공백.</b> Task에 자원/장비/인력/원가/물량이 없어 자원 평준화·비용 곡선·생성형 최적화가 원천 불가.
+           표준품셈 기계판독화(S-Construction 2030)를 원료로 <b>공정별 물량 → 인력·장비·원가 자동 산출</b> 체계를 세우고,
+           그 위에 ALICE식 최적화를 얹는다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (6–12개월)</h5>
+            <ul>
+              <li>자원·원가 필드 도입 → 자원 히스토그램·S-커브·인력 평준화(고전 알고리즘)</li>
+              <li>표준품셈 매핑 테이블로 공종별 표준 원단위 자동 배정</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>생성형 최적화: 자원·공간·시퀀스를 변수로 수천~수백만 시나리오 탐색(ALICE급)</li>
+              <li>DRL(강화학습) 자동 리스케줄 — 제약 위반 없는 재배치</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> <code>types/model.ts</code>의 <code>Task</code> 확장이 출발점(자원 배열·원가·물량). 스키마 버전업 필요.
+          <code>reschedule()</code>가 이미 "최조기 배치" 최적화를 하므로, 자원 제약을 추가한 <b>RCPSP(자원제약 스케줄링)</b>로 확장하는 자연스러운 경로.
+        </div>
+        <p class="src-line">근거: 생성형 최적화 스케줄링 <sup class="ref"><a href="#s1">[1]</a></sup><sup class="ref"><a href="#s2">[2]</a></sup> · DRL 자동 스케줄링 <sup class="ref"><a href="#s20">[20]</a></sup> · 표준품셈 기계판독화 <sup class="ref"><a href="#s21">[21]</a></sup></p>
+      </div>
+    </div>
+
+    <!-- F5 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F5</span>
+        <span class="f-name">4D BIM/IFC 연동 + 글로벌 상호운용성 (P6·MSP·IFC I/O)</span>
+        <span class="badge b-p0">P0</span>
+      </div>
+      <div class="feat-body">
+        <p>세계 무대·대형 발주 진입의 <b>통행증</b>. 현재 독자 JSON + DXF만으로는 P6/MSP 생태계와 대화 불가.
+           동시에 BIM 모델 → 활동·공기 자동 생성은 국내 BIM 의무화 물결과 정확히 맞물린다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (6–12개월)</h5>
+            <ul>
+              <li>P6 <b>XER</b> / MS Project <b>XML</b> import·export</li>
+              <li>IFC 4D 매핑(활동↔부재) 기초, BOQ→활동 리스트 자동 생성</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>BIM→공기·시퀀스 완전 자동화(SBERT 공기추정 파이프라인)</li>
+              <li>4D 시뮬레이션 뷰(모델 위 공정 재생)</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> <code>state/fileIO.ts</code>·<code>export/exporter.ts</code>에 포맷 어댑터 추가. XER/MSPDI는 잘 문서화된 스키마 →
+          우리 <code>Project</code> 모델과 매핑만 정의하면 됨. <b>상호운용성은 기술 난도는 낮고 시장 진입 효과는 큰 고ROI 항목.</b>
+        </div>
+        <p class="src-line">근거: BIM-NLP 자동 스케줄(Revit→BOQ→활동·공기) <sup class="ref"><a href="#s15">[15]</a></sup><sup class="ref"><a href="#s16">[16]</a></sup> · S-Construction 2030 BIM 의무화 <sup class="ref"><a href="#s21">[21]</a></sup></p>
+      </div>
+    </div>
+
+    <!-- F6 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F6</span>
+        <span class="f-name">현장 진척 자동 인식(드론/영상/센서) → 디지털 트윈</span>
+        <span class="badge b-p2">P2</span>
+      </div>
+      <div class="feat-body">
+        <p>Doxel·Buildots식 컴퓨터 비전으로 <b>as-built를 자동 수집</b>해 <code>Task.progress</code>를 자동 갱신하고,
+           그 신호가 F2 베이지안 갱신·F3 예측을 트리거하는 <b>살아있는 디지털 트윈</b> 루프.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (부분)</h5>
+            <ul>
+              <li>모바일 진척 입력·사진 첨부 → 진척 로그(비전 없이도 데이터 축적 시작)</li>
+              <li>드론 정사영상 타임랩스 오버레이(수동 판독 보조)</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>CV 자동 진척 인식 → 계획 대비 편차 자동 경보</li>
+              <li>물 인프라(댐·제방·관로) 특화 진척 인식 모델</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> <code>Task.progress</code> 필드가 이미 존재 → CV 파이프라인의 출력을 꽂을 자리는 준비됨.
+          단, <b>물 인프라 현장에서의 CV 진척 인식은 검증 공백</b>(§7 미해결 질문)이라 문샷으로 신중 배치.
+        </div>
+        <p class="src-line">근거: Doxel <sup class="ref"><a href="#s24">[24]</a></sup> · Buildots <sup class="ref"><a href="#s25">[25]</a></sup> · WAMIS 수자원 디지털 트윈 <sup class="ref"><a href="#s22">[22]</a></sup></p>
+      </div>
+    </div>
+
+    <!-- F7 -->
+    <div class="feat">
+      <div class="feat-head">
+        <span class="f-id">F7</span>
+        <span class="f-name">규제·기후 리스크 정량화 (국내 특화 해자)</span>
+        <span class="badge b-p1">P1</span>
+      </div>
+      <div class="feat-body">
+        <p>범용 글로벌 툴이 흉내 못 내는 지점. <b>우기·홍수·가뭄·환경영향평가·방재 기준·수문 조건</b>을 스케줄 리스크로 정량화한다.
+           우기 밴드는 이미 있다 — 이를 확률·수문 데이터와 결합해 <b>"기후 인식 공정표"</b>로 승격한다.</p>
+        <div class="row2">
+          <div class="tier now">
+            <h5>🟢 실무형 (6–12개월)</h5>
+            <ul>
+              <li>우기 효율 → 확률 리스크로 승격(F2 결합), 홍수기 제약 자동 반영</li>
+              <li>환경영향평가·인허가 리드타임을 공정 제약으로 템플릿화</li>
+            </ul>
+          </div>
+          <div class="tier front">
+            <h5>🟡 프런티어 (문샷)</h5>
+            <ul>
+              <li>WAMIS 실시간 수문·강우 데이터 연동 → 동적 공정 리스크</li>
+              <li>기후 시나리오(극한강우)별 공기 스트레스 테스트</li>
+            </ul>
+          </div>
+        </div>
+        <div class="impl">
+          <b>구현 접근:</b> <code>RainySeason.efficiency</code>를 확정값이 아닌 확률 분포로 확장하고, WAMIS API<sup class="ref"><a href="#s22">[22]</a></sup>를 데이터 소스로 연결.
+          이 기능은 <b>기술 난도보다 도메인 데이터 확보가 관건</b> — K-water·환경부 데이터 접근이 핵심 자산.
+        </div>
+        <p class="src-line">근거: WAMIS 디지털 트윈 <sup class="ref"><a href="#s22">[22]</a></sup> · 국내 수자원 스케줄링 연구 <sup class="ref"><a href="#s23">[23]</a></sup> <span class="badge b-med">전략적 추론</span></p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ════════ 4. 로드맵 ════════ -->
+  <section id="roadmap">
+    <div class="sec-head"><span class="sec-num">04</span><h2>우선순위 로드맵 — 자격 → 차별화 → 해자</h2></div>
+    <p class="lede">
+      "한 번에 다"가 아니라 순서가 전략이다. 먼저 <b>세계 무대에 설 자격</b>(상호운용성·확률·자원)을 갖추고,
+      그다음 <b>AI 차별화</b>(뉴로-심볼릭·예측)로 앞서가며, 마지막에 <b>대체 불가 해자</b>(국내 데이터·생성형 최적화·디지털 트윈)를 판다.
+    </p>
+
+    <div class="road">
+      <div class="phase p1">
+        <span class="ph-tag">0–6개월</span>
+        <div class="ph-when">Phase 1</div>
+        <div class="ph-title">세계 무대 자격</div>
+        <div class="ph-goal">"P6와 대화되고, 확률로 말하는" 도구</div>
+        <ul>
+          <li><b>F5</b> P6 XER / MSP XML I/O <span class="badge b-p0" style="transform:scale(.85)">P0</span></li>
+          <li><b>F2</b> 몬테카를로 리스크(P50/P80) <span class="badge b-p0" style="transform:scale(.85)">P0</span></li>
+          <li><b>F4</b> 자원·원가 데이터모델 착수 <span class="badge b-p0" style="transform:scale(.85)">P0</span></li>
+          <li><b>F3</b> 계획·실적 데이터 로깅 시작</li>
+        </ul>
+      </div>
+      <div class="phase p2">
+        <span class="ph-tag">6–12개월</span>
+        <div class="ph-when">Phase 2</div>
+        <div class="ph-title">AI 차별화 1차</div>
+        <div class="ph-goal">"말로 짜고, 리스크를 예견하는" 도구</div>
+        <ul>
+          <li><b>F1</b> 자연어→공정표(뉴로-심볼릭) <span class="badge b-p1" style="transform:scale(.85)">P1</span></li>
+          <li><b>F3</b> 유사공정 공기예측·지연경보 <span class="badge b-p1" style="transform:scale(.85)">P1</span></li>
+          <li><b>F7</b> 기후·규제 리스크 정량화 <span class="badge b-p1" style="transform:scale(.85)">P1</span></li>
+          <li><b>F4</b> 자원 평준화·S커브</li>
+        </ul>
+      </div>
+      <div class="phase p3">
+        <span class="ph-tag">12–24개월</span>
+        <div class="ph-when">Phase 3</div>
+        <div class="ph-title">대체 불가 해자</div>
+        <div class="ph-goal">"국내 데이터로 스스로 최적화하는" 도구</div>
+        <ul>
+          <li><b>F4</b> 생성형 최적화·DRL 리스케줄 <span class="badge b-p2" style="transform:scale(.85)">P2</span></li>
+          <li><b>F6</b> CV 현장 진척 → 디지털 트윈 <span class="badge b-p2" style="transform:scale(.85)">P2</span></li>
+          <li><b>F3</b> GNN 학습형 예측(국내 실적)</li>
+          <li><b>F1</b> BIM+문서 완전 자동 WBS</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="callout moat" style="margin-top:22px;">
+      <h4>🛡️ 왜 이 순서인가 — 해자의 논리</h4>
+      <p style="margin:0;">
+        Phase 1·2의 기능(확률·자연어·예측)은 경쟁사도 카피할 수 있다. 그러나 Phase 3의 <b>"국내 수자원·표준품셈 실적으로 학습된 최적화·예측 모델"</b>은
+        <b>데이터 없이는 복제 불가능</b>하다. 그래서 <b>F3의 데이터 로깅을 Phase 1부터 조용히 시작</b>하는 것이 이 로드맵에서 가장 중요한 한 수다 —
+        모델은 나중에 붙여도, 데이터는 지금부터 쌓아야 한다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════ 5. 국내 특화 ════════ -->
+  <section id="moat">
+    <div class="sec-head"><span class="sec-num">05</span><h2>국내 수자원 특화 = 세계 우위의 해자</h2></div>
+    <p class="lede">
+      "세계 우위"는 글로벌 강자와 <b>같은 필드에서 정면 승부</b>해서 나오지 않는다. 우리가 압도적으로 유리한
+      <b>국내 물 인프라 도메인</b>에서 먼저 대체 불가가 된 뒤, 그 엔진을 세계로 수출하는 순서다.
+    </p>
+    <div class="grid cols-3">
+      <div class="card accent">
+        <h4>🏛️ 제도가 데이터를 연다</h4>
+        <p style="font-size:14px;color:var(--muted)">S-Construction 2030: 1,000억+ 공공공사 BIM 전과정 의무화(하천·항만 2024 확대),
+          건설기준·표준품셈 약 <b>1,079개 디지털화(기계판독)</b>.<sup class="ref"><a href="#s21">[21]</a></sup> 도메인 특화 학습의 원료가 제도적으로 공급된다.</p>
+      </div>
+      <div class="card accent">
+        <h4>💧 물 인프라 실적 독점</h4>
+        <p style="font-size:14px;color:var(--muted)">댐·하천·상하수도·방재 사업의 공정·공기 실적은 <b>국내 사업자만 접근</b>. 이미 시설물 템플릿 33종+댐 9종을 보유 —
+          여기에 실적 데이터를 결합하면 F3 예측·F4 최적화가 글로벌 범용 툴을 이긴다.</p>
+      </div>
+      <div class="card accent">
+        <h4>🌊 기후·규제 정합성</h4>
+        <p style="font-size:14px;color:var(--muted)">우기·홍수·EIA·수문 제약을 공정에 정량 반영(F7). WAMIS 등 국가 수자원 데이터<sup class="ref"><a href="#s22">[22]</a></sup>와 연동하면
+          "한국 물 사업에 딱 맞는 유일한 공정표"라는 포지션이 성립한다.</p>
+      </div>
+    </div>
+    <div class="callout note">
+      <p style="margin:0;">
+        <b>투트랙 GTM:</b> ① 국내 — 수자원·환경 본부에서 F1·F2·F7로 "쓰기 쉬운 AI 공정표" 표준 장악 →
+        ② 글로벌 — F5 상호운용성으로 해외 물 인프라(ODA·플랜트) 사업에 "K-water 노하우가 학습된 도구"로 진출.
+      </p>
+    </div>
+  </section>
+
+  <!-- ════════ 6. 과대광고 경계 ════════ -->
+  <section id="caveats">
+    <div class="sec-head"><span class="sec-num">06</span><h2>과대광고 경계 — 검증에서 기각된 주장들</h2></div>
+    <p class="lede">
+      이 보고서의 신뢰도를 위해, 적대적 검증(주장당 3표, 2표 이상 반박 시 기각)에서 <b>기각된 8건</b>을 명시한다.
+      <b>로드맵의 근거나 대외 홍보 문구로 이 수치들을 인용하지 말 것.</b> "가능하다"까지만 사실이고, "얼마나 좋아진다"는 대부분 미검증이다.
+    </p>
+
+    <div class="callout warn">
+      <h4>⚠️ 벤더 자체 발표 수치 (독립 감사 안 됨 — 반드시 출처 귀속)</h4>
+      <ul>
+        <li>ALICE·McKinsey "공기 <b>최대 20%</b> 단축·상당한 비용절감" → 벤더/컨설팅 공동 보도자료의 상한 한정 자체보고<sup class="ref"><a href="#s1">[1]</a></sup></li>
+        <li>nPlan "<b>세계 최대</b> 75만 공정"·"인간 초과 정확도"·"리스크 80% 예측" → 자체 슈퍼래티브·마케팅</li>
+        <li>Oracle "the only(유일)" → 벤더 포지셔닝(Procore Scheduling 2026 Q1 GA, Planera 등 경쟁 존재)</li>
+      </ul>
+    </div>
+
+    <h3>적대적 검증에서 기각된 강한 주장 (사용 금지)</h3>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      순수 LLM 스케줄링이 베이스라인 대비 <b>+42.3% / +79.1% / +28.9%</b> 정량 개선을 달성 — CPM 네트워크 구성에서 LLM의 물질적 우월 증거라는 주장.<sup class="ref"><a href="#s13">[13]</a></sup>
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">1–2</span></div>
+      AI-에이전트 시스템이 계획 시간을 <b>약 95–96% 단축</b>(수십 분→수 분)했다는 주장.<sup class="ref"><a href="#s14">[14]</a></sup>
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      통합 4D/5D 디지털 트윈(BIM+NLP+CV+베이지안+DRL)이 <b>실제 9개월 현장에서 구현·검증</b>되어 견적노동 43%↓, P50–P80 내 정시 완공 등 성과를 냈다는 주장.<sup class="ref"><a href="#s19b">[19b]</a></sup>
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      nPlan이 <b>업계 표준을 능가하는 독자 몬테카를로 엔진</b>을 구축해 수만 활동을 수 분 내 확률 예측한다는 주장.<sup class="ref"><a href="#s3">[3]</a></sup>
+    </div>
+    <p style="font-size:13px;color:var(--muted);">
+      * 함의: 완전 자동 생성·통합 디지털트윈은 아직 <b>개념/프리프린트 단계</b>(Buildings 2024는 "평가 없는 청사진"임을 스스로 명시<sup class="ref"><a href="#s19">[19]</a></sup>).
+      따라서 우리는 <b>검증된 것은 실무형으로, 미검증 강주장은 프런티어로</b> 신중히 배치한다.
+    </p>
+  </section>
+
+  <!-- ════════ 7. 미해결 질문 ════════ -->
+  <section id="open">
+    <div class="sec-head"><span class="sec-num">07</span><h2>다음 단계 — 검증이 필요한 질문</h2></div>
+    <div class="card">
+      <ol style="margin:0;padding-left:20px;font-size:14.5px;">
+        <li style="margin:8px 0;"><b>국내 데이터 우위 실증:</b> 검증된 글로벌 기능(ALICE식 최적화·nPlan식 GNN·SBERT 공기추정)을 한국 표준품셈·K-water/댐/하천/상하수도 실적으로 튜닝했을 때 <b>실제로 공기·자원 예측 정확도 우위</b>가 나오는가? (국내 1차 데이터셋 확보 가능성 포함)</li>
+        <li style="margin:8px 0;"><b>뉴로-심볼릭 MVP 범위:</b> 자연어/BIM→완전 자동 CPM은 대부분 개념 단계인데, "LLM 프런트엔드 + 우리 CPM 엔진"으로 <b>6–12개월 내 실배포 가능한 최소 기능</b>은 어디까지인가?</li>
+        <li style="margin:8px 0;"><b>물 인프라 CV 검증:</b> 드론/영상 기반 진척 인식(Doxel·Buildots식)을 <b>실제 댐·제방·관로 현장</b>에서 검증한 정확도 사례가 존재하는가? (현 검증에선 물/토목 현장 실증이 부재)</li>
+        <li style="margin:8px 0;"><b>규제·기후 리스크 정량화 선례:</b> 홍수·가뭄·EIA·우기 제약을 스케줄 리스크 시뮬레이션에 <b>정량 반영</b>한 상용/학술 사례가 있는가? (F7의 차별화 강도를 좌우)</li>
+      </ol>
+    </div>
+    <div class="stats">
+      <div class="stat"><div class="n">5</div><div class="l">조사 각도</div></div>
+      <div class="stat"><div class="n">24</div><div class="l">수집 출처</div></div>
+      <div class="stat"><div class="n">115</div><div class="l">추출 주장</div></div>
+      <div class="stat"><div class="n">17/8</div><div class="l">확인 / 기각</div></div>
+      <div class="stat"><div class="n">106</div><div class="l">검증 에이전트</div></div>
+    </div>
+  </section>
+
+  <!-- ════════ 8. 출처 ════════ -->
+  <section id="sources">
+    <div class="sec-head"><span class="sec-num">08</span><h2>출처</h2></div>
+    <p class="lede" style="margin-bottom:8px;">
+      <span class="q primary">PRIMARY</span> 1차(벤더·논문·공식)
+      &nbsp;<span class="q secondary">SECONDARY</span> 2차(정부·업계 분석)
+      &nbsp;<span class="q blog">BLOG</span> 블로그·해설. 벤더·프리프린트 수치는 §6 경계 참조.
+    </p>
+    <ol class="sources">
+      <li id="s1"><span class="q primary">PRIMARY</span> McKinsey × ALICE Technologies, <i>Collaborate to transform capital project delivery with generative scheduling</i>. <a href="https://www.mckinsey.com/capabilities/operations/our-insights/operations-blog/mckinsey-and-alice-technologies-collaborate-to-transform-capital-project-delivery-with-generative-scheduling">mckinsey.com</a></li>
+      <li id="s2"><span class="q primary">PRIMARY</span> Tri-Constraint Method(생성형 스케줄링 메커니즘), <i>ScienceDirect</i> S1474034621002056. <a href="https://www.sciencedirect.com/science/article/pii/S1474034621002056">sciencedirect.com</a></li>
+      <li id="s3"><span class="q primary">PRIMARY</span> nPlan, <i>Our AI</i>(75만+ 공정·GNN·딥러닝). <a href="https://www.nplan.io/our-ai">nplan.io/our-ai</a> · <a href="https://www.nplan.io/nerd">nERD</a></li>
+      <li id="s5"><span class="q secondary">SECONDARY</span> AEC Magazine AI Directory — nPlan. <a href="https://aidirectory.aecmag.com/entry/nplan/">aidirectory.aecmag.com</a></li>
+      <li id="s6"><span class="q secondary">SECONDARY</span> ENR — nPlan 영국 철도($11B) 배치. <a href="https://www.enr.com/articles/55472">enr.com</a></li>
+      <li id="s7"><span class="q primary">PRIMARY</span> Oracle Primavera Cloud — Project Management. <a href="https://www.oracle.com/construction-engineering/primavera-cloud-project-management/">oracle.com</a></li>
+      <li id="s8"><span class="q primary">PRIMARY</span> Oracle Docs — Risk Analysis(최대 30,000 리스크 몬테카를로). <a href="https://docs.oracle.com/cd/E80480_01/help/en/user/93538.htm">docs.oracle.com</a> · <a href="https://docs.oracle.com/cd/E80480_01/help/en/user/101908.htm">Construction Intelligence Cloud</a></li>
+      <li id="s11"><span class="q primary">PRIMARY</span> Pallagani et al., <i>LLMs for Planning: A Survey</i>(ICAPS 2024, 126편 리뷰). <a href="https://arxiv.org/abs/2401.02500">arxiv.org/abs/2401.02500</a></li>
+      <li id="s12"><span class="q primary">PRIMARY</span> Kambhampati et al., <i>LLMs Can't Plan / LLM-Modulo</i>(ICML 2024). <a href="https://arxiv.org/abs/2402.01817">arxiv.org/abs/2402.01817</a></li>
+      <li id="s13"><span class="q primary">PRIMARY</span> <i>CONSTRUCTA: Automating Commercial Construction Schedules with LLMs</i>(NAACL 2025 Industry). <a href="https://arxiv.org/abs/2502.12066">arxiv.org/abs/2502.12066</a> <span style="color:var(--red)">— 정량 우월성 주장은 §6 기각</span></li>
+      <li id="s14"><span class="q primary">PRIMARY</span> 멀티에이전트 LLM WBS 생성(n8n+RAG+CoT), <i>MDPI Technologies</i> 14(6):351. <a href="https://doi.org/10.3390/technologies14060351">doi.org/10.3390/technologies14060351</a> <span style="color:var(--red)">— 95–96% 단축 주장은 §6 기각</span></li>
+      <li id="s15"><span class="q primary">PRIMARY</span> BIM-NLP 자동 스케줄(SBERT 공기추정), <i>MDPI Designs</i> 10(2):43. <a href="https://www.mdpi.com/2411-9660/10/2/43">mdpi.com/2411-9660/10/2/43</a></li>
+      <li id="s16"><span class="q primary">PRIMARY</span> BIM-NLP-Scheduling(Revit→BOQ→활동→공기→P6) GitHub. <a href="https://github.com/mahmoudaraafat1-netizen/BIM-NLP-Scheduling">github.com/…/BIM-NLP-Scheduling</a></li>
+      <li id="s17"><span class="q primary">PRIMARY</span> 베이지안–몬테카를로 연속 스케줄 갱신(로그정규·베이지안). <a href="https://arxiv.org/abs/2605.17608">arxiv.org/abs/2605.17608</a> <span style="color:var(--gold)">— 미심사 프리프린트·합성데이터</span></li>
+      <li id="s18"><span class="q primary">PRIMARY</span> ASCE, Bayesian 스케줄 갱신 방법론. <a href="https://ascelibrary.org/doi/10.1061/JMENEA.MEENG-4870">ascelibrary.org</a></li>
+      <li id="s19"><span class="q primary">PRIMARY</span> <i>ML+BIM 자동 스케줄 생성 청사진</i>(평가 미포함 명시), <i>Buildings</i> 14:934. <a href="https://www.mdpi.com/2075-5309/14/4/934">mdpi.com/2075-5309/14/4/934</a></li>
+      <li id="s19b"><span class="q primary">PRIMARY</span> 통합 4D/5D 디지털트윈 프레임워크(프리프린트). <a href="https://arxiv.org/pdf/2511.03684">arxiv.org/pdf/2511.03684</a> <span style="color:var(--red)">— 실증 성과 주장 전체 §6 기각(0–3)</span></li>
+      <li id="s20"><span class="q primary">PRIMARY</span> DRL 자동 건설 스케줄링(VAS+GCN), <i>Automation in Construction</i>. <a href="https://www.sciencedirect.com/science/article/pii/S0926580524003583">sciencedirect.com/…/S0926580524003583</a></li>
+      <li id="s21"><span class="q secondary">SECONDARY</span> 국토교통부 <i>스마트 건설 활성화 방안 S-Construction 2030</i>(BIM 의무화·표준품셈 1,079개 디지털화). <a href="https://www.molit.go.kr/USR/NEWS/m_71/dtl.jsp?lcmspage=7&id=95086971">molit.go.kr</a></li>
+      <li id="s22"><span class="q primary">PRIMARY</span> WAMIS 물관리 디지털 플랫폼(수자원 디지털 트윈). <a href="https://dt.wamis.go.kr/wdp/main.do">dt.wamis.go.kr</a></li>
+      <li id="s23"><span class="q primary">PRIMARY</span> 국내 건설/수자원 스케줄링 연구(KCI). <a href="https://dspace.kci.go.kr/handle/kci/1713099">dspace.kci.go.kr</a></li>
+      <li id="s24"><span class="q primary">PRIMARY</span> Doxel — CV 기반 현장 진척 측정. <a href="https://doxel.ai/">doxel.ai</a></li>
+      <li id="s25"><span class="q primary">PRIMARY</span> Buildots — 360° 캡처 자동 진척 인식. <a href="https://buildots.com/product/">buildots.com/product</a></li>
+      <li id="s26"><span class="q secondary">SECONDARY</span> Mastt, <i>AI in Construction Scheduling</i>(4단계 성숙도 계층). <a href="https://www.mastt.com/blogs/ai-construction-scheduling">mastt.com</a></li>
+    </ol>
+  </section>
+
+  <div class="callout note" style="margin-top:26px;">
+    <h4>📌 연구 방법론</h4>
+    <p style="margin:0;font-size:13.6px;color:var(--muted)">
+      본 보고서의 경쟁·기술 근거는 딥리서치 하니스(5개 조사 각도 → 병렬 웹검색 → 24개 출처 페치 → 115개 주장 추출 →
+      주장당 3표 적대적 검증, 2표 이상 반박 시 기각)로 수집·검증했다. 총 106개 에이전트·727회 도구 호출. 25개 검증 대상 중 <b>17개 확인·8개 기각</b>.
+      제품 현황(§1)은 Sequence 저장소 코드 실측(<code>engine/scheduling.ts</code>, <code>types/model.ts</code>, <code>data/civilFacilities.ts</code>, <code>state/fileIO.ts</code>, <code>export/exporter.ts</code>) 기반.
+      국내 특화(§5·F7)는 검증된 글로벌 기능을 국내 데이터로 튜닝하는 <b>전략적 추론</b>으로, 별도 국내 1차 데이터 검증(§7)이 필요하다.
+    </p>
+  </div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>Sequence</b> · AI 시대 토목·물 인프라 공정표 세계 우위 전략 보고서</span>
+    <span>2026-08-30 · 딥리서치 근거 · 제품 코드 실측 기반</span>
+  </div>
+</footer>
+
+</body>
+</html>
