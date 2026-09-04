@@ -9,6 +9,7 @@
 
 import type { CSSProperties, MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
 import { memo } from 'react'
+import type { AdequacyResult } from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
 import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
@@ -59,6 +60,10 @@ interface Props {
   onTimelineClick: () => void
   onRainyResizePointerDown: (e: RPointerEvent, seasonId: string, edge: 'start' | 'end') => void
   onBackgroundClick: () => void
+  /** 막대 위 호버(진입/이탈) → 적정성 근거 툴팁(ChartCanvas 오버레이). id=null 이면 이탈. */
+  onTaskHover?: (id: string | null, clientX: number, clientY: number) => void
+  /** 공정별 공기 적정성 판정 — 과소/과다면 막대에 경보(색 스트라이프+⚠, 화면 전용) 표시. */
+  adequacyByTaskId?: Map<string, AdequacyResult>
 }
 
 function diamond(cx: number, cy: number, r: number): string {
@@ -92,6 +97,8 @@ function ChartSvgBase({
   onTimelineClick,
   onRainyResizePointerDown,
   onBackgroundClick,
+  onTaskHover,
+  adequacyByTaskId,
 }: Props) {
   const {
     labelWidth,
@@ -747,6 +754,10 @@ function ChartSvgBase({
                 strokeDasharray={mirror ? '3 2' : isDummy && !selected ? '4 3' : undefined}
                 style={mirror ? { pointerEvents: 'none' } : undefined}
                 onPointerDown={mirror ? undefined : (e) => onTaskPointerDown(e, t.id)}
+                onMouseEnter={
+                  mirror || !onTaskHover ? undefined : (e) => onTaskHover(t.id, e.clientX, e.clientY)
+                }
+                onMouseLeave={mirror || !onTaskHover ? undefined : () => onTaskHover(null, 0, 0)}
               />
               <text
                 x={lt.x}
@@ -756,6 +767,28 @@ function ChartSvgBase({
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
+              {/* 부적정(과소/과다) 경보 — 화면 전용(내보내기 제외). 결정론 엔진(adequacy) 판정 기반. */}
+              {(() => {
+                const mark = adequacyByTaskId?.get(t.id)
+                if (mirror || isDummy || !mark) return null
+                if (mark.verdict !== '과소' && mark.verdict !== '과다') return null
+                const warnColor = mark.verdict === '과소' ? '#d64541' : '#e0972a'
+                return (
+                  <g data-export-hide="1" pointerEvents="none">
+                    <rect x={lt.x} y={lt.y - 0.5} width={lt.w} height={2.5} rx={1} fill={warnColor} />
+                    <text
+                      x={lt.endX - 4}
+                      y={lt.cy + 4}
+                      textAnchor="end"
+                      fontSize={11}
+                      fontWeight={700}
+                      fill={warnColor}
+                    >
+                      ⚠
+                    </text>
+                  </g>
+                )
+              })()}
               {/* resize grips (drag to change duration) + link anchor (drag to connect) —
                   primary single selection only (다중선택 그룹 이동 중엔 숨김 · 미러 제외). */}
               {t.id === selectedTaskId && singleSel && !mirror && (

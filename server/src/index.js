@@ -21,6 +21,7 @@ import { canAccessAll, canAdmin, canEnterProject } from './auth/roles.js'
 import { bootstrapDeveloper, createAuthRouter } from './auth/routes.js'
 import { bootstrapSampleProjects } from './auth/sampleProjects.js'
 import { attachCollaborationServer } from './collab/index.js'
+import { reviewProviderStatus, runReview } from './llm/review.js'
 import {
   createBoundedRateLimiter,
   createHttpOriginPolicy,
@@ -259,6 +260,28 @@ app.post(
       appendLog(entry.level, `[client:${req.user.role}] ${entry.message}`, entry.detail)
     }
     res.json({ ok: true, count: entries.length })
+  }),
+)
+
+// ── 실시간 AI 검토 프록시(검토서 Part A) — BYO 키로 3사 LLM 호출 ──
+// 반영은 여전히 앱 내 승인 게이트(ReviewDialog)를 거친다 — 모델은 '제안'만.
+app.get('/api/review/providers', listGate, (_req, res) => res.json(reviewProviderStatus()))
+
+app.post(
+  '/api/review/complete',
+  listGate,
+  asyncRoute(async (req, res) => {
+    const { provider, model, prompt } = req.body || {}
+    if (typeof prompt !== 'string' || !prompt.trim())
+      return res.status(400).json({ error: '검토 요청 내용(prompt)이 비어 있습니다.' })
+    try {
+      const out = await runReview({ provider, model, prompt })
+      res.json(out)
+    } catch (e) {
+      const status = Number.isInteger(e?.status) ? e.status : 502
+      appendLog('warn', 'review/complete 실패', { provider, code: e?.code, message: e?.message })
+      res.status(status).json({ error: e?.message || 'LLM 호출에 실패했습니다.', code: e?.code })
+    }
   }),
 )
 

@@ -6,6 +6,7 @@ import { useAuth } from '../state/authStore'
 import { openProjectFromFile } from '../state/fileIO'
 import { logWarn } from '../state/logger'
 import { useEditor } from '../state/store'
+import { BoqImportDialog } from './BoqImportDialog'
 import { HelpDialog } from './HelpDialog'
 import { ReviewDialog } from './ReviewDialog'
 import { TemplateDialog } from './TemplateDialog'
@@ -41,6 +42,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const [helpOpen, setHelpOpen] = useState(false)
   const [newOpen, setNewOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
+  const [boqOpen, setBoqOpen] = useState(false)
 
   // 사용자가 고른 .json 파일을 열어 현재 사업으로 교체(요구: 원하는 경로에서 불러오기).
   async function onLoadFromFile() {
@@ -122,6 +124,13 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
           onClick={() => void onLoadFromFile()}
         >
           불러오기
+        </button>
+        <button
+          className="btn btn--sm btn--ghost"
+          title="내역서·수량산출서(엑셀·CSV·HWPX·PDF)에서 물량을 읽어 공정에 연결"
+          onClick={() => setBoqOpen(true)}
+        >
+          📥 내역서 취입
         </button>
         <button
           className="btn btn--sm btn--ghost"
@@ -271,6 +280,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       {helpOpen && <HelpDialog onClose={() => setHelpOpen(false)} />}
       {newOpen && <TemplateDialog onClose={() => setNewOpen(false)} />}
       {reviewOpen && <ReviewDialog onClose={() => setReviewOpen(false)} />}
+      {boqOpen && <BoqImportDialog onClose={() => setBoqOpen(false)} />}
     </header>
   )
 }

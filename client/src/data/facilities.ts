@@ -17,6 +17,7 @@
 // (코어형·CFRD)/복합댐(CSG)/가동보/안전성강화/농업용 저수지).
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { normWorkName } from '../engine/adequacy'
 import { applyCascade } from '../engine/scheduling'
 import { lanePalette } from '../styles/theme'
 import type { Category, Link, Task } from '../types/model'
@@ -1154,6 +1155,23 @@ export function facilitySchedule(facilityKey?: string): {
 export function hasFacilityScheme(facilityKey?: string): boolean {
   const s = facilityKey ? SCHEMES[facilityKey] : undefined
   return !!s && s.packages.length > 0
+}
+
+/**
+ * 시설물 유형 표준 템플릿의 '공정명(정규화) → 표준공기(일)' 색인 — ②표준대비 판정용.
+ * 한 이름이 서로 다른 기간의 표준에 매칭되면 null(모호)로 두어 오해 소지를 없앤다.
+ * 키 정규화는 engine/adequacy 의 normWorkName 과 동일해야 조회가 맞물린다(assessTasks).
+ */
+export function standardDurationIndex(facilityKey?: string): Map<string, number | null> {
+  const idx = new Map<string, number | null>()
+  if (!hasFacilityScheme(facilityKey)) return idx
+  for (const t of facilitySchedule(facilityKey).tasks) {
+    if (t.isMilestone || t.duration <= 0) continue
+    const key = normWorkName(t.name)
+    if (!idx.has(key)) idx.set(key, t.duration)
+    else if (idx.get(key) !== t.duration) idx.set(key, null)
+  }
+  return idx
 }
 
 /** 신규 도면 창의 '공정표 미리보기(샘플)'용 요약 — 유형별 시공 공정표에서 계산. */

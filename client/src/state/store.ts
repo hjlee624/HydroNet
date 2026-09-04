@@ -220,6 +220,12 @@ export interface EditorState {
     applied: number
     skipped: Array<{ taskId: string; reason: string }>
   }
+  /** 내역서(BoQ) 취입(검토서 B3) — 사용자가 확인한 매핑의 물량·단위·공종코드를 **단일 커밋**
+   *  (undo 1엔트리)으로 반영한다. 일정(start/duration)은 건드리지 않으므로 cascade 없음.
+   *  조회 전용은 무반영. 반영 건수를 돌려준다. */
+  importBoqQuantities: (
+    items: Array<{ taskId: ID; quantity?: number; unit?: string; workCode?: string }>,
+  ) => { applied: number }
   /** 여러 공정 색상을 한 번에 지정(다중 선택 색 변경). ids가 1개면 그 하나만. */
   setTasksColor: (ids: ID[], color: string, opts?: { history?: boolean }) => void
   /** 세부공종(WBS 2단계) 일괄 이름변경 — 한 공종 안에서 subName===oldSub 인 공정들의 subName을
@@ -1136,6 +1142,34 @@ export const useEditor = create<EditorState>()((set, get) => {
         { cascade: true, history: true },
       )
       return { applied, skipped }
+    },
+    importBoqQuantities: (items) => {
+      if (get().readOnly) return { applied: 0 }
+      let applied = 0
+      commit(
+        (p) => {
+          for (const it of items) {
+            const t = p.tasks.find((x) => x.id === it.taskId)
+            if (!t || t.isMilestone) continue
+            let touched = false
+            if (it.quantity != null && Number.isFinite(it.quantity) && it.quantity > 0) {
+              t.quantity = it.quantity
+              touched = true
+            }
+            if (it.unit !== undefined) {
+              t.unit = it.unit ? it.unit : undefined
+              touched = true
+            }
+            if (it.workCode !== undefined) {
+              t.workCode = it.workCode ? it.workCode : undefined
+              touched = true
+            }
+            if (touched) applied++
+          }
+        },
+        { cascade: false, history: true },
+      )
+      return { applied }
     },
     setTasksColor: (ids, color, opts) => {
       const set = new Set(ids)

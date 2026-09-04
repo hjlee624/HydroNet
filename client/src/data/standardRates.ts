@@ -21,6 +21,14 @@ export const LEGAL_BASIS = {
 } as const
 
 /**
+ * 표준 일작업량 DB의 기준 개정일(ISO). 아래 STANDARD_RATES 값은 모두 위 고시(제2024-1021호)
+ * 부록4에서 판독했으므로 개정일 = 고시 시행일이다. 특정 항목이 다른 개정본에서 왔다면 그 레코드의
+ * `revision` 필드로 override 한다(품셈 개정 버전관리). 근거 팝업/Inspector에 개정일로 노출한다.
+ * ※ 실제 고시 시행일 — 임의 생성값이 아님.
+ */
+export const STANDARD_RATE_REVISION = '2025-01-06' as const
+
+/**
  * 총공사기간(법정 산정식) — 가이드라인 원문(p17):
  *   "공사기간 = ① 준비기간 + ② 비작업일수 + ③ 작업일수 + ④ 정리기간"
  * 이 중 ③ **작업일수 = 공종별 작업수량 ÷ 1일 작업량**(부록4)이며, 전체 공사기간에 영향을 주는
@@ -105,7 +113,7 @@ export const NONWORK_FACTORS: NonWorkFactor[] = [
  * 둘 중 하나만 채운다.
  */
 export interface StandardRate {
-  /** workCode 매핑 키(조달청 세부공종분류코드와 호환하도록 부여). */
+  /** workCode 매핑 키(내부 슬러그). 조달청 실코드는 procurementCode 로 별도 보관. */
   code: string
   /** 공종(대분류). */
   work: string
@@ -121,6 +129,17 @@ export interface StandardRate {
   note?: string
   /** 가이드라인 PDF 페이지(부록4). */
   page: number
+  /**
+   * 이 레코드의 개정일(ISO). 대부분 고시 시행일(STANDARD_RATE_REVISION)과 같아 생략하며,
+   * 다른 개정본에서 온 값만 여기에 실제 개정일을 명시한다. 조회는 rateRevision() 사용.
+   */
+  revision?: string
+  /**
+   * 조달청 '공사원가 세부공종분류코드'(공공데이터포털 15151207) 실코드.
+   * 아직 데이터셋과 매핑되지 않은 항목은 undefined — **임의 코드를 지어내지 않는다.**
+   * 조달청 CSV/XML/JSON 취입 후 정본 코드로 채운다(BoQ 자동연결·전자조달 연계 키).
+   */
+  procurementCode?: string
 }
 
 /**
@@ -179,8 +198,20 @@ export function findStandardRate(code?: string): StandardRate | undefined {
   return code ? RATE_BY_CODE.get(code) : undefined
 }
 
+/** 레코드의 개정일(ISO). 개별 override 가 없으면 DB 기준 개정일(고시 시행일). */
+export function rateRevision(rate: StandardRate): string {
+  return rate.revision ?? STANDARD_RATE_REVISION
+}
+
+/** 1일 작업량 표기 문자열('520㎥/일' 또는 '25일/경간'). 근거 팝업·드롭다운 공용. */
+export function rateOutputLabel(rate: StandardRate): string {
+  return rate.dailyOutput != null
+    ? `${rate.dailyOutput}${rate.unit}/일`
+    : `${rate.daysPerUnit}일/${rate.unit}`
+}
+
 /** Inspector 드롭다운용 옵션 목록(공종·세부작업·단위 라벨). */
 export const STANDARD_RATE_OPTIONS = STANDARD_RATES.map((r) => ({
   code: r.code,
-  label: `${r.work} — ${r.subwork} (${r.dailyOutput != null ? `${r.dailyOutput}${r.unit}/일` : `${r.daysPerUnit}일/${r.unit}`})`,
+  label: `${r.work} — ${r.subwork} (${rateOutputLabel(r)})`,
 }))

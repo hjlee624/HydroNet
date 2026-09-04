@@ -8,8 +8,10 @@
 // 여기서 각 공정에는 안정적인 원본 id 를 [[id:<원본 전체 id>]] 로 심어(접두사·하이픈 포함
 // 그대로) 왕복 매핑을 결정적으로 만든다(ADR-003 §9-①).
 
-import { facilityLabel, facilitySchedule, hasFacilityScheme } from '../data/facilities'
+import { facilityLabel, standardDurationIndex } from '../data/facilities'
+import { assessConstructionPeriod, assessTaskAdequacy } from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
+import { computeSchedule } from '../engine/scheduling'
 import { reviewFingerprint } from '../state/reviewFingerprint'
 import type { Project } from '../types/model'
 
@@ -19,20 +21,6 @@ const pad = (n: number): string => String(n).padStart(2, '0')
 const normName = (s: string): string => s.replace(/^◆\s*/, '').replace(/\s+/g, ' ').trim()
 const escCell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ')
 const yamlStr = (s: string): string => JSON.stringify(s ?? '')
-
-/** 시설물 표준 템플릿에서 '공정명(정규화) → 표준공기(일)' 색인. 한 이름이 서로 다른
- *  기간의 표준에 매칭되면 null(모호)로 두어 오해 소지를 없앤다(ADR-003 §9-⑤). */
-function buildStandardIndex(facilityKey?: string): Map<string, number | null> {
-  const idx = new Map<string, number | null>()
-  if (!hasFacilityScheme(facilityKey)) return idx
-  for (const t of facilitySchedule(facilityKey).tasks) {
-    if (t.isMilestone || t.duration <= 0) continue
-    const key = normName(t.name)
-    if (!idx.has(key)) idx.set(key, t.duration)
-    else if (idx.get(key) !== t.duration) idx.set(key, null)
-  }
-  return idx
-}
 
 function fmtPct(cur: number, std: number): string {
   if (!std) return '—'
@@ -80,7 +68,10 @@ const RESPONSE_GUIDE = `## 회신 형식 (반드시 지켜주세요)
 /** 검토요청 .md 문자열 생성(순수 함수, read-only). */
 export function buildReviewRequestMd(project: Project): string {
   const startDate = project.startDate
-  const stdIdx = buildStandardIndex(project.facility)
+  const stdIdx = standardDurationIndex(project.facility)
+  // CPM 계산으로 주공정(critical) 을 확정 — 표의 주공정 표기·적정성 판정(주공정선 한정)이 실측 기반이 된다.
+  const scheduled = computeSchedule(project.tasks, project.links).tasks
+  const critById = new Map(scheduled.map((t) => [t.id, t] as const))
   const tasks = project.tasks
   const work = tasks.filter((t) => !t.isMilestone)
   const milestones = tasks
@@ -126,7 +117,7 @@ export function buildReviewRequestMd(project: Project): string {
     '> 🤖 **AI 검토 요청** — 아래 공정표의 각 공정 **공사기간(일)** 이 적정한지 검토해 주세요.',
   )
   out.push(
-    '> - 이 파일의 **표준공기·현재공기·주공정**을 근거로 판단하세요(일반 지식보다 이 파일 우선).',
+    '> - 이 파일의 **법정 산정 근거·이론작업일수(물량÷생산성)·표준공기·현재공기·주공정**을 근거로 판단하세요(일반 지식보다 이 파일 우선).',
   )
   out.push('> - **공정 신설·삭제·이동·병합 금지.** 기존 공정의 기간만 검토합니다.')
   out.push('> - 수정 제안은 **파일 맨 끝의 「회신 형식」** 대로만 작성하세요.')
@@ -167,22 +158,65 @@ export function buildReviewRequestMd(project: Project): string {
     if (rows.length === 0) continue
     out.push(`### 공종 · ${escCell(c.name)}`)
     out.push('')
-    out.push('| 공정 | 현재공기(일) | 시작 | 종료 | 주공정 | 표준(일) | 표준대비 | ID |')
-    out.push('|---|---:|---|---|:---:|---:|---:|---|')
+    out.push(
+      '| 공정 | 현재공기(일) | 이론작업일수(일) | 적정성(법정) | 시작 | 종료 | 주공정 | 표준(일) | 표준대비 | ID |',
+    )
+    out.push('|---|---:|---:|:---:|---|---|:---:|---:|---:|---|')
     for (const t of rows) {
+      const sTask = critById.get(t.id) ?? t
       const name = (t.parentId ? '└ ' : '') + normName(t.name)
       const start = toISO(dayToDate(startDate, t.start))
       const end = toISO(dayToDate(startDate, t.start + t.duration))
-      const crit = t.critical ? '●' : ''
+      const crit = sTask.critical ? '●' : ''
       const std = stdIdx.get(normName(t.name))
       const stdCell = typeof std === 'number' ? String(std) : '—'
       const cmp = typeof std === 'number' ? fmtPct(t.duration, std) : '—'
+      const adq = assessTaskAdequacy(sTask, {
+        standardDuration: typeof std === 'number' ? std : undefined,
+      })
+      const theo = adq.theoretical != null ? String(adq.theoretical) : '—'
+      const verdictCell =
+        adq.verdict === '판정불가'
+          ? '—'
+          : `${adq.verdict}${adq.deviationPct != null ? ` (${adq.deviationPct > 0 ? '+' : ''}${adq.deviationPct}%)` : ''}`
       out.push(
-        `| ${escCell(name)} | ${t.duration} | ${start} | ${end} | ${crit} | ${stdCell} | ${cmp} | \`[[id:${t.id}]]\` |`,
+        `| ${escCell(name)} | ${t.duration} | ${theo} | ${verdictCell} | ${start} | ${end} | ${crit} | ${stdCell} | ${cmp} | \`[[id:${t.id}]]\` |`,
       )
     }
     out.push('')
   }
+
+  // ── [4b] 공기 적정성 — 법정 산정 근거(뉴로-심볼릭: 결정론 엔진이 계산한 근거를 LLM에 제공) ──
+  const cp = assessConstructionPeriod({
+    tasks: project.tasks,
+    links: project.links,
+    rainySeasons: project.rainySeasons,
+    startDate: project.startDate,
+  })
+  out.push('## 공기 적정성 — 법정 산정 근거')
+  out.push('')
+  out.push(
+    '> 아래는 「공공 건설공사의 공사기간 산정기준」(국토부고시 제2024-1021호)에 따른 **결정론 산정 결과**입니다. 일반 지식이 아니라 **이 근거를 우선**으로 각 공정과 전체 공기의 적정성을 판단하세요.',
+  )
+  out.push('')
+  out.push(
+    `- **법정 산정 총공기:** 준비 ${cp.parts.prep} + 비작업 ${cp.parts.nonWork} + 작업 ${cp.parts.work} + 정리 ${cp.parts.cleanup} = **${cp.legalTotal}일**`,
+  )
+  out.push(
+    `- **현재 계획 공기(달력):** ${cp.actualSpan}일` +
+      (cp.deviationPct != null
+        ? ` — 법정 대비 ${cp.deviationPct > 0 ? '+' : ''}${cp.deviationPct}% · **${cp.verdict}**`
+        : ''),
+  )
+  out.push(
+    `- **작업일수:** 주공정 ${cp.criticalCount}개 중 물량기반 산정 ${cp.workByQuantityCount}개(나머지는 현 공기로 근사)`,
+  )
+  out.push(
+    `- **비작업일수:** 주말 ${cp.nonWork.weekend} + 기상(우기밴드) ${cp.nonWork.weather} + 법정공휴일 ${cp.nonWork.holiday} = ${cp.nonWork.total}일`,
+  )
+  out.push('')
+  for (const b of cp.basis) out.push(`  - ${escCell(b)}`)
+  out.push('')
 
   // ── [5] 하단 지시문(회신 형식) ──
   out.push('---')

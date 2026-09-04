@@ -7,7 +7,9 @@
 // gestures (move/resize/link/select) only run in 'edit'. Esc returns to edit.
 
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { standardDurationIndex } from '../data/facilities'
+import { assessTasks, type AdequacyResult } from '../engine/adequacy'
 import { dateToDay, daysInMonth, dayToDate, toISO } from '../engine/dates'
 import { computeLayout, type LayoutModel } from '../engine/layout'
 import { augmentForMirror } from '../engine/mirror'
@@ -99,6 +101,21 @@ export function ChartCanvas() {
   const model = useMemo(() => computeLayout(augmented, filter), [augmented, filter])
 
   const routed = useMemo(() => routeLinks(model, augmented.links), [model, augmented.links])
+
+  // 공정별 공기 적정성(검토서 B4) — 막대 호버 툴팁·부적정 경보의 데이터원. CPM 결과 기반(주공정 한정).
+  const adequacy = useMemo(
+    () =>
+      assessTasks(project.tasks, project.links, {
+        standardDurationByName: standardDurationIndex(project.facility),
+      }),
+    [project.tasks, project.links, project.facility],
+  )
+  const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null)
+  const onTaskHover = useCallback((id: string | null, x: number, y: number) => {
+    if (id == null) return setHover(null)
+    if (dragRef.current) return // 드래그 중엔 툴팁 숨김(오조작 방지)
+    setHover({ id, x, y })
+  }, [])
 
   // "오늘" line position (content coords), or null when today is off-domain.
   const todayX = useMemo(() => {
@@ -770,6 +787,8 @@ export function ChartCanvas() {
                 } // marquee/drag just ran → keep selection
                 useEditor.getState().selectTask(null)
               }}
+              onTaskHover={onTaskHover}
+              adequacyByTaskId={adequacy}
             />
             {editing && editLt && (
               <input
@@ -856,7 +875,89 @@ export function ChartCanvas() {
           </div>
         </div>
       </div>
+      {hover && adequacy.get(hover.id) && (
+        <AdequacyTooltip
+          x={hover.x}
+          y={hover.y}
+          adq={adequacy.get(hover.id) as AdequacyResult}
+          name={project.tasks.find((t) => t.id === hover.id)?.name ?? ''}
+        />
+      )}
       {periodOpen && <DisplayPeriodDialog model={model} onClose={() => setPeriodOpen(false)} />}
+    </div>
+  )
+}
+
+/** 막대 호버 시 뜨는 공기 적정성 근거 툴팁 — 확대(zoom) 무관하게 화면 좌표(fixed)로 크게 표시.
+ *  포인터를 통과(pointerEvents none)시키고, 내보내기 대상이 아니다(data-export-hide). */
+function AdequacyTooltip({
+  x,
+  y,
+  adq,
+  name,
+}: {
+  x: number
+  y: number
+  adq: AdequacyResult
+  name: string
+}) {
+  const color =
+    adq.verdict === '과소'
+      ? '#d64541'
+      : adq.verdict === '과다'
+        ? '#c98a1b'
+        : adq.verdict === '적정'
+          ? '#1f9d63'
+          : '#5b6b7a'
+  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280
+  const vh = typeof window !== 'undefined' ? window.innerHeight : 800
+  const left = Math.max(8, Math.min(x + 14, vw - 300))
+  const top = Math.max(8, Math.min(y + 14, vh - 190))
+  const dev = (p: number | null) => (p == null ? '' : `${p > 0 ? '+' : ''}${p}%`)
+  return (
+    <div
+      data-export-hide="1"
+      style={{
+        position: 'fixed',
+        left,
+        top,
+        zIndex: 60,
+        pointerEvents: 'none',
+        width: 280,
+        background: '#fff',
+        border: '1px solid #e2e8ee',
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 8,
+        boxShadow: '0 6px 24px rgba(16,34,50,.16)',
+        padding: '10px 12px',
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        color: '#16222e',
+      }}
+    >
+      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, marginBottom: 4 }}>
+        <b style={{ fontSize: 13 }}>{name.replace(/^◆\s*/, '')}</b>
+        <span style={{ color, fontWeight: 800, whiteSpace: 'nowrap' }}>
+          {adq.verdict}
+          {adq.deviationPct != null ? ` ${dev(adq.deviationPct)}` : ''}
+        </span>
+      </div>
+      <div style={{ color: '#5b6b7a' }}>
+        현 공기 {adq.current}일
+        {adq.theoretical != null ? ` · 이론 ${adq.theoretical}일(물량÷생산성)` : ''}
+        {adq.standardDeviationPct != null ? ` · 표준대비 ${dev(adq.standardDeviationPct)}` : ''}
+      </div>
+      <ul style={{ margin: '6px 0 0', padding: 0, listStyle: 'none' }}>
+        {adq.basis.slice(0, 3).map((b, i) => (
+          <li
+            key={i}
+            style={{ fontSize: 11.5, color: '#33465a', paddingLeft: 10, position: 'relative' }}
+          >
+            <span style={{ position: 'absolute', left: 0 }}>·</span>
+            {b}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

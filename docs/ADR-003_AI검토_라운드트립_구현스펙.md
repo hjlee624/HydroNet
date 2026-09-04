@@ -229,7 +229,9 @@ export 시 각 공정의 **실제 id·현재 duration(from)** 을 미리 박아,
 - `durationLabel`/`note` 화이트리스트 옵트인(무언파괴 3택 UI).
 - `link.lag` 조정 옵트인(양생기간 확보 등 국내 실수요) — v2.
 - 신규/삭제/이동 op(`store` paste의 2패스 tmpId 재매핑) — v3, "공정 누락" 구조제안.
-- **개방망 BYO-key direct API** 경로(동일 `parseReviewMd` 재사용, 펜스 없으면 1회 자동 재요청).
+- ✅ **개방망 BYO-key direct API 경로 — 구현 완료(2026-09).** `server/src/llm/review.js`(Claude=공식 `@anthropic-ai/sdk`, OpenAI·Gemini=REST) + 라우트 `POST /api/review/complete`·`GET /api/review/providers`(auth 게이트), `ReviewDialog` "⚡ 앱에서 바로 검토"(공급자 선택→`buildReviewRequestMd`→프록시→동일 `buildReviewPlan` 프리뷰). 키는 서버 `.env`(BYO), 미설정 공급자는 501로 안내. 파일 왕복(export→import)은 폐쇄망·오프라인용으로 병존. 반영은 여전히 앱 내 승인 게이트(모델은 제안만).
+- ✅ **적정성(법정 산정) 근거를 export에 주입 — 구현 완료(2026-09).** `reviewRequest.ts`가 `assessTaskAdequacy`(이론작업일수·편차·판정)·`assessConstructionPeriod`(준비+비작업+작업+정리) 결과를 .md에 실어, LLM이 법정 산정식·표준품셈 근거를 쥔 채 검토(검토서 §04 해자).
+- ✅ **내역서(BoQ) 취입 — 구현 완료(2026-09).** `state/boqImport.ts`(엑셀·CSV·HWPX·PDF 파싱→공정 매핑)·`BoqImportDialog`·`store.importBoqQuantities`로 물량·단위·공종코드를 공정에 연결(적정성 판정의 입력).
 - 우기를 `computeSchedule`에 실제 반영(efficiency 통합) → 우기 근거 검토 결정론화.
 - `task.meta.stepKey` 도입 → 표준공기 안정참조(fuzzy 제거).
 - 감사추적 서버 영속화 + 협업자 간 반영이력 공유 뷰.

@@ -3,8 +3,8 @@
 //   ② 회신(.md)을 업로드 → 델타별 diff 프리뷰(기본 전부 미선택) → 선택분만 [반영].
 // 반영은 store.applyReviewDeltas 가 단일 커밋으로 처리(undo 1엔트리·from CAS·reschedule 금지).
 
-import { useState } from 'react'
-import { downloadReviewRequest } from '../export/reviewRequest'
+import { useEffect, useState } from 'react'
+import { buildReviewRequestMd, downloadReviewRequest } from '../export/reviewRequest'
 import { buildReviewPlan, type ReviewItem, type ReviewPlan } from '../state/reviewImport'
 import { useEditor } from '../state/store'
 import { Modal } from './Modal'
@@ -38,6 +38,55 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
   const [checked, setChecked] = useState<Set<number>>(new Set())
   const [result, setResult] = useState<{ applied: number; skipped: number } | null>(null)
 
+  // 앱에서 바로 검토(Part A) — 서버 프록시로 3사 LLM 직접 호출.
+  type Provider = 'anthropic' | 'openai' | 'gemini'
+  const [providers, setProviders] = useState<Record<Provider, boolean> | null>(null)
+  const [provider, setProvider] = useState<Provider>('anthropic')
+  const [running, setRunning] = useState(false)
+  const [runError, setRunError] = useState<string | null>(null)
+
+  useEffect(() => {
+    let alive = true
+    fetch('/api/review/providers', { credentials: 'include' })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: Record<Provider, boolean> | null) => {
+        if (!alive || !j) return
+        setProviders(j)
+        const first = (['anthropic', 'openai', 'gemini'] as const).find((k) => j[k])
+        if (first) setProvider(first)
+      })
+      .catch(() => {})
+    return () => {
+      alive = false
+    }
+  }, [])
+
+  async function onRunDirect() {
+    setRunning(true)
+    setRunError(null)
+    try {
+      const md = buildReviewRequestMd(a().project)
+      const res = await fetch('/api/review/complete', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ provider, prompt: md }),
+      })
+      const data = await res.json().catch(() => ({}) as { text?: string; error?: string })
+      if (!res.ok) throw new Error(data?.error || `검토 실패(${res.status})`)
+      const t = String(data?.text ?? '')
+      setText(t)
+      setPlan(buildReviewPlan(a().project, t))
+      setChecked(new Set())
+      setResult(null)
+    } catch (e) {
+      setRunError((e as Error)?.message || '검토 실행 중 오류가 발생했습니다.')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  const anyProvider = !!providers && (providers.anthropic || providers.openai || providers.gemini)
   const selectable = (it: ReviewItem): boolean => it.verdict === 'ok' || it.verdict === 'stale'
 
   async function onLoadReview() {
@@ -114,6 +163,67 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
         <button className="btn btn--sm" onClick={() => void downloadReviewRequest(a().project)}>
           📄 검토 요청 .md 내보내기
         </button>
+      </section>
+
+      {/* ①-B 앱에서 바로 검토 (BYO 키) */}
+      <section style={{ marginBottom: 16 }}>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>⚡ 앱에서 바로 검토 (BYO 키)</div>
+        <p style={{ margin: '0 0 8px', fontSize: 13, color: '#5b6b7a' }}>
+          서버에 설정된 API 키로 <b>즉시</b> 검토받아 아래 프리뷰로 반영합니다(파일 왕복 불필요).
+          법정 산정 근거가 담긴 요청을 그대로 LLM에 전달합니다.
+        </p>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+          <select
+            value={provider}
+            disabled={running}
+            onChange={(e) => setProvider(e.target.value as Provider)}
+            style={{ fontSize: 13, padding: '4px 6px' }}
+          >
+            {(
+              [
+                ['anthropic', 'Claude'],
+                ['openai', 'OpenAI'],
+                ['gemini', 'Gemini'],
+              ] as const
+            ).map(([v, label]) => {
+              const ok = providers ? providers[v] : true
+              return (
+                <option key={v} value={v} disabled={providers ? !ok : false}>
+                  {label}
+                  {providers && !ok ? ' (키 미설정)' : ''}
+                </option>
+              )
+            })}
+          </select>
+          <button
+            className="btn btn--sm btn--primary"
+            disabled={running || readOnly || (providers ? !providers[provider] : false)}
+            title={readOnly ? '조회 전용 — 반영 불가' : undefined}
+            onClick={() => void onRunDirect()}
+          >
+            {running ? '검토 중…' : '⚡ 바로 검토 실행'}
+          </button>
+          {providers && !anyProvider && (
+            <span style={{ fontSize: 12, color: '#8a5a12' }}>
+              서버 <code>.env</code> 에 API 키를 설정하면 활성화됩니다
+            </span>
+          )}
+        </div>
+        {runError && (
+          <div
+            style={{
+              marginTop: 8,
+              background: '#fbe9e9',
+              border: '1px solid #f0c9c9',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 12.5,
+              color: '#a33',
+            }}
+          >
+            ⚠️ {runError}
+          </div>
+        )}
       </section>
 
       <div style={{ height: 1, background: 'var(--hairline, #e2e8ee)', margin: '4px 0 16px' }} />

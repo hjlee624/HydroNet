@@ -9,6 +9,8 @@
     "build:single": "tsx scripts/build-single.ts",
     "check:single": "tsx scripts/check-single.ts",
     "smoke": "tsx scripts/smoke.ts",
+    "smoke:adequacy": "tsx scripts/adequacy-smoke.ts",
+    "smoke:boq": "tsx scripts/boq-smoke.ts",
     "smoke:crdt": "tsx scripts/crdt-smoke.ts",
     "smoke:presence": "tsx scripts/presence-smoke.ts",
     "smoke:auth-phone": "tsx scripts/auth-phone-test.ts",
@@ -21,10 +23,13 @@
   },
   "dependencies": {
     "@hocuspocus/provider": "^4.4.0",
+    "fflate": "^0.8.2",
     "jspdf": "^2.5.2",
     "nanoid": "^5.0.9",
+    "pdfjs-dist": "^4.10.38",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "xlsx": "^0.18.5",
     "y-indexeddb": "^9.0.12",
     "yjs": "^13.6.31",
     "zustand": "^5.0.2"
