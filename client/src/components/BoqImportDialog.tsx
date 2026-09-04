@@ -23,6 +23,7 @@ import { Modal } from './Modal'
 
 type Loaded =
   | { kind: 'aoa'; aoa: string[][] }
+  | { kind: 'sheets'; sheets: Array<{ name: string; aoa: string[][] }> }
   | { kind: 'text'; text: string; note?: string }
   | { kind: 'error'; message: string }
 
@@ -38,10 +39,17 @@ async function readFileToLoaded(file: File): Promise<Loaded> {
     if (ext === 'xlsx' || ext === 'xls') {
       const XLSX = await import('xlsx')
       const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: 'array' })
-      const ws = wb.Sheets[wb.SheetNames[0]]
-      if (!ws) return { kind: 'error', message: '엑셀에서 시트를 찾지 못했습니다.' }
-      const aoa = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, raw: false, defval: '' })
-      return { kind: 'aoa', aoa: aoa as string[][] }
+      // 내역서·수량산출서는 보통 한 파일에 여러 시트 → 전 시트를 읽어 사용자가 고르게 한다.
+      const sheets = wb.SheetNames.map((name) => ({
+        name,
+        aoa: XLSX.utils.sheet_to_json<string[]>(wb.Sheets[name], {
+          header: 1,
+          raw: false,
+          defval: '',
+        }) as string[][],
+      }))
+      if (sheets.length === 0) return { kind: 'error', message: '엑셀에 시트가 없습니다.' }
+      return { kind: 'sheets', sheets }
     }
     if (ext === 'hwpx') {
       return { kind: 'aoa', aoa: await hwpxToAoa(await file.arrayBuffer()) }
@@ -142,6 +150,9 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
   const [message, setMessage] = useState<string | null>(null)
   const [manual, setManual] = useState<string | null>(null)
   const [result, setResult] = useState<number | null>(null)
+  // 다중 시트 엑셀 — 전 시트를 읽어두고 사용자가 선택(rowCount=자동 인식 행 수, 추천용).
+  const [sheets, setSheets] = useState<Array<{ name: string; aoa: string[][]; rowCount: number }> | null>(null)
+  const [activeSheet, setActiveSheet] = useState(0)
 
   function ingest(res: BoqParseResult): void {
     setParse(res)
@@ -162,9 +173,23 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
       setBusy(true)
       setFileName(f.name)
       setManual(null)
+      setSheets(null)
+      setActiveSheet(0)
       const loaded = await readFileToLoaded(f)
       setBusy(false)
-      if (loaded.kind === 'aoa') ingest(parseBoqAoa(loaded.aoa))
+      if (loaded.kind === 'sheets') {
+        // 각 시트의 자동 인식 행 수를 미리 계산 → 물량이 가장 많은 시트를 기본 선택(추천).
+        const withCounts = loaded.sheets.map((s) => ({
+          ...s,
+          rowCount: parseBoqAoa(s.aoa).rows.length,
+        }))
+        let idx = 0
+        for (let i = 1; i < withCounts.length; i++)
+          if (withCounts[i].rowCount > withCounts[idx].rowCount) idx = i
+        setSheets(withCounts)
+        setActiveSheet(idx)
+        ingest(parseBoqAoa(withCounts[idx].aoa))
+      } else if (loaded.kind === 'aoa') ingest(parseBoqAoa(loaded.aoa))
       else if (loaded.kind === 'text') {
         setManual(loaded.text)
         setMessage(loaded.note ?? '텍스트를 추출했습니다 — 아래에서 정리 후 [텍스트 인식].')
@@ -180,8 +205,15 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
     input.click()
   }
 
+  function selectSheet(idx: number): void {
+    if (!sheets || !sheets[idx]) return
+    setActiveSheet(idx)
+    ingest(parseBoqAoa(sheets[idx].aoa))
+  }
+
   function onManualParse(): void {
     if (manual == null) return
+    setSheets(null)
     ingest(parseBoqAoa(parseCsv(manual)))
   }
 
@@ -322,6 +354,38 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
           </div>
         )}
       </section>
+
+      {/* ①-B 시트 선택 — 내역서/수량산출 엑셀은 보통 여러 시트라 먼저 시트를 고른다 */}
+      {sheets && sheets.length > 0 && (
+        <section
+          style={{
+            marginBottom: 10,
+            display: 'flex',
+            gap: 8,
+            alignItems: 'center',
+            flexWrap: 'wrap',
+            fontSize: 12.5,
+          }}
+        >
+          <b>시트</b>
+          <select value={activeSheet} onChange={(e) => selectSheet(Number(e.target.value))}>
+            {sheets.map((s, i) => (
+              // biome-ignore lint/suspicious/noArrayIndexKey: 고정 시트 인덱스
+              <option key={i} value={i}>
+                {s.name || `시트${i + 1}`}
+                {s.aoa.length
+                  ? ` (${s.aoa.length}행${s.rowCount ? ` · 인식 ${s.rowCount}` : ''})`
+                  : ' · 빈 시트'}
+              </option>
+            ))}
+          </select>
+          {sheets.length > 1 && (
+            <span style={{ color: '#5b6b7a' }}>
+              여러 시트 중 취입할 시트를 고르세요(물량이 있는 시트를 자동 추천).
+            </span>
+          )}
+        </section>
+      )}
 
       {/* ② 시트 뷰어 — 열 위 드롭다운으로 역할 지정 + 행 번호 클릭으로 머리글 지정 */}
       {parse && colCount > 0 && (
