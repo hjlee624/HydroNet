@@ -44,6 +44,10 @@ DB/*.xlsx
 # Environment / editor / tooling
 .env
 .env.local
+# 자격증명 — 네이버웍스 봇 개인키 등 (절대 커밋 금지)
+/Bot/
+*.key
+*.pem
 .DS_Store
 .vscode/
 .idea/

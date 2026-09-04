@@ -10,7 +10,13 @@ import {
   verifyToken,
 } from './crypto.js'
 import { importUsers } from './importUsers.js'
-import { notifyRegistrationSafe, notifyResetRequestSafe, sendTestNotification } from '../notify/works.js'
+import {
+  notifyProjectCreatedSafe,
+  notifyProjectDeletedSafe,
+  notifyRegistrationSafe,
+  notifyResetRequestSafe,
+  sendTestNotification,
+} from '../notify/works.js'
 import { createBoundedRateLimiter } from '../security.js'
 import { validatePassword } from './password.js'
 import { normalizeLoginId } from './phone.js'
@@ -289,11 +295,10 @@ export function createAuthRouter(repo, opts = {}) {
         pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
         pendingAt: isPm ? Date.now() : null, // 승인 요청 시각(관리자 도구 표시용)
       })
-      if (isPm) {
-        // 계정 사용 신청 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 발송 실패해도 등록은 성공.
-        // notifyRegistrationSafe 는 절대 throw 안 하지만, 리팩터링 안전망으로 .catch 도 건다.
-        void notifyRegistrationSafe({ name, id, role, division }).catch(() => {})
-      }
+      // 계정 등록 → 개발자에게 네이버웍스 DM(설정 시). 역할 무관 모두 알림
+      // (PM=승인 대기, 사용자=자동 활성). fire-and-forget — 발송 실패해도 등록은 성공.
+      // notifyRegistrationSafe 는 절대 throw 안 하지만, 리팩터링 안전망으로 .catch 도 건다.
+      void notifyRegistrationSafe({ name, id, role, division }).catch(() => {})
       // 체험존(본부 샘플) 접근은 본부 기준이라 별도 배정 불필요 — 로그인 즉시 열람·편집 가능.
       res.status(201).json({ ok: true, pending: isPm })
     }),
@@ -387,6 +392,15 @@ export function createAuthRouter(repo, opts = {}) {
       })
       // 개발자는 전체 접근이라 멤버십 불필요. PM(관리자)이 만들면 그 프로젝트의 PM으로 등록 → 목록 노출·코드 면제 입장.
       if (!canAccessAll(req.user)) await repo.addMember(id, req.user.id, 'pm', req.user.id)
+      // 프로젝트 생성 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 실패해도 생성은 성공.
+      void notifyProjectCreatedSafe({
+        name,
+        id,
+        division,
+        by: req.user.id,
+        byName: req.user.name,
+        byRole: req.user.role,
+      }).catch(() => {})
       res.status(201).json({ ok: true, project: { id, name } })
     }),
   )
@@ -397,8 +411,17 @@ export function createAuthRouter(repo, opts = {}) {
     authMw,
     requireAdmin,
     wrap(async (req, res) => {
-      if (!(await repo.getProject(req.params.id))) throw fail(404, '프로젝트를 찾을 수 없습니다.')
+      const project = await repo.getProject(req.params.id)
+      if (!project) throw fail(404, '프로젝트를 찾을 수 없습니다.')
       await repo.deleteProject(req.params.id) // 멤버십 함께 삭제(memory·pg CASCADE)
+      // 프로젝트 삭제 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 실패해도 삭제는 성공.
+      void notifyProjectDeletedSafe({
+        name: project.name,
+        id: project.id,
+        division: project.division,
+        by: req.user.id,
+        byName: req.user.name,
+      }).catch(() => {})
       res.json({ ok: true })
     }),
   )

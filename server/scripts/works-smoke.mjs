@@ -2,6 +2,8 @@
 // 실제 발송은 크리덴셜 설정 후 관리자 도구 '알림 테스트' 버튼으로 확인.
 //   실행: npm run works-smoke   (server/)
 import {
+  buildProjectCreatedText,
+  buildProjectDeletedText,
   buildRegistrationText,
   isConfigured,
   worksConfig,
@@ -50,6 +52,40 @@ check(text.includes('https://app.example.com'), '앱 링크 포함')
 const noUrl = buildRegistrationText({ name: 'A', id: 'x', role: 'user', division: 'cm' })
 check(!noUrl.includes('http'), '앱링크 미설정 시 링크 없음')
 check(noUrl.includes('CM'), '라벨 없는 division(CM) 그대로')
+
+// 6) 역할별 등록 문구: PM=승인 대기, 사용자=자동 활성
+const pmReg = buildRegistrationText({ name: '박PM', id: '01011112222', role: 'pm', division: 'plant' })
+check(pmReg.includes('승인 대기') && pmReg.includes('승인이 필요'), 'PM 등록 → 승인 대기 문구')
+const userReg = buildRegistrationText({ name: '김User', id: '01099998888', role: 'user', division: 'road' })
+check(userReg.includes('자동 활성') && !userReg.includes('승인이 필요'), '사용자 등록 → 자동 활성 문구')
+
+// 7) 프로젝트 생성 알림 본문 — 이름·본부라벨·생성자·ID·앱링크
+const created = buildProjectCreatedText(
+  { name: '한강교량 보수', id: 'p_abc123', division: 'road', by: '01012345678', byName: '홍길동', byRole: 'pm' },
+  'https://app.example.com',
+)
+check(created.includes('프로젝트 생성'), '생성 알림 헤더')
+check(created.includes('한강교량 보수'), '생성 알림 프로젝트명')
+check(created.includes('도로본부'), '생성 알림 본부 라벨')
+check(created.includes('홍길동') && created.includes('010-1234-5678'), '생성 알림 생성자(이름+전화)')
+check(created.includes('관리자(PM)'), '생성 알림 생성자 역할')
+check(created.includes('p_abc123'), '생성 알림 프로젝트 ID')
+check(created.includes('https://app.example.com'), '생성 알림 앱 링크')
+
+// 8) 프로젝트 삭제 알림 본문 — 전화번호 아닌 id(admin)는 그대로 표기
+const deleted = buildProjectDeletedText({
+  name: '폐기 프로젝트',
+  id: 'p_del999',
+  division: 'railway',
+  by: 'admin',
+  byName: '초기 개발자',
+})
+check(deleted.includes('프로젝트 삭제'), '삭제 알림 헤더')
+check(deleted.includes('폐기 프로젝트'), '삭제 알림 프로젝트명')
+check(deleted.includes('철도본부'), '삭제 알림 본부 라벨')
+check(deleted.includes('초기 개발자'), '삭제 알림 삭제자 이름')
+check(deleted.includes('p_del999'), '삭제 알림 프로젝트 ID')
+check(!deleted.includes('http'), '삭제 알림 앱링크 미설정 시 링크 없음')
 
 console.log(failures ? `\n${failures}건 실패` : '\n모두 통과')
 process.exit(failures ? 1 : 0)

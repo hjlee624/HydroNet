@@ -152,16 +152,19 @@ async function sendText(cfg, text) {
   }
 }
 
-/** 계정 사용 신청 알림 본문(순수 함수 — 테스트 가능). */
+/** 계정 등록 알림 본문(순수 함수 — 테스트 가능). PM=승인 대기, 사용자=자동 활성. */
 export function buildRegistrationText({ name, id, role, division } = {}, appUrl = '') {
+  const pending = role === 'pm'
   const lines = [
-    '🔔 계정 사용 신청 (승인 대기)',
+    pending ? '🔔 계정 사용 신청 (승인 대기)' : '🆕 신규 계정 등록 (자동 활성)',
     `이름: ${name || '(미입력)'}`,
     `전화: ${formatPhone(id)}`,
     `본부: ${divisionLabel(division)}`,
     `역할: ${roleLabel(role)}`,
     '',
-    '개발자 승인이 필요합니다. 관리자 도구 › 승인 대기에서 처리하세요.',
+    pending
+      ? '개발자 승인이 필요합니다. 관리자 도구 › 승인 대기에서 처리하세요.'
+      : '사용자 계정이 바로 활성화되었습니다. (승인 불필요)',
   ]
   if (appUrl) lines.push(appUrl)
   return lines.join('\n')
@@ -207,6 +210,69 @@ export async function notifyResetRequestSafe(user) {
     return { ok: true }
   } catch (e) {
     console.warn('[works] 초기화 요청 알림 발송 실패:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+/** 생성/삭제 행위자 표기 — "이름 (전화)" 또는 이름/전화 단독. */
+function actorLabel(byName, by) {
+  const name = String(byName || '').trim()
+  const phone = formatPhone(by)
+  if (name && phone && phone !== name) return `${name} (${phone})`
+  return name || phone || '(미상)'
+}
+
+/** 프로젝트 생성 알림 본문(순수 함수). */
+export function buildProjectCreatedText(
+  { name, id, division, by, byName, byRole } = {},
+  appUrl = '',
+) {
+  const lines = [
+    '🆕 프로젝트 생성',
+    `이름: ${name || '(무제)'}`,
+    `본부: ${divisionLabel(division)}`,
+    `생성자: ${actorLabel(byName, by)}${byRole ? ` · ${roleLabel(byRole)}` : ''}`,
+  ]
+  if (id) lines.push(`ID: ${id}`)
+  if (appUrl) lines.push(appUrl)
+  return lines.join('\n')
+}
+
+/** 프로젝트 생성 알림 발송(설정 시). 절대 throw 안 함 — 생성 라우트에서 fire-and-forget. */
+export async function notifyProjectCreatedSafe(info) {
+  try {
+    const cfg = worksConfig()
+    if (!isConfigured(cfg)) return { ok: false, skipped: true }
+    await sendText(cfg, buildProjectCreatedText(info, cfg.appUrl))
+    return { ok: true }
+  } catch (e) {
+    console.warn('[works] 프로젝트 생성 알림 발송 실패:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
+/** 프로젝트 삭제 알림 본문(순수 함수). */
+export function buildProjectDeletedText({ name, id, division, by, byName } = {}, appUrl = '') {
+  const lines = [
+    '🗑️ 프로젝트 삭제',
+    `이름: ${name || '(무제)'}`,
+    `본부: ${divisionLabel(division)}`,
+    `삭제자: ${actorLabel(byName, by)}`,
+  ]
+  if (id) lines.push(`ID: ${id}`)
+  if (appUrl) lines.push(appUrl)
+  return lines.join('\n')
+}
+
+/** 프로젝트 삭제 알림 발송(설정 시). 절대 throw 안 함 — 삭제 라우트에서 fire-and-forget. */
+export async function notifyProjectDeletedSafe(info) {
+  try {
+    const cfg = worksConfig()
+    if (!isConfigured(cfg)) return { ok: false, skipped: true }
+    await sendText(cfg, buildProjectDeletedText(info, cfg.appUrl))
+    return { ok: true }
+  } catch (e) {
+    console.warn('[works] 프로젝트 삭제 알림 발송 실패:', e?.message || e)
     return { ok: false, error: e?.message || String(e) }
   }
 }
