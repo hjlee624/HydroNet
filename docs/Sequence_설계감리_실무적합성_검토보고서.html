@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Sequence — 설계·감리 실무 적합성 검토보고서: 부족한 점과 발전 방향</title>
+<style>
+  :root{
+    --navy:#0b1f33; --navy-2:#0f2a44; --ink:#16222e; --muted:#5b6b7a;
+    --line:#e2e8ee; --paper:#f6f9fb; --card:#ffffff;
+    --teal:#0ea5a4; --cyan:#2b91d6; --cyan-soft:#e8f3fb;
+    --gold:#c98a1b; --gold-soft:#fbf1dc;
+    --green:#1f9d63; --green-soft:#e5f5ec;
+    --red:#c33b3b; --red-soft:#fbe9e9;
+    --p0:#c33b3b; --p1:#c98a1b; --p2:#2b7bbf;
+    --radius:14px;
+    --shadow:0 1px 2px rgba(16,34,50,.06),0 8px 28px rgba(16,34,50,.07);
+    --font:'Pretendard','Pretendard Variable',-apple-system,BlinkMacSystemFont,
+           'Segoe UI','Malgun Gothic','맑은 고딕','Apple SD Gothic Neo','Noto Sans KR',sans-serif;
+    --mono:'SF Mono',Consolas,'D2Coding',monospace;
+  }
+  *{box-sizing:border-box;}
+  html{scroll-behavior:smooth;}
+  body{margin:0;font-family:var(--font);color:var(--ink);background:var(--paper);
+    line-height:1.72;font-size:16px;-webkit-font-smoothing:antialiased;text-rendering:optimizeLegibility;}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 22px;}
+  a{color:var(--cyan);text-decoration:none;} a:hover{text-decoration:underline;}
+  code{font-family:var(--mono);background:#eef2f6;padding:1px 6px;border-radius:5px;font-size:.86em;color:#334;}
+
+  header.hero{
+    background:radial-gradient(1100px 480px at 82% -8%,rgba(43,145,214,.34),transparent 60%),
+      radial-gradient(900px 420px at 6% 8%,rgba(14,165,164,.30),transparent 55%),
+      linear-gradient(160deg,#0a1c2e 0%,#0d2540 58%,#0b1f33 100%);
+    color:#eaf2f8;position:relative;overflow:hidden;border-bottom:3px solid var(--teal);}
+  header.hero::after{content:"";position:absolute;inset:0;opacity:.10;pointer-events:none;
+    background-image:linear-gradient(#fff 1px,transparent 1px),linear-gradient(90deg,#fff 1px,transparent 1px);
+    background-size:34px 34px;mask-image:linear-gradient(180deg,#000,transparent 78%);}
+  .hero .wrap{padding:52px 22px 46px;position:relative;z-index:1;}
+  .eyebrow{display:inline-flex;align-items:center;gap:9px;font-size:12.5px;letter-spacing:.14em;
+    text-transform:uppercase;color:#8fd0d6;font-weight:700;border:1px solid rgba(143,208,214,.4);
+    padding:5px 12px;border-radius:999px;background:rgba(143,208,214,.08);}
+  h1.title{font-size:clamp(26px,4.2vw,42px);line-height:1.2;margin:18px 0 12px;font-weight:800;letter-spacing:-.01em;color:#fff;}
+  h1.title .accent{color:#67d6d3;}
+  .subtitle{font-size:clamp(15px,1.9vw,18px);color:#c4d6e4;max-width:80ch;margin:0 0 24px;}
+  .meta-row{display:flex;flex-wrap:wrap;gap:10px;}
+  .chip{display:inline-flex;align-items:center;gap:7px;font-size:13px;font-weight:600;
+    background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.16);color:#dbe8f2;padding:7px 13px;border-radius:10px;}
+  .chip b{color:#fff;} .chip .dot{width:7px;height:7px;border-radius:50%;background:var(--teal);}
+
+  main{padding:12px 0 60px;}
+  section{padding:38px 0 8px;}
+  .sec-head{display:flex;align-items:baseline;gap:14px;margin-bottom:6px;}
+  .sec-num{font-size:14px;font-weight:800;color:var(--teal);font-variant-numeric:tabular-nums;letter-spacing:.06em;}
+  h2{font-size:clamp(21px,2.7vw,28px);margin:0 0 4px;font-weight:800;color:var(--navy);letter-spacing:-.01em;}
+  .lede{color:var(--muted);font-size:15.5px;margin:2px 0 22px;max-width:88ch;}
+  h3{font-size:18.5px;margin:26px 0 10px;font-weight:700;color:var(--navy-2);}
+  p{margin:10px 0;}
+
+  .grid{display:grid;gap:16px;}
+  .grid.cols-3{grid-template-columns:repeat(3,1fr);}
+  @media(max-width:840px){.grid.cols-3{grid-template-columns:1fr;}}
+  .keycard{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:20px;box-shadow:var(--shadow);}
+  .keycard .k-idx{font-size:12px;font-weight:800;color:#fff;background:var(--navy);width:26px;height:26px;
+    display:grid;place-items:center;border-radius:8px;margin-bottom:12px;}
+  .keycard h4{margin:0 0 8px;font-size:16.5px;color:var(--navy);}
+  .keycard p{margin:0;font-size:14.3px;color:var(--muted);}
+  .keycard .k-tag{display:inline-block;margin-top:12px;font-size:12px;font-weight:700;color:var(--teal);
+    background:var(--cyan-soft);padding:4px 10px;border-radius:7px;}
+
+  .badge{display:inline-block;font-size:11.5px;font-weight:800;letter-spacing:.02em;padding:3px 9px;border-radius:999px;vertical-align:middle;white-space:nowrap;}
+  .b-p0{color:#fff;background:var(--p0);} .b-p1{color:#fff;background:var(--p1);} .b-p2{color:#fff;background:var(--p2);}
+  .b-law{color:#fff;background:#3b6ea5;} .b-policy{color:#fff;background:#6b5ca8;}
+  .b-best{color:var(--green);background:var(--green-soft);border:1px solid #bfe6cf;}
+  .b-have{color:var(--green);background:var(--green-soft);border:1px solid #bfe6cf;}
+  .b-refuted{color:var(--red);background:var(--red-soft);border:1px solid #f0c9c9;}
+
+  .have-have{display:grid;grid-template-columns:1fr 1fr;gap:0;border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
+  @media(max-width:840px){.have-have{grid-template-columns:1fr;}}
+  .have-col{padding:20px 22px;}
+  .have-col.pos{background:linear-gradient(180deg,#f2fbf6,#fff);}
+  .have-col.gap{background:linear-gradient(180deg,#fdf4f4,#fff);border-left:1px solid var(--line);}
+  @media(max-width:840px){.have-col.gap{border-left:none;border-top:1px solid var(--line);}}
+  .have-col h4{display:flex;align-items:center;gap:8px;margin-top:0;}
+  .have-col ul{margin:8px 0 0;padding-left:0;list-style:none;}
+  .have-col li{position:relative;padding:6px 0 6px 26px;font-size:14.2px;border-top:1px dashed var(--line);}
+  .have-col li:first-child{border-top:none;}
+  .have-col.pos li::before{content:"✓";position:absolute;left:2px;top:6px;color:var(--green);font-weight:800;}
+  .have-col.gap li::before{content:"✕";position:absolute;left:2px;top:6px;color:var(--red);font-weight:800;}
+
+  table{width:100%;border-collapse:collapse;font-size:14px;margin:14px 0;background:var(--card);border-radius:var(--radius);overflow:hidden;box-shadow:var(--shadow);}
+  th,td{text-align:left;padding:12px 14px;border-bottom:1px solid var(--line);vertical-align:top;}
+  thead th{background:var(--navy);color:#eaf2f8;font-weight:700;font-size:13px;letter-spacing:.02em;border-bottom:none;}
+  tbody tr:last-child td{border-bottom:none;}
+  tbody tr:nth-child(even){background:#fafcfe;}
+  td strong{color:var(--navy-2);}
+
+  .feat{border:1px solid var(--line);border-radius:var(--radius);background:var(--card);box-shadow:var(--shadow);margin:18px 0;overflow:hidden;}
+  .feat-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:16px 22px;background:linear-gradient(180deg,#f9fbfd,#fff);border-bottom:1px solid var(--line);}
+  .feat-head .f-id{font-size:13px;font-weight:800;color:#fff;background:var(--navy);padding:4px 10px;border-radius:8px;letter-spacing:.03em;}
+  .feat-head .f-name{font-size:17px;font-weight:800;color:var(--navy);flex:1 1 auto;}
+  .feat-body{padding:18px 22px;}
+  .feat-body .why{font-size:14.2px;margin:0 0 10px;}
+  .feat-body .do{font-size:13.8px;background:#f4f7fa;border-left:3px solid var(--cyan);border-radius:0 8px 8px 0;padding:11px 14px;color:#33465a;margin-top:12px;}
+  .feat-body .do b{color:var(--navy);}
+  .src-line{margin-top:10px;font-size:12.3px;color:var(--muted);}
+
+  .callout{border-radius:var(--radius);padding:18px 22px;margin:16px 0;font-size:14.4px;}
+  .callout.warn{background:var(--red-soft);border:1px solid #f0c9c9;}
+  .callout.moat{background:linear-gradient(180deg,#eef8f8,#fff);border:1px solid #c9e8e7;border-left:4px solid var(--teal);}
+  .callout.note{background:#f4f7fa;border:1px solid var(--line);border-left:4px solid var(--cyan);}
+  .callout.law{background:linear-gradient(180deg,#eef3fa,#fff);border:1px solid #c9d8ec;border-left:4px solid #3b6ea5;}
+  .callout h4{margin-top:0;display:flex;align-items:center;gap:8px;}
+  .callout ul{margin:8px 0 0;padding-left:20px;} .callout li{margin:6px 0;}
+
+  .road{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:18px;}
+  @media(max-width:840px){.road{grid-template-columns:1fr;}}
+  .phase{border-radius:var(--radius);padding:20px;color:#eaf2f8;position:relative;overflow:hidden;box-shadow:var(--shadow);}
+  .phase.p1{background:linear-gradient(160deg,#0e4a4a,#0b3a3a);}
+  .phase.p2{background:linear-gradient(160deg,#134a72,#0e3956);}
+  .phase.p3{background:linear-gradient(160deg,#2a2f5a,#1c2142);}
+  .phase .ph-when{font-size:12px;font-weight:800;letter-spacing:.08em;text-transform:uppercase;opacity:.82;}
+  .phase .ph-title{font-size:17px;font-weight:800;margin:6px 0 3px;color:#fff;}
+  .phase .ph-goal{font-size:13px;opacity:.9;margin-bottom:12px;}
+  .phase ul{margin:0;padding-left:17px;font-size:13.4px;} .phase li{margin:6px 0;}
+
+  .refuted-item{border:1px solid #f0d3d3;border-radius:10px;padding:12px 15px;margin:10px 0;background:#fdf7f7;font-size:13.6px;}
+  .refuted-item .r-top{display:flex;align-items:center;gap:10px;margin-bottom:5px;}
+  .refuted-item .r-vote{font-size:11.5px;font-weight:800;color:var(--red);font-variant-numeric:tabular-nums;}
+
+  ol.sources{font-size:13.3px;color:var(--muted);padding-left:26px;}
+  ol.sources li{margin:8px 0;padding-left:4px;word-break:break-word;}
+  ol.sources .q{display:inline-block;font-size:10.5px;font-weight:800;letter-spacing:.03em;padding:1px 7px;border-radius:5px;margin-right:7px;vertical-align:middle;}
+  .q.primary{background:var(--green-soft);color:var(--green);}
+  .q.secondary{background:var(--cyan-soft);color:var(--cyan);}
+  .q.blog{background:#f0eef7;color:#6b5ca8;}
+  ol.sources a{color:var(--navy-2);}
+
+  .stats{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin:18px 0;}
+  @media(max-width:840px){.stats{grid-template-columns:repeat(2,1fr);}}
+  .stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:16px;text-align:center;box-shadow:var(--shadow);}
+  .stat .n{font-size:24px;font-weight:800;color:var(--navy);font-variant-numeric:tabular-nums;}
+  .stat .l{font-size:12px;color:var(--muted);margin-top:2px;}
+
+  footer{background:var(--navy);color:#9fb4c6;padding:28px 0;font-size:13px;}
+  footer .wrap{display:flex;flex-wrap:wrap;justify-content:space-between;gap:14px;align-items:center;}
+  footer b{color:#eaf2f8;}
+  @media print{ body{background:#fff;font-size:12px;} header.hero,.phase{-webkit-print-color-adjust:exact;print-color-adjust:exact;} .keycard,.feat,table,.phase{box-shadow:none;break-inside:avoid;} }
+</style>
+</head>
+<body>
+
+<header class="hero">
+  <div class="wrap">
+    <span class="eyebrow"><span class="dot" style="width:7px;height:7px;border-radius:50%;background:#67d6d3;display:inline-block"></span> 실무 적합성 검토 · 설계·감리(건설사업관리) 기술자 관점</span>
+    <h1 class="title">Sequence, <span class="accent">현장 실무자가 적극적으로 쓰게</span> 하려면:<br>부족한 점과 발전 방향</h1>
+    <p class="subtitle">
+      토목종합설계사의 <b>설계·감리(CM) 기술자</b>가 이 프로그램을 편리하고 적극적으로 쓰기에 무엇이 부족한지, 그리고 무엇을 수정·발전해야 하는지를
+      <b>법령·정책·조달 표준·학술 1차 출처</b>와 <b>코드 실측</b>으로 교차 검증해 정리한다. 방향은 옳다 — 문제는 <b>법정 실무 워크플로우와의 정합</b>과 <b>상호운용</b>이다.
+    </p>
+    <div class="meta-row">
+      <span class="chip"><span class="dot"></span> 작성일 <b>2026-09-07</b></span>
+      <span class="chip">대상 <b>Sequence / HydroNET</b></span>
+      <span class="chip">근거 <b>딥리서치 5각도·18출처·25주장 검증(19확정/6기각)</b></span>
+      <span class="chip">보강 <b>제품 코드 실측</b></span>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+  <!-- 00 요약 -->
+  <section id="summary">
+    <div class="sec-head"><span class="sec-num">00</span><h2>핵심 요약 — 세 가지 결론</h2></div>
+    <p class="lede">
+      결론부터: <b>Sequence의 방향은 법과 정확히 맞물려 있다.</b> 한국 CM 실무에서 공정관리는 취향이 아니라 <b>「건설기술 진흥법」 하위 국토부고시가 부과하는 법정 업무</b>이고,
+      Sequence가 가진 CPM 엔진·물량기반 공기 적정성 검증은 그 법정 절차의 핵심(착공 시 공정예정표 적정성 검토)과 그대로 정렬된다. 부족한 것은 <b>공정을 "짜는" 능력이 아니라, 짠 뒤 "관리·제출·연계"하는 실무 고리</b>다.
+    </p>
+    <div class="stats">
+      <div class="stat"><div class="n">5</div><div class="l">조사 각도</div></div>
+      <div class="stat"><div class="n">18</div><div class="l">취입 출처</div></div>
+      <div class="stat"><div class="n">71→25</div><div class="l">주장 추출→검증</div></div>
+      <div class="stat"><div class="n">19 / 6</div><div class="l">확정 / 기각</div></div>
+      <div class="stat"><div class="n">3</div><div class="l">핵심 갭</div></div>
+    </div>
+    <div class="grid cols-3">
+      <div class="keycard">
+        <div class="k-idx">1</div>
+        <h4>방향은 법과 정렬됨 (강점)</h4>
+        <p>CM기술인은 착공 시 공정예정표의 <b>작업 간 선행·동시 관계</b>와 <b>예정공정율의 적정성</b>을 검토해 7일 내 보고할 <b>법정 의무</b>가 있다. Sequence의 CPM(선행·여유) + 물량기반 공기 적정성이 이 검토와 정확히 맞물린다.</p>
+        <span class="k-tag">이미 만든 코어가 법정 절차의 정답지</span>
+      </div>
+      <div class="keycard">
+        <div class="k-idx">2</div>
+        <h4>최대 갭: 계획→실적→제출 고리</h4>
+        <p>공정은 "짜는 것"이 끝이 아니다. <b>계획대비 실적 추적</b>과 <b>지연 임계 경보(월 10%·누계 5%)</b>·만회공정표, <b>법정 별지서식</b> 산출, <b>지정 보고시스템</b> 연계가 없으면 감리 실무 사이클을 못 닫는다.</p>
+        <span class="k-tag">진척·서식·상호운용이 진짜 노동</span>
+      </div>
+      <div class="keycard">
+        <div class="k-idx">3</div>
+        <h4>냉정한 경계 (과장 금지)</h4>
+        <p>"EVM은 법정 의무"·"경쟁 SW 저채택의 주원인은 사용성"·"AI가 공정을 자동 생성한다"는 <b>모두 적대 검증에서 기각</b>됐다. 이들을 근거로 개발 우선순위를 정하면 헛발질이 된다.</p>
+        <span class="k-tag">근거 없는 마케팅 논리 배제</span>
+      </div>
+    </div>
+    <div class="callout law" style="margin-top:22px;">
+      <h4>⚖️ 이 보고서를 관통하는 한 문장</h4>
+      <p style="margin:0;">
+        <b>"Sequence는 공정표를 잘 그린다. 이제 그 공정표가 착공 검토서로, 월간 진척·만회공정표로, 법정 별지서식으로, 조달청 표준코드·보고시스템으로 흘러가게 하면 —
+        설계·감리 기술자가 '안 쓸 수 없는' 도구가 된다."</b><br>
+        — 차별화는 P6와의 기능 대결이 아니라, 국내 법정 실무 워크플로우와의 정합과 상호운용이다.
+      </p>
+    </div>
+  </section>
+
+  <!-- 01 현황 진단 -->
+  <section id="diagnosis">
+    <div class="sec-head"><span class="sec-num">01</span><h2>현황 진단 — 무엇이 있고 무엇이 없나 (코드 실측)</h2></div>
+    <p class="lede">제품 소스 직접 확인 기준. 공정 <b>작성·검증</b>은 강하나, 공정 <b>실행·관리·제출</b> 단계가 비어 있다.</p>
+    <div class="have-have">
+      <div class="have-col pos">
+        <h4>✅ 이미 있는 것 (강점 · 법정 검토와 정합)</h4>
+        <ul>
+          <li><b>CPM 엔진</b> — 주공정·여유 자동 <code>engine/scheduling.ts</code> → 착공 "작업 간 선행·동시 관계" 검토와 정합</li>
+          <li><b>물량기반 공기 적정성(법정 산정식·표준품셈)</b> <code>engine/adequacy.ts</code> → "예정공정율 적정성" 검토와 정합</li>
+          <li><b>시설물 표준 공정 템플릿</b>(댐 9종 + 토목 다분야 33종)·마일스톤·우기 밴드</li>
+          <li><b>내역서(BoQ) 취입</b> — 엑셀 다중시트·CSV·HWPX·PDF, 시트 뷰어 열 선택</li>
+          <li><b>AI 공기 검토</b> — .md 왕복 + Claude/OpenAI/Gemini 서버 프록시(뉴로-심볼릭)</li>
+          <li><b>실시간 협업(CRDT)·본부 RBAC·폐쇄망/오프라인 배포·PDF/PNG 출력</b></li>
+        </ul>
+      </div>
+      <div class="have-col gap">
+        <h4>❌ 없는 것 (실무 고리의 공백)</h4>
+        <ul>
+          <li><b>계획대비 실적 진척 추적</b> — <code>Task.progress</code>는 엔진 미소비 placeholder(<code>model.ts</code>), 실적착수/완료·기준선 없음</li>
+          <li><b>지연 임계 경보·만회공정표</b> — 월 10%/누계 5% 법정 임계 미탑재</li>
+          <li><b>감리 법정 별지서식</b> — 검측대장·기성검사원·업무일지·공사추진현황 산출 없음</li>
+          <li><b>지정 보고시스템 연계</b> — 표준 서식 export/전자결재 포털 급전 없음(PDF/PNG뿐)</li>
+          <li><b>조달청 표준 공종코드 매핑</b> — <code>workCode</code>는 주석상 "호환" 계획일 뿐 실코드 미탑재</li>
+          <li><b>상호운용</b> — MS Project(XML)/P6(XER) 가져오기·내보내기, BIM/IFC 4D 없음</li>
+          <li><b>고도화</b> — EVM(모범사례)·자원/인력 평준화·확률적 공정(몬테카를로) 없음</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 02 갭 & 처방 -->
+  <section id="prescription">
+    <div class="sec-head"><span class="sec-num">02</span><h2>부족한 점 → 수정·발전 처방 (우선순위별)</h2></div>
+    <p class="lede">
+      각 처방에 <b>근거의 성격</b>을 표시한다: <span class="badge b-law">법정</span> 법이 요구 · <span class="badge b-policy">정책</span> 공공정책 로드맵 ·
+      <span class="badge b-best">모범사례</span> 업계·학술 권고(법적 강제 아님). 우선순위 <span class="badge b-p0">P0</span> <span class="badge b-p1">P1</span> <span class="badge b-p2">P2</span>.
+    </p>
+
+    <!-- G1 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G1</span><span class="f-name">계획대비 실적 진척 + 지연 임계 경보 + 만회공정표</span><span class="badge b-law">법정</span><span class="badge b-p0">P0</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> CM기술인은 공사진도율이 <b>계획공정 대비 월간 10% 이상 또는 누계 5% 이상 지연</b>되면 시공자에게 부진사유 분석·<b>만회대책·만회공정표 수립을 지시하여야 한다</b>(고시 제94조 제9항, 감리업무지침 제47조, 주택 세부기준 제14조로 교차확인). 이는 취향이 아니라 매월 반복되는 법정 절차다. 지금 Sequence는 계획대비 실적 비교 자체가 없다(<code>Task.progress</code>가 엔진에 미연결).</p>
+        <div class="do">
+          <b>수정·발전:</b> ① 기준선(baseline) 스냅샷 + 실적(actualStart/Finish·진척률) 필드를 엔진에 연결, ② 계획공정율 vs 실적공정율 곡선(S-curve)과 <b>월 10%/누계 5% 자동 임계 경보</b>, ③ 지연 시 <b>만회공정표</b> 자동 초안(잔여 물량÷증가 일작업량으로 crash 후보 제시 — 기존 adequacy 엔진 재사용).
+          <br><b>주의(검증됨):</b> 지연율의 <b>% vs %p 유권해석 논쟁</b>이 있으므로 계산 규약(예: 진도율=실적/계획)을 UI에 명시 노출할 것.
+        </div>
+        <p class="src-line">근거: 국토부고시 「건설공사 사업관리방식 검토기준 및 업무수행지침」 제94조 <sup>[1]</sup> · LH 건설사업관리 업무 실무매뉴얼 <sup>[3]</sup> (적대검증 3-0)</p>
+      </div>
+    </div>
+
+    <!-- G2 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G2</span><span class="f-name">착공 「공정예정표 적정성 검토서」 산출물</span><span class="badge b-law">법정</span><span class="badge b-p0">P0</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> CM기술인은 착공신고서의 <b>건설공사 공정예정표</b>가 ⑴작업 간 선행·동시 관계가 올바른지 ⑵예정공정율이 적정한지를 <b>검토해 7일 내 발주청에 보고하여야 한다</b>. Sequence는 이 두 가지를 이미 계산한다(CPM 선행·여유 / 물량기반 적정성). 문제는 그 결과가 <b>"검토서" 형태의 제출 산출물로 표면화되지 않는다</b>는 것.</p>
+        <div class="do">
+          <b>수정·발전:</b> 현재 화면 안에 흩어진 CPM·적정성 결과를 <b>착공 공정예정표 적정성 검토서(1클릭 생성)</b>로 묶어 출력 — 선후행 논리 점검표 + 예정공정율 곡선 + 주공정 한정 물량÷일작업량 근거표. (엔진은 이미 있으므로 "표면화"가 핵심.)
+        </div>
+        <p class="src-line">근거: 감리업무요령 착공신고서 검토 체크리스트 · 고시(현행 제2025-105호) <sup>[1]</sup> · LH 실무매뉴얼 <sup>[3]</sup> (3-0)</p>
+      </div>
+    </div>
+
+    <!-- G3 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G3</span><span class="f-name">조달청 표준 공종분류코드 매핑 (나라장터 상호운용)</span><span class="badge b-law">법정</span><span class="badge b-p1">P1</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> 조달청은 공공 공사원가·내역 작성 표준인 <b>「공사원가 세부공종분류코드」</b>(자기참조 위계형: 공사구분·공종분류코드·상위공종·레벨·공종명 5필드, 2025-11 기준 약 <b>24,179건</b>)를 운영하며, <b>2012년 이후 미준수 XML 설계내역은 나라장터에서 반려</b>된다. Sequence의 <code>workCode</code>는 주석상 "조달청 코드 호환" 계획일 뿐 실제 코드체계가 없다 → 공공 성과품 상호운용 불가.</p>
+        <div class="do">
+          <b>수정·발전:</b> ① 조달청 세부공종분류코드 데이터셋 취입(공공데이터포털 15151207) → 내부 <code>standardRates.procurementCode</code> 채우기, ② BoQ 취입 시 항목명·규격을 표준코드로 <b>자동 매핑 + 수동 보정</b>, ③ 표준코드 기반 물량·공종 <b>내보내기(XML/Excel)</b>로 나라장터·원가 시스템과 왕복.
+        </div>
+        <p class="src-line">근거: 조달청 공사원가 세부공종분류코드(공공데이터포털) <sup>[6]</sup> · 조달청 공사원가통합관리시스템 (3-0)</p>
+      </div>
+    </div>
+
+    <!-- G4 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G4</span><span class="f-name">감리 법정 별지서식 산출 + 지정 보고시스템 연계</span><span class="badge b-law">법정</span><span class="badge b-p1">P1</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> 지침은 CM 산출물을 <b>고정된 법정 별지서식</b>으로 규정한다 — 공사추진현황(제32호)·업무일지(제33호)·검측대장(제19호)·검측요청·결과통보내용(제36호)·기성부분 검사원/내역서/검사조서(제26/28/29호) 등. 게다가 이 보고서들은 <b>지정 보고시스템</b>(건설기술용역사업자단체 「건설사업관리 업무 보고시스템」/LH COTIS)에 CAD·워드·엑셀로 업로드 후 <b>전자결재</b>로 제출(중간=익월 7일, 최종=만료 14일)해야 한다. Sequence의 PDF/PNG 도면 출력만으로는 이 사이클을 못 닫는다.</p>
+        <div class="do">
+          <b>수정·발전:</b> ① 공정·물량 데이터에서 <b>법정 별지서식(검측대장·기성·업무일지·공사추진현황) 자동 채움 출력</b> 모듈, ② 보고시스템 업로드 규격(Excel/워드/CAD)에 맞춘 export 프로파일. (표준 스키마·API 공개 범위는 <b>미확인 — §04 열린 질문</b>.)
+        </div>
+        <p class="src-line">근거: 고시 제2025-105호 별지서식 목록 <sup>[1]</sup> · 건설기술 진흥법 시행규칙(별표·별지서식 3부구조) <sup>[2]</sup> · LH COTIS 매뉴얼 <sup>[3]</sup> (3-0)</p>
+      </div>
+    </div>
+
+    <!-- G5 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G5</span><span class="f-name">경쟁 도구 상호운용 — MS Project(XML)·P6(XER)·Excel 표준양식</span><span class="badge b-best">모범사례</span><span class="badge b-p1">P1</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> 실무의 <b>진짜 대체재는 P6가 아니라 엑셀/한글 수작업 공정표</b>이며(네트워크·발주처 요구 시에만 P6/MS Project 선택), 발주처·원청과의 교환은 이 포맷들로 이뤄진다. 가져오기/내보내기가 없으면 Sequence는 "섬"이 되어 채택이 막힌다.</p>
+        <div class="do">
+          <b>수정·발전:</b> ① <b>MS Project XML</b> 가져오기/내보내기(가장 개방적), ② <b>P6 XER</b> 내보내기(발주처 제출 대비), ③ 발주처 제출용 <b>Excel 공정표 표준양식</b> 출력. 이는 "전환 비용"을 없애 기존 워크플로우와 공존하게 한다.</p>
+        <p class="src-line">근거: 국내 실무 도구 비교(한국PM) <sup>[7]</sup> · Primavera XER 해설(Plan Academy) <sup>[8]</sup> — <span class="badge b-refuted" style="font-size:10px">주의</span> "P6 저채택=사용성" 주장은 기각(§05), 상호운용 필요성은 별개로 유효.</p>
+      </div>
+    </div>
+
+    <!-- G6 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G6</span><span class="f-name">공정관리 고도화 — EVM·자원/인력 평준화·확률적 공정</span><span class="badge b-best">모범사례</span><span class="badge b-p2">P2</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> 결정론 CPM만으로는 비용·공정 편차 통제가 불충분하다는 것이 최신 건설관리 연구의 공통 진단이다. EVM(획득가치), 자원·인력 평준화, 확률적 공정(몬테카를로/베이지안 CPM)이 프론티어다. <b>단, EVM은 "법정 의무가 아니라 모범사례"</b>임에 유의(§05에서 "EVM 법정강제" 주장 기각).</p>
+        <div class="do">
+          <b>수정·발전:</b> ① 실적(G1) 위에 <b>EVM 지표(PV·EV·AC·SPI·CPI)</b> 계산 — 물량·단가가 이미 있으므로 확장 용이, ② 자원(인력·장비) 배정 + <b>평준화</b>, ③ 활동 기간을 삼각/PERT 분포로 두는 <b>몬테카를로 P50/P80</b> 준공 확률. 정량 "성능 우위"는 단정하지 말고 보조지표로 제시.</p>
+        <p class="src-line">근거: 4D/5D 디지털트윈·베이지안 CPM(arXiv 2511.03684) <sup>[9]</sup> · Primavera Risk/AACE(업계) — <span class="badge b-refuted" style="font-size:10px">주의</span> "AI-SRA가 QSRA보다 2배 정확" 주장은 기각(§05).</p>
+      </div>
+    </div>
+
+    <!-- G7 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G7</span><span class="f-name">BIM/IFC 4D 연계 (대형 공공사업 대비)</span><span class="badge b-policy">정책</span><span class="badge b-p2">P2</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> 국토부 「스마트 건설 활성화 방안(S-Construction 2030)」은 대형 공공공사에 건설 전 과정 BIM을 단계적 의무화(1,000억↑ 2024 → 500억↑ 2026 → 2030 전면)하고, 「건설산업 BIM 기본지침」은 <b>ISO 16739(IFC) 기반 개방형 BIM</b>을 원칙으로 한다. 4D(공정×형상)는 전과정 BIM의 표준 구성요소다. <b>단, IFC 제출은 "PDF 또는 IFC" 임의 옵션이며 발주자 요구 시 트리거</b>임에 유의(강제 단일포맷 아님).</p>
+        <div class="do">
+          <b>수정·발전:</b> ① 공정(Task) ↔ IFC 요소 <b>4D 링크</b> 스키마 정의, ② IFC 취입/뷰(경량) + 공정 연동 재생, ③ 발주자 요구 시 IFC 4D 산출. <b>폐쇄망에서 대용량 IFC 파싱·뷰어의 실현성은 §04 열린 질문.</b></p>
+        <p class="src-line">근거: KDI S-Construction 2030 <sup>[4]</sup> · 국토부 건설산업 BIM 기본지침(ISO 16739/IFC) <sup>[5]</sup> (3-0)</p>
+      </div>
+    </div>
+
+    <!-- G8 -->
+    <div class="feat">
+      <div class="feat-head"><span class="f-id">G8</span><span class="f-name">AI 공정 검토·자동생성 — 뉴로심볼릭 유지, 나이브 LLM 금지</span><span class="badge b-best">모범사례</span><span class="badge b-p2">P2</span></div>
+      <div class="feat-body">
+        <p class="why"><b>왜:</b> LLM은 ⑴활동 간 복잡한 의존성 포착 ⑵맥락 변화(우선순위·자원) 적응 ⑶전문가 선호 정렬의 3대 난제에 직면한다. 순수 LLM 호출로는 실무 공정 품질을 보장 못하며, 도메인 제약·검증을 결합한 <b>뉴로심볼릭(RAG+선호정렬)</b>이 필요하다는 것이 학술 합의. Sequence의 현재 방향(결정론 엔진=진실 / LLM=제안·설명)은 <b>이미 옳다</b>.</p>
+        <div class="do">
+          <b>수정·발전:</b> 현 AI 검토를 유지·강화하되 <b>엔진 근거를 LLM 컨텍스트로 계속 주입</b>(이미 구현). "AI가 공정을 자동 생성한다"는 <b>현시점 검증된 기술이 아니므로</b> 실증 기능이 아닌 <b>보조 초안</b>으로만 노출. 표준 템플릿·물량 기반 자동 초안 → 사람이 확정하는 형태가 안전.</p>
+        <p class="src-line">근거: CONSTRUCTA(NAACL 2025) <sup>[10]</sup> · LLM-Modulo/R-ConstraintBench — <span class="badge b-refuted" style="font-size:10px">주의</span> "ML+BIM 자동 공정생성 실증"·"IFC가 AI 스케줄링 필수 입력"은 기각(§05).</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- 03 로드맵 -->
+  <section id="roadmap">
+    <div class="sec-head"><span class="sec-num">03</span><h2>로드맵 — 법정 고리부터 닫고 확장</h2></div>
+    <p class="lede">"법이 매월 요구하는 것"부터. 실적·검토서·표준코드가 채택의 임계점을 넘긴다.</p>
+    <div class="road">
+      <div class="phase p1">
+        <div class="ph-when">Phase 1 · 즉시</div>
+        <div class="ph-title">법정 실무 고리 완성</div>
+        <div class="ph-goal">"매월 반복되는 감리 업무"를 앱 안에서</div>
+        <ul>
+          <li><b>G1</b> 실적 진척 + 월10%/누계5% 임계 경보 + 만회공정표</li>
+          <li><b>G2</b> 착공 공정예정표 적정성 검토서(엔진 표면화)</li>
+          <li><b>G3</b> 조달청 표준 공종코드 매핑(BoQ↔표준코드)</li>
+        </ul>
+      </div>
+      <div class="phase p2">
+        <div class="ph-when">Phase 2 · 중기</div>
+        <div class="ph-title">제출·상호운용</div>
+        <div class="ph-goal">"섬"에서 발주처 생태계로 연결</div>
+        <ul>
+          <li><b>G4</b> 법정 별지서식 산출 + 보고시스템 export 프로파일</li>
+          <li><b>G5</b> MS Project XML·P6 XER·발주처 Excel 양식 상호운용</li>
+          <li><b>G6</b> EVM 지표(실적 위에) — 모범사례</li>
+        </ul>
+      </div>
+      <div class="phase p3">
+        <div class="ph-when">Phase 3 · 프런티어</div>
+        <div class="ph-title">고도화·자동화</div>
+        <div class="ph-goal">대형 공공·차별화</div>
+        <ul>
+          <li><b>G6+</b> 자원/인력 평준화 · 몬테카를로 P50/P80</li>
+          <li><b>G7</b> BIM/IFC 4D 링크(발주자 요구 시)</li>
+          <li><b>G8</b> 뉴로심볼릭 공정 초안 자동화(보조)</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- 04 채택 전략 -->
+  <section id="adoption">
+    <div class="sec-head"><span class="sec-num">04</span><h2>채택 전략 & 열린 질문</h2></div>
+    <div class="callout moat">
+      <p style="margin:0;">
+        <b>해자:</b> 범용 도구(P6·MS Project)는 국내 법정 서식·조달 표준코드·보고시스템·공기 산정기준을 <b>모른다</b>. Sequence가 이 국내 도메인 고리(G1~G4)를 닫으면,
+        "P6보다 기능이 많아서"가 아니라 <b>"우리 감리 업무를 그대로 처리해줘서"</b> 쓰게 된다 — 이것이 흉내 못 낼 차별점이다.
+      </p>
+    </div>
+    <div class="callout warn">
+      <h4>⚠️ 냉정한 주의 (검증에서 확인)</h4>
+      <ul>
+        <li><b>"경쟁 SW가 사용성 때문에 안 쓰인다"를 전제로 삼지 말 것</b> — 그 인과는 근거 부족으로 기각됨(§05). 대신 <b>진짜 대체재가 엑셀/한글 수작업</b>이라는 사실에 맞춰, "엑셀보다 쉽고 엑셀이 못하는 법정 고리를 해준다"로 포지셔닝.</li>
+        <li><b>법령은 개정 진행형</b> — 지침이 제2025-105호 → 제2026-360호로 개정 중이나 공정관리 의무·지연 임계·별지서식·기한은 실질 불변. 인용 조문·시행일은 릴리스 시 재확인.</li>
+        <li><b>조문 정밀:</b> 상주 CM 공정관리=제64조, 지연 임계·전산공정관리 건의=제94조. PERT/CPM은 CM이 직접 작성이 아니라 <b>시공자가 적용하도록 감독·확보</b>하는 의무.</li>
+      </ul>
+    </div>
+    <div class="callout note">
+      <h4>❓ 실행 전 확인할 열린 질문 (현업/발주처 검증 필요)</h4>
+      <ul>
+        <li>주 사용자가 <b>설계기술자</b>인가 <b>감리/CM기술인</b>인가에 따라 G1~G4 우선순위가 달라진다(본 조사는 법령 요구만 확인, 실제 사용 빈도 미확인).</li>
+        <li>지정 보고시스템(건설사업관리 업무 보고시스템/LH COTIS/발주청 자체)이 <b>공개 API</b>인지 <b>수동 업로드</b>인지 — G4 연계 방식(직접 API vs 서식 export)이 갈린다.</li>
+        <li>조달청 코드 24,179건과 Sequence 표준 템플릿(댐9+토목33)의 <b>자동 매핑 커버리지</b>·수작업 보정 규모 미측정.</li>
+        <li><b>폐쇄망·단일 HTML 환경</b>에서 대용량 IFC 파싱/뷰어와 외부 LLM 프록시가 발주처 <b>망분리 보안정책</b>과 양립하는지 미검증.</li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- 05 기각·주의 -->
+  <section id="refuted">
+    <div class="sec-head"><span class="sec-num">05</span><h2>기각된 주장 — 이 논리로 개발하지 말 것</h2></div>
+    <p class="lede">적대적 검증(주장당 3표)에서 기각된 6건. 우선순위를 왜곡하는 "그럴듯한 오류"를 명시한다.</p>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">1–2</span></div>
+      <b>"CM 공정관리는 EVM(공정+비용+진척 통합)을 법으로 요구한다."</b> → 지침의 종합관리 문구가 EVM을 <b>법정 강제</b>한다는 해석은 근거 부족. EVM은 도입할 가치 있는 <b>모범사례</b>이지 법정 의무가 아니다(G6은 P2로 배치).
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">1–2 / 0–3</span></div>
+      <b>"상용 공정관리 SW가 국내에서 안 쓰이며, 그 주원인은 사용성 장벽이다."</b> → "저채택"과 "사용성이 주원인"이라는 인과 모두 근거 부족으로 기각. Sequence의 사용성 강조를 이 논거로 정당화하지 말 것(상호운용·법정정합이 더 견고한 근거).
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      <b>"ML+BIM(IFC)로 활동 순서·기간·비용·자원까지 공정표를 자동 생성할 수 있다 / IFC는 AI 스케줄링의 필수 입력이다."</b> → 해당 문헌은 <b>구현·실증되지 않은 청사진(blueprint)</b>. "미래 방향"으로만 인용하고 가용 기술로 취급 금지(G8).
+    </div>
+    <div class="refuted-item">
+      <div class="r-top"><span class="badge b-refuted">기각</span><span class="r-vote">0–3</span></div>
+      <b>"AI 공정 리스크 분석(GNN)이 전통 몬테카를로(QSRA)보다 2배 정확하다."</b> → 단일 출처의 정량 우위 주장으로 재현 미확인. 확률적 공정(G6)은 추가하되 <b>정량 성능 우위는 단정 금지</b>.
+    </div>
+  </section>
+
+  <!-- 06 출처 -->
+  <section id="sources">
+    <div class="sec-head"><span class="sec-num">06</span><h2>출처</h2></div>
+    <p class="lede" style="margin-bottom:8px;">
+      <span class="q primary">PRIMARY</span> 1차(법령·정책·공공데이터·심사문헌)
+      &nbsp;<span class="q secondary">SECONDARY</span> 2차
+      &nbsp;<span class="q blog">BLOG</span> 실무 해설
+    </p>
+    <ol class="sources">
+      <li id="s1"><span class="q primary">PRIMARY</span> 국토교통부고시 「건설공사 사업관리방식 검토기준 및 업무수행지침」(제64조 공정관리·제94조 지연 임계·별지서식; 현행 제2025-105호, 개정 진행 제2026-360호). <a href="https://www.codil.or.kr/filebank/moct2014/202012/MOCT2352_2.PDF?nserialno=2352">codil.or.kr(PDF)</a></li>
+      <li id="s2"><span class="q primary">PRIMARY</span> 「건설기술 진흥법 시행규칙」(본문·별표·별지서식 3부구조; 국가법령정보센터). <a href="https://www.law.go.kr">law.go.kr</a></li>
+      <li id="s3"><span class="q primary">PRIMARY</span> LH 「건설사업관리 업무 실무매뉴얼」(착공 공정예정표 검토·지연 임계·별지서식·보고시스템/COTIS). <a href="https://www.lh.or.kr">lh.or.kr</a></li>
+      <li id="s4"><span class="q primary">PRIMARY</span> 국토교통부 「스마트 건설 활성화 방안(S-Construction 2030)」(BIM 단계적 의무화). <a href="https://eiec.kdi.re.kr/policy/materialView.do?num=228215">KDI 경제교육정보센터</a></li>
+      <li id="s5"><span class="q primary">PRIMARY</span> 국토교통부 「건설산업 BIM 기본지침」(2020.12.29, ISO 16739/IFC 개방형·제출포맷 PDF 또는 IFC). <a href="https://www.molit.go.kr/USR/policyData/m_34681/dtl.jsp?id=4516">molit.go.kr</a></li>
+      <li id="s6"><span class="q primary">PRIMARY</span> 조달청 「공사원가 세부공종분류코드」(위계형 5필드, 약 24,179건; 공공데이터포털). <a href="https://www.data.go.kr/data/15151207/fileData.do">data.go.kr/15151207</a></li>
+      <li id="s7"><span class="q blog">BLOG</span> 한국PM, 「공정관리 프로그램 종류 및 특징」(국내 실무: 진짜 대체재=엑셀/한글, P6는 발주처 요구 시). <a href="https://hkpm.co.kr/">hkpm.co.kr</a></li>
+      <li id="s8"><span class="q blog">BLOG</span> Plan Academy, 「Understanding Primavera XER Files」(P6 XER 상호운용). <a href="https://www.planacademy.com/understanding-primavera-xer-files/">planacademy.com</a></li>
+      <li id="s9"><span class="q primary">PRIMARY</span> Khoshkonesh 외, 「Simulation-Based Validation of an Integrated 4D/5D Digital-Twin Framework」(베이지안 확률적 CPM·자원평준화; preprint). <a href="https://arxiv.org/pdf/2511.03684">arXiv:2511.03684</a></li>
+      <li id="s10"><span class="q primary">PRIMARY</span> CONSTRUCTA(NAACL 2025 Industry Track, 심사통과; LLM 3대 난제·뉴로심볼릭 RAG+선호정렬). <a href="https://arxiv.org/html/2502.12066">arXiv:2502.12066</a></li>
+      <li id="s11"><span class="q secondary">SECONDARY</span> 대한토목학회논문집 D(국내 공정관리 SW 활용성 연구; 채택 논의 — 일부 주장은 §05에서 기각). <a href="https://www.dbpia.co.kr/journal/articleDetail?nodeId=NODE01494679">dbpia.co.kr</a></li>
+    </ol>
+  </section>
+
+  <div class="callout note" style="margin-top:26px;">
+    <h4>📌 방법론 · 정직성 고지</h4>
+    <p style="margin:0;font-size:13.6px;color:var(--muted)">
+      본 보고서는 딥리서치 하니스(5개 각도 → 18개 출처 취입 → 71개 주장 추출 → 상위 25개를 주장당 3표 적대적 검증: 19확정·6기각)와 <b>제품 코드 실측</b>을 합성해 작성했다.
+      법령/정책/조달 근거는 1차 공식 출처(국가법령정보센터·CODIL·국토부·조달청 공공데이터·LH)로 신뢰도가 높다. 고도화 기술 트렌드의 일부 <b>정량 우위 주장은 비심사 preprint·단일 데이터셋</b>에 근거하므로 "방향 정당화" 용도로만 인용하고 성능 우위를 단정하지 않았다.
+      법정 인용은 <b>개정 추적</b>이 필요하며(고시·시행규칙 개정 진행형, 실무 요구는 실질 불변), 지정 보고시스템의 파일 스키마·API 공개 범위는 <b>현업/발주처 확인 대상</b>이다(§04).
+    </p>
+  </div>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span><b>Sequence</b> · 설계·감리 실무 적합성 검토보고서 — 부족한 점과 발전 방향</span>
+    <span>2026-09-07 · 딥리서치(검증) + 제품 코드 실측 기반</span>
+  </div>
+</footer>
+
+</body>
+</html>
