@@ -101,6 +101,7 @@ async function main() {
   }
   await modCheck('cost', '프로젝트 예산', '기록 모듈(프로젝트 예산)')
   await modCheck('progress', '진척·실적', '진척·실적 모듈')
+  await modCheck('report', '공정 요약', '보고서 모듈')
 
   if (errors.length) {
     console.log(`\n(console.error ${errors.length}건):`)

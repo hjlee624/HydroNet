@@ -4745,3 +4745,101 @@ textarea.input {
 .seq-prog__table th {
   white-space: nowrap;
 }
+
+/* ── 보고서 모듈 (ReportModule) ──────────────────────────────────────────────── */
+.seq-rep__sec {
+  max-width: 1180px;
+  margin: 0 auto 20px;
+}
+.seq-rep__h2 {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--charcoal);
+  margin: 0 0 12px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--hairline-strong);
+}
+.seq-rep__grid {
+  margin: 0;
+}
+.seq-rep__ms {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+}
+.seq-rep__ms li {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  padding: 6px 4px;
+  border-top: 1px solid var(--hairline-soft);
+  font-size: 13px;
+}
+.seq-rep__ms-d {
+  color: var(--steel);
+  font-variant-numeric: tabular-nums;
+}
+.seq-rep__ms-dd {
+  font-weight: 700;
+  color: var(--slate);
+  font-variant-numeric: tabular-nums;
+}
+.seq-rep__mods {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+}
+.seq-rep__mod {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  background: var(--canvas, #fff);
+  padding: 12px 14px;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+}
+.seq-rep__mod:hover {
+  border-color: rgba(250, 81, 17, 0.4);
+}
+.seq-rep__mod-ic {
+  font-size: 22px;
+  flex: 0 0 auto;
+}
+.seq-rep__mod-body {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.seq-rep__mod-l {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.seq-rep__mod-s {
+  font-size: 12px;
+  color: var(--steel);
+}
+
+/* 인쇄(보고서 PDF 출력) — 앱 크롬(레일·상단바) 숨기고 보고서만. */
+@media print {
+  .mrail,
+  .authbar,
+  .topbar,
+  [data-export-hide="1"] {
+    display: none !important;
+  }
+  .seq-rep {
+    padding: 0;
+    overflow: visible;
+    background: #fff;
+  }
+  .seq-rep__mod,
+  .seq-dash__kpi {
+    break-inside: avoid;
+  }
+}
