@@ -1,6 +1,17 @@
 import { IndexeddbPersistence } from 'y-indexeddb'
 import * as Y from 'yjs'
-import type { Branding, Category, Link, Project, RainySeason, Sheet, Task } from '../types/model'
+import type {
+  Baseline,
+  BaselineTask,
+  Branding,
+  Category,
+  Link,
+  ModuleRecord,
+  Project,
+  RainySeason,
+  Sheet,
+  Task,
+} from '../types/model'
 
 /** Object identity is intentional: Y.UndoManager tracks only this exact origin. */
 export const LOCAL_ORIGIN = Object.freeze({ kind: 'sequence-local' })
@@ -29,6 +40,10 @@ export interface ProjectYTypes {
   links: RecordMap
   rainySeasons: RecordMap
   sheets: RecordMap
+  /** 건설사업관리 기록형 모듈: moduleId → RecordMap(recordId → 필드 Y.Map). 사업 단위. */
+  modules: Y.Map<RecordMap>
+  /** 기준선 스냅샷: 스칼라 필드 + 'tasks' Y.Array. */
+  baseline: Y.Map<unknown>
 }
 
 export interface ProjectCrdtRuntime {
@@ -105,6 +120,8 @@ export function bootstrapProjectYTypes(doc: Y.Doc): ProjectYTypes {
   const links = doc.getMap<Y.Map<unknown>>('root/links')
   const rainySeasons = doc.getMap<Y.Map<unknown>>('root/rainySeasons')
   const sheets = doc.getMap<Y.Map<unknown>>('root/sheets')
+  const modules = doc.getMap<RecordMap>('root/modules')
+  const baseline = doc.getMap<unknown>('root/baseline')
   let result!: ProjectYTypes
   doc.transact(() => {
     // Stable scalar references avoid the Yjs nested-type replacement trap when
@@ -121,6 +138,8 @@ export function bootstrapProjectYTypes(doc: Y.Doc): ProjectYTypes {
       links: 'root/links',
       rainySeasons: 'root/rainySeasons',
       sheets: 'root/sheets',
+      modules: 'root/modules',
+      baseline: 'root/baseline',
     }
     for (const [key, ref] of Object.entries(refs)) if (root.get(key) !== ref) root.set(key, ref)
     result = {
@@ -135,6 +154,8 @@ export function bootstrapProjectYTypes(doc: Y.Doc): ProjectYTypes {
       links,
       rainySeasons,
       sheets,
+      modules,
+      baseline,
     }
   }, SEED_ORIGIN)
   return result
@@ -333,6 +354,47 @@ export function canonicalProjectSnapshot(project: Project): Project {
   }
 }
 
+/** 모듈 데이터(moduleId → ModuleRecord[])를 root/modules 로 diff 동기화(빈 모듈은 제거). */
+function syncModuleCollections(
+  target: Y.Map<RecordMap>,
+  modules: Record<string, ModuleRecord[]> | undefined,
+): void {
+  const map = modules ?? {}
+  const desired = new Set(Object.keys(map).filter((id) => (map[id]?.length ?? 0) > 0))
+  for (const id of [...target.keys()]) if (!desired.has(id)) target.delete(id)
+  for (const moduleId of desired) {
+    let collection = target.get(moduleId)
+    if (!collection) {
+      collection = new Y.Map<Y.Map<unknown>>()
+      target.set(moduleId, collection)
+    }
+    syncRecordCollection(collection, map[moduleId], (record) => ({ ...record.values }))
+  }
+}
+
+/** 기준선 스냅샷을 root/baseline 로 diff 동기화(없으면 비움). */
+function syncBaseline(target: Y.Map<unknown>, baseline: Baseline | undefined): void {
+  if (!baseline) {
+    for (const key of [...target.keys()]) target.delete(key)
+    return
+  }
+  syncPlainMap(
+    target,
+    {
+      capturedAt: baseline.capturedAt,
+      asOf: baseline.asOf,
+      sheetId: baseline.sheetId,
+      startDay: baseline.startDay,
+      endDay: baseline.endDay,
+    },
+    new Set(['tasks']),
+  )
+  syncArray(
+    ensureArray<JsonRecord>(target, 'tasks'),
+    baseline.tasks.map((t) => ({ id: t.id, start: t.start, duration: t.duration })),
+  )
+}
+
 /** Applies a field/record diff; unchanged records and fields produce no Yjs operation. */
 export function applyProjectToYDoc(
   doc: Y.Doc,
@@ -384,6 +446,9 @@ export function applyProjectToYDoc(
       syncRecordCollection(types.rainySeasons, canonical.rainySeasons, stripUndefined)
     }
     syncSheetCollection(types.sheets, allSheets(canonical))
+    // 건설사업관리 모듈·기준선 — 사업 단위(시트 무관). canonical은 project 전체 스프레드라 포함됨.
+    syncModuleCollections(types.modules, canonical.modules)
+    syncBaseline(types.baseline, canonical.baseline)
   }, origin)
   return types
 }
@@ -431,6 +496,47 @@ function readSheet(record: Y.Map<unknown>): Sheet | null {
   }
 }
 
+/** 모듈 RecordMap → ModuleRecord[](id 보존, $position 순서). */
+function orderedModuleRecords(collection: RecordMap): ModuleRecord[] {
+  return [...collection.entries()]
+    .map(([id, record]) => ({
+      id,
+      position: recordPosition(record) ?? Number.MAX_SAFE_INTEGER,
+      record,
+    }))
+    .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+    .map(({ id, record }) => {
+      const values = record.toJSON() as JsonRecord
+      delete values[POSITION_KEY]
+      return { id, values: values as Record<string, string> }
+    })
+}
+
+function readModules(target: Y.Map<RecordMap>): Record<string, ModuleRecord[]> {
+  const out: Record<string, ModuleRecord[]> = {}
+  for (const [moduleId, collection] of target.entries()) {
+    if (!isYMap(collection)) continue
+    const records = orderedModuleRecords(collection as RecordMap)
+    if (records.length) out[moduleId] = records
+  }
+  return out
+}
+
+function readBaseline(target: Y.Map<unknown>): Baseline | undefined {
+  const capturedAt = target.get('capturedAt')
+  if (typeof capturedAt !== 'string' || !capturedAt) return undefined
+  const tasks = target.get('tasks')
+  const sheetId = target.get('sheetId')
+  return {
+    capturedAt,
+    asOf: String(target.get('asOf') ?? ''),
+    ...(typeof sheetId === 'string' && sheetId ? { sheetId } : {}),
+    startDay: Number(target.get('startDay') ?? 0),
+    endDay: Number(target.get('endDay') ?? 0),
+    tasks: isYArray(tasks) ? (tasks.toArray() as BaselineTask[]) : [],
+  }
+}
+
 /** Converts the current converged Y.Doc into the legacy flat editor Project view. */
 export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Project {
   const types = bootstrapProjectYTypes(doc)
@@ -454,6 +560,8 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
   const activeSheet = activeSheetId
     ? residentSheets.find((sheet) => sheet.id === activeSheetId)
     : undefined
+  const modules = readModules(types.modules)
+  const baseline = readBaseline(types.baseline)
 
   const project = {
     id: String(meta.id ?? ''),
@@ -480,6 +588,8 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
     tasks: activeSheet?.tasks ?? orderedRecords<Task>(types.tasks),
     links: activeSheet?.links ?? orderedRecords<Link>(types.links),
     rainySeasons: activeSheet?.rainySeasons ?? orderedRecords<RainySeason>(types.rainySeasons),
+    ...(Object.keys(modules).length ? { modules } : {}),
+    ...(baseline ? { baseline } : {}),
     ...(activeSheet
       ? {
           activeSheet: { id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },

@@ -285,6 +285,18 @@ export interface EditorState {
    *  export margin (matches content aspect ratio to the sheet). */
   fitToPaper: () => void
   setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate'>>) => void
+  // ── 건설사업관리 모듈 (사업 단위 · CRDT root/modules·root/baseline) ──
+  /** 공정 실적 진척률(0–100) 설정 — 진척·실적 모듈. */
+  setTaskProgress: (id: ID, progress: number) => void
+  /** 기록형 모듈에 빈 행 추가 → 새 레코드 id 반환. */
+  addModuleRecord: (moduleId: string, values?: Record<string, string>) => ID
+  /** 기록형 모듈 레코드의 필드 병합 수정. */
+  updateModuleRecord: (moduleId: string, id: ID, patch: Record<string, string>) => void
+  /** 기록형 모듈 레코드 삭제. */
+  deleteModuleRecord: (moduleId: string, id: ID) => void
+  /** 현재 일정을 기준선으로 박제(대시보드 표류/EVM 연계). */
+  captureBaseline: () => void
+  clearBaseline: () => void
   toggleCommissioning: () => void
   toggleTitle: () => void
   /** 예정공정표↔마일스톤 연동 토글(요구사항 4) — 마일스톤 시트에서만 의미가 있다. */
@@ -1485,6 +1497,76 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { history: false },
       ),
+
+    // ── 건설사업관리 모듈 — 모두 commit(readOnly 가드 + CRDT write + 파생) · history:false ──
+    setTaskProgress: (id, progress) =>
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (t) t.progress = Math.max(0, Math.min(100, Math.round(progress)))
+        },
+        { history: false },
+      ),
+    addModuleRecord: (moduleId, values = {}) => {
+      const id = `mr-${nanoid(8)}`
+      commit(
+        (p) => {
+          if (!p.modules) p.modules = {}
+          p.modules[moduleId] = [...(p.modules[moduleId] ?? []), { id, values: { ...values } }]
+        },
+        { history: false },
+      )
+      return id
+    },
+    updateModuleRecord: (moduleId, id, patch) =>
+      commit(
+        (p) => {
+          const rec = p.modules?.[moduleId]?.find((r) => r.id === id)
+          if (rec) rec.values = { ...rec.values, ...patch }
+        },
+        { history: false },
+      ),
+    deleteModuleRecord: (moduleId, id) =>
+      commit(
+        (p) => {
+          if (p.modules?.[moduleId])
+            p.modules[moduleId] = p.modules[moduleId].filter((r) => r.id !== id)
+        },
+        { history: false },
+      ),
+    captureBaseline: () => {
+      // 스케줄된 렌더 프로젝트에서 es/ef를 읽어 박제(가시 공정 envelope + 전체 tasks).
+      const scheduled = get().project
+      const starts = scheduled.tasks.map((t) => t.es ?? t.start)
+      const ends = scheduled.tasks.map((t) => t.ef ?? t.start + t.duration)
+      const now = new Date()
+      const snapshot = {
+        capturedAt: now.toISOString(),
+        asOf: now.toISOString().slice(0, 10),
+        sheetId: scheduled.activeSheet?.id,
+        startDay: starts.length ? Math.min(...starts) : 0,
+        endDay: ends.length ? Math.max(...ends) : 0,
+        tasks: scheduled.tasks.map((t) => ({
+          id: t.id,
+          start: t.es ?? t.start,
+          duration: t.duration,
+        })),
+      }
+      commit(
+        (p) => {
+          p.baseline = snapshot
+        },
+        { history: false },
+      )
+    },
+    clearBaseline: () =>
+      commit(
+        (p) => {
+          delete p.baseline
+        },
+        { history: false },
+      ),
+
     toggleCommissioning: () =>
       commit((p) => {
         p.commissioningEnabled = !p.commissioningEnabled

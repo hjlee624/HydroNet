@@ -112,6 +112,31 @@ function residentSheets(project) {
   return [...byId.values()]
 }
 
+/** 모듈 데이터(moduleId → ModuleRecord[])를 root/modules 로 인코딩. client crdt.ts 대칭. */
+function setModuleRecords(target, modules) {
+  for (const [moduleId, records] of Object.entries(modules || {})) {
+    if (!records?.length) continue
+    setRecords(ensureMap(target, moduleId), records, (record) => ({ ...record.values }))
+  }
+}
+
+/** 기준선 스냅샷을 root/baseline 로 인코딩. */
+function setBaseline(target, baseline) {
+  if (!baseline) return
+  setPlainMap(target, {
+    capturedAt: baseline.capturedAt,
+    asOf: baseline.asOf,
+    sheetId: baseline.sheetId,
+    startDay: baseline.startDay,
+    endDay: baseline.endDay,
+  })
+  ensureArray(
+    target,
+    'tasks',
+    (baseline.tasks || []).map((t) => ({ id: t.id, start: t.start, duration: t.duration })),
+  )
+}
+
 /** Build the same stable named top-level Y types as client/src/state/crdt.ts. */
 export function encodeLegacyProject(project, documentName) {
   const doc = new Y.Doc()
@@ -126,6 +151,8 @@ export function encodeLegacyProject(project, documentName) {
   const links = doc.getMap('root/links')
   const rainySeasons = doc.getMap('root/rainySeasons')
   const sheets = doc.getMap('root/sheets')
+  const modules = doc.getMap('root/modules')
+  const baseline = doc.getMap('root/baseline')
   doc.transact(() => {
     for (const name of [
       'meta',
@@ -138,6 +165,8 @@ export function encodeLegacyProject(project, documentName) {
       'links',
       'rainySeasons',
       'sheets',
+      'modules',
+      'baseline',
     ]) {
       root.set(name, `root/${name}`)
     }
@@ -165,6 +194,8 @@ export function encodeLegacyProject(project, documentName) {
     setRecords(links, project?.links)
     setRecords(rainySeasons, project?.rainySeasons)
     setSheetRecords(sheets, residentSheets(project || {}))
+    setModuleRecords(modules, project?.modules)
+    setBaseline(baseline, project?.baseline)
   }, 'sequence-server-seed')
   const state = Y.encodeStateAsUpdate(doc)
   doc.destroy()
@@ -239,6 +270,43 @@ function readSheetRecord(record) {
   }
 }
 
+/** 모듈 RecordMap → [{id, values}] (id 보존). client crdt.ts orderedModuleRecords 대칭. */
+function orderedModuleRecords(collection) {
+  return [...collection.entries()]
+    .map(([id, record]) => ({ id, position: positionOf(record), record }))
+    .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+    .map(({ id, record }) => {
+      const values = record.toJSON()
+      delete values[POSITION_KEY]
+      return { id, values }
+    })
+}
+
+function readModules(target) {
+  const out = {}
+  for (const [moduleId, collection] of target.entries()) {
+    if (!(collection instanceof Y.Map)) continue
+    const records = orderedModuleRecords(collection)
+    if (records.length) out[moduleId] = records
+  }
+  return out
+}
+
+function readBaseline(target) {
+  const capturedAt = target.get('capturedAt')
+  if (typeof capturedAt !== 'string' || !capturedAt) return undefined
+  const tasks = target.get('tasks')
+  const sheetId = target.get('sheetId')
+  return {
+    capturedAt,
+    asOf: String(target.get('asOf') ?? ''),
+    ...(typeof sheetId === 'string' && sheetId ? { sheetId } : {}),
+    startDay: Number(target.get('startDay') ?? 0),
+    endDay: Number(target.get('endDay') ?? 0),
+    tasks: tasks instanceof Y.Array ? tasks.toArray() : [],
+  }
+}
+
 function readProjectFromDoc(doc, documentName) {
   const meta = doc.getMap('root/meta').toJSON()
   const view = doc.getMap('root/view')
@@ -250,6 +318,8 @@ function readProjectFromDoc(doc, documentName) {
   const links = doc.getMap('root/links')
   const rainySeasons = doc.getMap('root/rainySeasons')
   const sheetsMap = doc.getMap('root/sheets')
+  const modules = readModules(doc.getMap('root/modules'))
+  const baseline = readBaseline(doc.getMap('root/baseline'))
 
   const mirrorHidden = view.get('mirrorHidden')
   const logos = branding.get('logos')
@@ -284,6 +354,8 @@ function readProjectFromDoc(doc, documentName) {
     tasks: activeSheet?.tasks ?? orderedRecords(tasks),
     links: activeSheet?.links ?? orderedRecords(links),
     rainySeasons: activeSheet?.rainySeasons ?? orderedRecords(rainySeasons),
+    ...(Object.keys(modules).length ? { modules } : {}),
+    ...(baseline ? { baseline } : {}),
     ...(activeSheet
       ? {
           activeSheet: { id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },

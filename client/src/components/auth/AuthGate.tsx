@@ -9,6 +9,7 @@ import {
   type ProjectSummary,
   useAuth,
 } from '../../state/authStore'
+import { useView } from '../../state/viewStore'
 import { PASSWORD_RULE_TEXT, validatePassword } from '../../utils/password'
 import { AdminPanel } from './AdminPanel'
 import { AuthBackground } from './AuthBackground'
@@ -92,10 +93,32 @@ function AuthBar() {
   const entered = useAuth((s) => s.entered)
   const exitProject = useAuth((s) => s.exitProject)
   const logout = useAuth((s) => s.logout)
+  const view = useView((s) => s.view)
+  const setView = useView((s) => s.setView)
   const [pwOpen, setPwOpen] = useState(false)
   return (
     <div className="authbar" data-export-hide="1">
       <span className="authbar__proj">📁 {entered?.name}</span>
+      <div className="authbar__switch" role="tablist" aria-label="화면 전환">
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'dashboard'}
+          className={`authbar__seg${view === 'dashboard' ? ' is-on' : ''}`}
+          onClick={() => setView('dashboard')}
+        >
+          📊 총괄
+        </button>
+        <button
+          type="button"
+          role="tab"
+          aria-selected={view === 'schedule'}
+          className={`authbar__seg${view === 'schedule' ? ' is-on' : ''}`}
+          onClick={() => setView('schedule')}
+        >
+          📅 공정표
+        </button>
+      </div>
       <span className="authbar__spacer" />
       <span className="authbar__user">
         {user?.name || user?.id} <em>· {ROLE_LABEL[user?.role ?? ''] ?? user?.role}</em>

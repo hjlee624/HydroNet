@@ -1,19 +1,31 @@
-// Sequence = 마일스톤(공정) 편집 전용 앱. 서버가 있으면 로그인→프로젝트 선택→접속코드
-// 게이트(AuthGate), 오프라인 단일 HTML/서버 없음이면 곧장 편집기(로컬 모드). ADR-002.
-
 import { AuthGate } from './components/auth/AuthGate'
 import { CollaborationBridge } from './components/CollaborationBridge'
+import { DashboardModule } from './components/DashboardModule'
+import { ModulePlaceholder } from './components/ModulePlaceholder'
+import { ModuleRail } from './components/ModuleRail'
+import { RecordModule } from './components/RecordModule'
 import { ScheduleModule } from './components/ScheduleModule'
+import { MODULE_MAP } from './data/modules'
+import { type ProjectView, useView } from './state/viewStore'
+
+// 활성 모듈에 따라 콘텐츠 렌더. 대시보드·공정표는 전용, fields 있는 기록형 모듈은 RecordModule,
+// 그 외(진척·보고서 등)는 ModulePlaceholder(다음 단계 제공).
+function renderModule(view: ProjectView) {
+  if (view === 'dashboard') return <DashboardModule />
+  if (view === 'schedule') return <ScheduleModule />
+  return MODULE_MAP[view]?.fields ? <RecordModule id={view} /> : <ModulePlaceholder id={view} />
+}
 
 export default function App() {
-  // 조회 전용(편집 권한 없음) 표시는 TopBar 상단 중앙 배지로 노출(레이아웃 밀림 없음).
+  // 좌측 모듈 레일 + 활성 모듈. 프로젝트 데이터는 CollaborationBridge가 하이드레이트하므로
+  // ScheduleModule 마운트 여부와 무관하게 모든 뷰가 실데이터를 본다.
+  const view = useView((s) => s.view)
   return (
     <AuthGate>
       <CollaborationBridge />
       <div className="shell">
-        <main className="shell__content">
-          <ScheduleModule />
-        </main>
+        <ModuleRail />
+        <main className="shell__content">{renderModule(view)}</main>
       </div>
     </AuthGate>
   )

@@ -6,6 +6,7 @@ import { useAuth } from '../state/authStore'
 import { openProjectFromFile } from '../state/fileIO'
 import { logWarn } from '../state/logger'
 import { useEditor } from '../state/store'
+import { useView } from '../state/viewStore'
 import { BoqImportDialog } from './BoqImportDialog'
 import { HelpDialog } from './HelpDialog'
 import { ReviewDialog } from './ReviewDialog'
@@ -29,6 +30,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const canRedo = useEditor((s) => s.canRedo)
 
   const a = useEditor.getState
+  const setView = useView((s) => s.setView)
   const pro = uiMode === 'pro'
 
   // 새 도면 권한: 로컬 모드이거나 개발자이거나 프로젝트 PM인 경우만 허용.
@@ -102,6 +104,13 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       />
 
       <div className="topbar__actions">
+        <button
+          className="btn btn--sm btn--ghost"
+          title="프로젝트 총괄 대시보드로 이동"
+          onClick={() => setView('dashboard')}
+        >
+          📊 총괄
+        </button>
         {canCreateNew && (
           <button
             className="btn btn--sm btn--ghost"

@@ -29,12 +29,11 @@ const dom = new JSDOM(html, {
     // jsdom has no canvas; the app only needs it for raster export, not mount.
     ;(window.HTMLCanvasElement.prototype as unknown as { getContext: () => null }).getContext =
       () => null
-    // Boot straight into the 공정관리(schedule) module so the chart actually renders.
-    // The first-entry gate (shell.initialModule) otherwise forces the dashboard until
-    // a 사업 단계 is picked, leaving no #sequence-chart. Mirrors mount-test.ts.
+    // Boot straight into the 공정표(schedule) 편집기 so the chart actually renders.
+    // 기본 진입은 총괄 대시보드(viewStore)라 시드하지 않으면 차트가 없어 검증이 실패한다.
+    // Mirrors mount-test.ts.
     try {
-      window.localStorage.setItem('sequence:typeChosen', '1')
-      window.localStorage.setItem('sequence:module', 'schedule')
+      window.localStorage.setItem('sequence:project-view', 'schedule')
     } catch {
       /* localStorage unavailable → chart assertion will surface it */
     }

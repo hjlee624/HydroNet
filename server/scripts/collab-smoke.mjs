@@ -446,6 +446,31 @@ try {
     '#19 snapshot이 최초 시드가 아닌 라이브 CRDT 편집을 반영',
   )
 
+  // 건설사업관리 모듈 CRDT 동기화: provider가 root/modules에 기록 → 두 번째 provider 수렴
+  // → 서버 스냅샷(decodeProjectFromState)에 반영($position 제거).
+  first.document.transact(() => {
+    const coll = new Y.Map()
+    first.document.getMap('root/modules').set('cost', coll)
+    const rec = new Y.Map()
+    rec.set('group', '공사비')
+    rec.set('budget', '1000')
+    rec.set('$position', 1)
+    coll.set('mr-smoke', rec)
+  })
+  await waitFor(
+    () =>
+      second.document.getMap('root/modules').get('cost')?.get('mr-smoke')?.get('budget') === '1000',
+    'module record convergence',
+  )
+  ok(true, '모듈 레코드 두 provider 간 동기화(root/modules)')
+  const modSnap = await call(base, 'GET', '/api/projects/projA/snapshot', projectGrant)
+  ok(
+    modSnap.data?.modules?.cost?.[0]?.values?.budget === '1000' &&
+      modSnap.data?.modules?.cost?.[0]?.values?.group === '공사비' &&
+      !('$position' in (modSnap.data?.modules?.cost?.[0]?.values ?? {})),
+    '모듈이 서버 스냅샷(decodeProjectFromState)에 반영',
+  )
+
   const revokedCount = runtime.collab.revokeProjectAccess('projA', 'u1')
   ok(revokedCount >= 1, '#14 revokeProjectAccess가 해당 사용자 활성 연결을 강제 절단')
 
