@@ -80,22 +80,27 @@ async function main() {
     /Maximum update depth|getSnapshot should be cached|too many re-renders/i.test(e),
   )
   check(dashHtml.includes('프로젝트 총괄'), '총괄 대시보드 렌더 확인')
+  check(dashHtml.includes('SPI') && dashHtml.includes('예산 vs 실적'), '대시보드 EVM/예산 존 렌더')
   check(!dashLoop, '총괄 대시보드 무한 렌더 루프 없음')
 
-  // 기록형 모듈(프로젝트 예산) 토글 렌더 검증.
-  const recErrors: string[] = []
-  console.error = (...a: unknown[]) => {
-    recErrors.push(a.map(String).join(' '))
+  // 모듈 토글 렌더 검증 — 기록형(프로젝트 예산) + 진척·실적.
+  const modCheck = async (view: string, expect: string, label: string) => {
+    const errs: string[] = []
+    console.error = (...a: unknown[]) => {
+      errs.push(a.map(String).join(' '))
+    }
+    useView.getState().setView(view as never)
+    await new Promise((r) => setTimeout(r, 250))
+    console.error = origError
+    const h = document.getElementById('root')!.innerHTML
+    const loop = errs.find((e) =>
+      /Maximum update depth|getSnapshot should be cached|too many re-renders/i.test(e),
+    )
+    check(h.includes(expect), `${label} 렌더 확인`)
+    check(!loop, `${label} 무한 렌더 루프 없음`)
   }
-  useView.getState().setView('cost')
-  await new Promise((r) => setTimeout(r, 250))
-  console.error = origError
-  const recHtml = document.getElementById('root')!.innerHTML
-  const recLoop = recErrors.find((e) =>
-    /Maximum update depth|getSnapshot should be cached|too many re-renders/i.test(e),
-  )
-  check(recHtml.includes('프로젝트 예산'), '기록 모듈(프로젝트 예산) 렌더 확인')
-  check(!recLoop, '기록 모듈 무한 렌더 루프 없음')
+  await modCheck('cost', '프로젝트 예산', '기록 모듈(프로젝트 예산)')
+  await modCheck('progress', '진척·실적', '진척·실적 모듈')
 
   if (errors.length) {
     console.log(`\n(console.error ${errors.length}건):`)

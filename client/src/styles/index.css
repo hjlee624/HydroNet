@@ -4552,3 +4552,196 @@ textarea.input {
     transition: none;
   }
 }
+
+/* ── 대시보드 성과지표(EVM)·경보·예산 (2단계) ────────────────────────────────── */
+.seq-dash__headbtns {
+  display: flex;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+.seq-dash__hero {
+  max-width: 1120px;
+  margin: 0 auto 14px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.seq-dash__herocard {
+  text-align: left;
+  border: 1px solid var(--hairline);
+  border-radius: 12px;
+  padding: 14px 16px;
+  background: var(--canvas, #fff);
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  box-shadow: 0 1px 2px rgba(27, 23, 18, 0.03);
+  transition: border-color 0.12s ease;
+}
+.seq-dash__herocard:hover {
+  border-color: rgba(250, 81, 17, 0.4);
+}
+.seq-dash__hero-v {
+  margin: 4px 0;
+}
+.seq-dash__hero-v strong {
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1;
+}
+.seq-dash__hint {
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--stone);
+}
+.seq-dash__alerts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.seq-dash__alert {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--hairline);
+  border-left-width: 3px;
+  border-radius: 8px;
+  background: var(--surface);
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+  text-align: left;
+}
+.seq-dash__alert:hover {
+  background: var(--cream-soft);
+}
+.seq-dash__alert--danger {
+  border-left-color: #e12d1b;
+}
+.seq-dash__alert--warn {
+  border-left-color: var(--primary);
+}
+.seq-dash__alert--info {
+  border-left-color: var(--stone);
+}
+.seq-dash__alert-l {
+  font-weight: 700;
+}
+.seq-dash__alert-t {
+  color: var(--steel);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.seq-dash__alert-n {
+  font-weight: 700;
+  color: var(--primary-deep);
+  font-variant-numeric: tabular-nums;
+}
+.seq-dash__evm {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.seq-dash__evm-row {
+  display: grid;
+  grid-template-columns: 68px 1fr 44px;
+  align-items: center;
+  gap: 10px;
+}
+.seq-dash__evm-row.is-muted {
+  opacity: 0.5;
+}
+.seq-dash__evm-l {
+  font-size: 12px;
+  color: var(--slate);
+}
+.seq-dash__evm-track {
+  height: 10px;
+  border-radius: 999px;
+  background: var(--cream-deeper);
+  overflow: hidden;
+}
+.seq-dash__evm-fill {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+}
+.seq-dash__evm-fill--plan {
+  background: var(--stone);
+}
+.seq-dash__evm-fill--earn {
+  background: linear-gradient(90deg, var(--primary), var(--sunshine-500, #ff9d2e));
+}
+.seq-dash__evm-fill--cost {
+  background: var(--slate);
+}
+.seq-dash__evm-v {
+  font-size: 12px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+.seq-dash__evm-cap {
+  margin: 12px 0 0;
+  font-size: 11.5px;
+  color: var(--stone);
+  line-height: 1.6;
+}
+
+/* ── 진척·실적 모듈 (ProgressModule) ─────────────────────────────────────────── */
+.seq-prog__kpis {
+  margin-bottom: 16px;
+}
+.seq-prog__grouprow td {
+  background: var(--cream-soft);
+  font-weight: 700;
+  color: var(--charcoal);
+  font-size: 12.5px;
+}
+.seq-prog__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.seq-prog__behind td {
+  background: rgba(225, 45, 27, 0.05);
+}
+.seq-prog__cp {
+  font-size: 9.5px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--critical, #e12d1b);
+  border-radius: 4px;
+  padding: 1px 4px;
+  margin-left: 6px;
+}
+.seq-prog__inrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.seq-prog__inrow input[type="range"] {
+  flex: 1 1 auto;
+  min-width: 90px;
+  accent-color: var(--primary);
+}
+.seq-prog__pctin {
+  width: 56px;
+  flex: 0 0 auto;
+  border: 1px solid var(--hairline);
+}
+.seq-prog__table th {
+  white-space: nowrap;
+}
