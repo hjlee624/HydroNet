@@ -1,7 +1,9 @@
+import fs from 'node:fs/promises'
 import path from 'node:path'
 import { Database } from '@hocuspocus/extension-database'
 import { Hocuspocus } from '@hocuspocus/server'
 import nodeAdapter from 'crossws/adapters/node'
+import * as Y from 'yjs'
 import { authenticateProjectToken } from './auth.js'
 import { createOriginPolicy } from './origin.js'
 import { createSeededYDocStorage } from './seed.js'
@@ -83,6 +85,65 @@ export function attachCollaborationServer(httpServer, options) {
     },
   })
 
+  // #14: 멤버/역할 변경·해임·계정 비활성/삭제가 '이미 열려 있는' collab 연결에 반영되도록
+  // 활성 연결을 강제로 닫는다. 재접속 시 authenticateProjectToken 이 최신 저장소 기준으로
+  // 재검증하므로 해임=거부 / 강등=권한 재적용된다(연결 시점 스냅샷 권위 문제 해소).
+  const closeConnection = (connection) => {
+    try {
+      connection.close({ code: 4003, reason: 'access-revoked' })
+      return true
+    } catch {
+      return false
+    }
+  }
+  const revokeProjectAccess = (projectId, userId) => {
+    const document = hocuspocus.documents.get(projectId)
+    if (!document) return 0
+    let closed = 0
+    for (const connection of document.getConnections()) {
+      if (!userId || connection?.context?.userId === userId) {
+        if (closeConnection(connection)) closed++
+      }
+    }
+    return closed
+  }
+  const revokeUser = (userId) => {
+    if (!userId) return 0
+    let closed = 0
+    for (const document of hocuspocus.documents.values()) {
+      for (const connection of document.getConnections()) {
+        if (connection?.context?.userId === userId && closeConnection(connection)) closed++
+      }
+    }
+    return closed
+  }
+
+  // #19: 스냅샷/백업이 최초 시드 JSON이 아니라 '라이브 CRDT' 상태를 반영하도록,
+  // 로드된 문서는 메모리 상태를, 아니면 마지막 flush 된 저장 바이너리를 돌려준다.
+  const fetchLiveState = async (documentName) => {
+    if (!isDocumentName(documentName)) return null
+    const loaded = hocuspocus.documents.get(documentName)
+    if (loaded) return Y.encodeStateAsUpdate(loaded)
+    return rawStorage.fetch(documentName)
+  }
+
+  // #20: 프로젝트 삭제 시 라이브 CRDT(ydoc .bin/row) + 레거시 시드 JSON을 함께 정리한다.
+  // 활성 연결을 먼저 닫고 문서가 완전히 언로드(최종 flush 포함)된 뒤 삭제해 '삭제 후 재생성'을 막는다.
+  const deleteProjectState = async (documentName) => {
+    if (!isDocumentName(documentName)) return
+    hocuspocus.closeConnections(documentName)
+    const deadline = Date.now() + 3_000
+    while (hocuspocus.documents.has(documentName) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 50))
+    }
+    try {
+      await storage.delete?.(documentName)
+    } catch (error) {
+      logger.error?.('deleteProjectState: ydoc 삭제 실패', error)
+    }
+    await fs.unlink(path.join(dataDir, `${documentName}.json`)).catch(() => {})
+  }
+
   const onUpgrade = (request, socket, head) => {
     let pathname = ''
     try {
@@ -108,6 +169,10 @@ export function attachCollaborationServer(httpServer, options) {
     hocuspocus,
     storage,
     websocket,
+    revokeProjectAccess,
+    revokeUser,
+    fetchLiveState,
+    deleteProjectState,
     destroy() {
       destroyPromise ??= (async () => {
         httpServer.off('upgrade', onUpgrade)

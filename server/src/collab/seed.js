@@ -196,6 +196,116 @@ export function encodeEmptyProject(documentName) {
   )
 }
 
+// ── 라이브 Y.Doc → 정규 프로젝트 JSON 역직렬화 ────────────────────────────────
+// client/src/state/crdt.ts 의 projectFromYDoc 과 동일 규칙. 백업/스냅샷 GET이
+// 최초 시드 JSON이 아니라 실제 라이브 CRDT 상태를 반환하도록 하기 위한 서버측 디코더.
+function positionOf(record) {
+  const value = record?.get(POSITION_KEY)
+  return typeof value === 'number' && Number.isFinite(value) ? value : Number.MAX_SAFE_INTEGER
+}
+
+function orderedRecords(map) {
+  return [...map.entries()]
+    .map(([id, record]) => ({ id, position: positionOf(record), value: record.toJSON() }))
+    .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+    .map(({ value }) => {
+      delete value[POSITION_KEY]
+      return value
+    })
+}
+
+function readSheetRecord(record) {
+  const id = record.get('id')
+  const role = record.get('role')
+  const name = record.get('name')
+  if (
+    typeof id !== 'string' ||
+    (role !== 'plan' && role !== 'milestone') ||
+    typeof name !== 'string'
+  )
+    return null
+  const categories = record.get('categories')
+  const tasks = record.get('tasks')
+  const links = record.get('links')
+  const rainySeasons = record.get('rainySeasons')
+  return {
+    id,
+    role,
+    name,
+    categories: categories instanceof Y.Map ? orderedRecords(categories) : [],
+    tasks: tasks instanceof Y.Map ? orderedRecords(tasks) : [],
+    links: links instanceof Y.Map ? orderedRecords(links) : [],
+    rainySeasons: rainySeasons instanceof Y.Map ? orderedRecords(rainySeasons) : [],
+  }
+}
+
+function readProjectFromDoc(doc, documentName) {
+  const meta = doc.getMap('root/meta').toJSON()
+  const view = doc.getMap('root/view')
+  const paper = doc.getMap('root/paper')
+  const branding = doc.getMap('root/branding')
+  const palette = doc.getArray('root/palette')
+  const categories = doc.getMap('root/categories')
+  const tasks = doc.getMap('root/tasks')
+  const links = doc.getMap('root/links')
+  const rainySeasons = doc.getMap('root/rainySeasons')
+  const sheetsMap = doc.getMap('root/sheets')
+
+  const mirrorHidden = view.get('mirrorHidden')
+  const logos = branding.get('logos')
+  const residentSheets = [...sheetsMap.entries()]
+    .map(([id, record]) => ({ id, position: positionOf(record), record }))
+    .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
+    .map(({ record }) => readSheetRecord(record))
+    .filter((sheet) => sheet !== null)
+  // activeSheetId 는 클라 로컬 전용이므로 스냅샷은 첫 resident sheet 를 활성으로 본다.
+  const activeSheet = residentSheets[0]
+
+  return {
+    id: String(meta.id ?? documentName ?? ''),
+    name: String(meta.name ?? ''),
+    ...(typeof meta.kind === 'string' ? { kind: meta.kind } : {}),
+    ...(typeof meta.facility === 'string' ? { facility: meta.facility } : {}),
+    startDate: String(meta.startDate ?? ''),
+    commissioningEnabled: meta.commissioningEnabled !== false,
+    meta: {
+      createdAt: String(meta.createdAt ?? ''),
+      updatedAt: String(meta.updatedAt ?? ''),
+      schemaVersion: Number(meta.schemaVersion ?? 1),
+    },
+    paper: paper.toJSON(),
+    view: {
+      ...view.toJSON(),
+      ...(mirrorHidden instanceof Y.Array ? { mirrorHidden: mirrorHidden.toArray() } : {}),
+    },
+    branding: { logos: logos instanceof Y.Array ? logos.toArray() : [] },
+    palette: palette.toArray(),
+    categories: activeSheet?.categories ?? orderedRecords(categories),
+    tasks: activeSheet?.tasks ?? orderedRecords(tasks),
+    links: activeSheet?.links ?? orderedRecords(links),
+    rainySeasons: activeSheet?.rainySeasons ?? orderedRecords(rainySeasons),
+    ...(activeSheet
+      ? {
+          activeSheet: { id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },
+          sheets: residentSheets.filter((sheet) => sheet.id !== activeSheet.id),
+        }
+      : residentSheets.length
+        ? { sheets: residentSheets }
+        : {}),
+  }
+}
+
+/** Y.Doc update binary(state) → 정규 프로젝트 JSON. 실패 시 throw. */
+export function decodeProjectFromState(state, documentName) {
+  const doc = new Y.Doc()
+  try {
+    Y.applyUpdate(doc, state instanceof Uint8Array ? state : new Uint8Array(state))
+    return readProjectFromDoc(doc, documentName)
+  } finally {
+    doc.destroy()
+  }
+}
+
 export function createSeededYDocStorage(storage, legacyDirectory) {
   const seedInFlight = new Map()
   return {

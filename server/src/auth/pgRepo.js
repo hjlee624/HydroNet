@@ -75,6 +75,30 @@ export function createPgRepo(connectionString) {
       )
       return userRow(r.rows[0])
     },
+    async insertUser(u) {
+      // #38: create-if-absent(존재 시 conflict). 동시 등록 last-write-wins 방지.
+      const r = await q(
+        `INSERT INTO users (id,name,role,division,password_hash,active,pending,reset_requested,must_change_password,pending_at,reset_requested_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,COALESCE($8,false),COALESCE($9,false),$10,$11)
+         ON CONFLICT (id) DO NOTHING
+         RETURNING *`,
+        [
+          u.id,
+          u.name ?? '',
+          u.role ?? 'user',
+          u.division ?? null,
+          u.passwordHash ?? null,
+          u.active ?? true,
+          u.pending ?? false,
+          u.resetRequested ?? null,
+          u.mustChangePassword ?? null,
+          u.pendingAt ?? null,
+          u.resetRequestedAt ?? null,
+        ],
+      )
+      if (!r.rows[0]) throw Object.assign(new Error('user-exists'), { code: 'conflict' })
+      return userRow(r.rows[0])
+    },
     async setUserPassword(id, hash) {
       await q('UPDATE users SET password_hash=$2, updated_at=now() WHERE id=$1', [id, hash])
     },
@@ -108,6 +132,44 @@ export function createPgRepo(connectionString) {
         ],
       )
       return projRow(r.rows[0])
+    },
+    async createProjectWithMember(p, member) {
+      // #38: 프로젝트 생성 + PM 멤버십을 단일 트랜잭션으로 묶어 원자성 보장.
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        const r = await client.query(
+          `INSERT INTO projects (id,name,access_code_hash,created_by,active,division,sample) VALUES ($1,$2,$3,$4,COALESCE($5,true),$6,COALESCE($7,false))
+           ON CONFLICT (id) DO UPDATE SET name=EXCLUDED.name,
+             access_code_hash=COALESCE(EXCLUDED.access_code_hash, projects.access_code_hash),
+             active=COALESCE($5, projects.active),
+             division=COALESCE(EXCLUDED.division, projects.division),
+             sample=COALESCE($7, projects.sample),
+             updated_at=now()
+           RETURNING *`,
+          [
+            p.id,
+            p.name ?? '',
+            p.accessCodeHash ?? null,
+            p.createdBy ?? null,
+            p.active ?? null,
+            p.division ?? null,
+            p.sample ?? null,
+          ],
+        )
+        await client.query(
+          `INSERT INTO project_members (project_id,user_id,role,added_by) VALUES ($1,$2,$3,$4)
+           ON CONFLICT (project_id,user_id) DO UPDATE SET role=EXCLUDED.role`,
+          [p.id, member.userId, member.role, member.by ?? null],
+        )
+        await client.query('COMMIT')
+        return projRow(r.rows[0])
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw error
+      } finally {
+        client.release()
+      }
     },
     async setProjectAccessCode(id, hash) {
       await q('UPDATE projects SET access_code_hash=$2, updated_at=now() WHERE id=$1', [id, hash])
@@ -167,6 +229,10 @@ export function createPgRepo(connectionString) {
       )
       if (inserted.rows[0]) return inserted.rows[0].data
       return (await q('SELECT data FROM ydocs WHERE name=$1', [name])).rows[0]?.data ?? null
+    },
+    async deleteYDoc(name) {
+      // #20: 프로젝트 삭제 시 라이브 CRDT row 정리(FK CASCADE와 별개로 명시 삭제).
+      await q('DELETE FROM ydocs WHERE name=$1', [name])
     },
   }
 }

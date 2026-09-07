@@ -48,6 +48,16 @@ export function createFileYDocStorage(directory) {
         }
       })
     },
+    async delete(documentName) {
+      // 프로젝트 삭제 시 라이브 CRDT 바이너리(.bin) 정리 — 고아·민감정보 잔존 방지.
+      const file = fileFor(documentName)
+      await serializeWrite(documentName, async () => {
+        await fs.unlink(file).catch((error) => {
+          if (error.code !== 'ENOENT') throw error
+        })
+        await fs.unlink(`${file}.seed.lock`).catch(() => {})
+      })
+    },
     async seed(documentName, state) {
       const file = fileFor(documentName)
       const lock = `${file}.seed.lock`
@@ -92,5 +102,6 @@ export function createRepoYDocStorage(repo) {
     fetch: (documentName) => repo.fetchYDoc(documentName),
     store: (documentName, state) => repo.storeYDoc(documentName, state),
     seed: (documentName, state) => repo.seedYDoc(documentName, state),
+    delete: (documentName) => repo.deleteYDoc(documentName),
   }
 }

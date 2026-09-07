@@ -65,6 +65,12 @@ export function createMemoryRepo(file) {
       save()
       return clone(state.users[u.id])
     },
+    async insertUser(u) {
+      // #38: create-if-absent 원자 삽입. 단일 스레드라 검사→삽입 사이 await가 없어
+      // 동시 등록이 서로를 조용히 덮어쓰는 TOCTOU를 차단(존재 시 conflict throw).
+      if (state.users[u.id]) throw Object.assign(new Error('user-exists'), { code: 'conflict' })
+      return this.upsertUser(u)
+    },
     async setUserPassword(id, hash) {
       if (state.users[id]) {
         state.users[id].passwordHash = hash
@@ -95,6 +101,22 @@ export function createMemoryRepo(file) {
         sample: p.sample ?? prev.sample ?? false,
       }
       save()
+      return clone(state.projects[p.id])
+    },
+    async createProjectWithMember(p, member) {
+      // #38: 프로젝트 생성 + PM 멤버십을 한 단위로 처리(부분 실패 시 프로젝트 롤백)해
+      // 'PM 멤버십 누락' 비원자성 문제를 없앤다.
+      const hadProject = state.projects[p.id] !== undefined
+      await this.upsertProject(p)
+      try {
+        await this.addMember(p.id, member.userId, member.role, member.by)
+      } catch (error) {
+        if (!hadProject) {
+          delete state.projects[p.id]
+          save()
+        }
+        throw error
+      }
       return clone(state.projects[p.id])
     },
     async setProjectAccessCode(id, hash) {

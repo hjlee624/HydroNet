@@ -35,6 +35,26 @@ function secret() {
 }
 const ISS = 'sequence-auth'
 
+/** AUTH_JWT_SECRET(16자 이상)이 실제로 설정됐는지. 미설정이면 재시작마다 랜덤 키(세션 무효). */
+export function jwtSecretConfigured() {
+  const env = process.env.AUTH_JWT_SECRET
+  return typeof env === 'string' && env.length >= 16
+}
+
+/**
+ * 운영 모드에서 AUTH_JWT_SECRET 미설정이면 기동을 거부(throw)한다.
+ * secure=true(NODE_ENV=production 또는 AUTH_SECURE_COOKIE=1)인데 시크릿이 없으면
+ * 재기동 한 번으로 전 세션·프로젝트·collab 티켓이 무경고 무효가 되므로 조기 중단이 옳다.
+ */
+export function assertJwtSecret({ secure = false } = {}) {
+  if (!jwtSecretConfigured() && secure) {
+    throw new Error(
+      'AUTH_JWT_SECRET(16자 이상)이 설정되지 않았습니다. 운영 모드(NODE_ENV=production 또는 AUTH_SECURE_COOKIE=1)에서는 필수입니다. server/.env에 AUTH_JWT_SECRET을 설정하세요.',
+    )
+  }
+  return jwtSecretConfigured()
+}
+
 /** 세션 토큰(신원). payload = {sub, role, name}. */
 export function signSession(user, ttl = '12h') {
   return new SignJWT({ role: user.role, name: user.name ?? '' })

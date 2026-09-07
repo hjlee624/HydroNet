@@ -434,10 +434,39 @@ try {
     'autosave list/read/write/delete 전체 auth/project grant 적용',
   )
 
+  // ── #19 라이브 스냅샷 / #14 강제 절단 / #20 삭제 정리 검증 ──
+  first.document.getMap('root/meta').set('name', 'LIVE EDITED NAME')
+  await waitFor(
+    () => second.document.getMap('root/meta').get('name') === 'LIVE EDITED NAME',
+    'live meta.name convergence',
+  )
+  const liveSnap = await call(base, 'GET', '/api/projects/projA/snapshot', projectGrant)
+  ok(
+    liveSnap.status === 200 && liveSnap.data?.name === 'LIVE EDITED NAME',
+    '#19 snapshot이 최초 시드가 아닌 라이브 CRDT 편집을 반영',
+  )
+
+  const revokedCount = runtime.collab.revokeProjectAccess('projA', 'u1')
+  ok(revokedCount >= 1, '#14 revokeProjectAccess가 해당 사용자 활성 연결을 강제 절단')
+
   first.provider.destroy()
   second.provider.destroy()
   seeded.provider.destroy()
   empty.provider.destroy()
+  await new Promise((resolve) => setTimeout(resolve, 100))
+
+  const emptyBin = path.join(dataDir, 'ydocs', 'emptyA.bin')
+  const emptyBinBefore = await fs.access(emptyBin).then(
+    () => true,
+    () => false,
+  )
+  await runtime.collab.deleteProjectState('emptyA')
+  const emptyBinAfter = await fs.access(emptyBin).then(
+    () => true,
+    () => false,
+  )
+  ok(emptyBinBefore && !emptyBinAfter, '#20 프로젝트 삭제 시 라이브 ydoc(.bin) 정리')
+
   await runtime.close()
   runtime = null
 

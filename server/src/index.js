@@ -14,13 +14,14 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import cors from 'cors'
 import express from 'express'
-import { verifyToken } from './auth/crypto.js'
+import { assertJwtSecret, jwtSecretConfigured, verifyToken } from './auth/crypto.js'
 import { createPgRepo } from './auth/pgRepo.js'
 import { createMemoryRepo } from './auth/repo.js'
 import { canAccessAll, canAdmin, canEnterProject } from './auth/roles.js'
 import { bootstrapDeveloper, createAuthRouter } from './auth/routes.js'
 import { bootstrapSampleProjects } from './auth/sampleProjects.js'
 import { attachCollaborationServer } from './collab/index.js'
+import { decodeProjectFromState } from './collab/seed.js'
 import { reviewProviderStatus, runReview } from './llm/review.js'
 import {
   createBoundedRateLimiter,
@@ -120,7 +121,13 @@ if (authRepo.backend !== AUTH_BACKEND) {
   )
 }
 const secureCookie = process.env.AUTH_SECURE_COOKIE === '1' || process.env.NODE_ENV === 'production'
-const { router: authRouter, requireAuth } = createAuthRouter(authRepo, { secure: secureCookie })
+// 협업 서버 제어 훅(startServer에서 채워짐). 라우터는 import 시점, collab은 startServer에서 붙으므로
+// 늦은 바인딩용 간접 객체를 공유한다. #14(연결 강제절단)·#19(라이브 스냅샷)·#20(삭제 정리)에 사용.
+const collabControl = {}
+const { router: authRouter, requireAuth } = createAuthRouter(authRepo, {
+  secure: secureCookie,
+  collab: collabControl,
+})
 const listGate = AUTH_ENABLED ? requireAuth : (_req, _res, next) => next()
 const logGate = AUTH_ENABLED
   ? requireAuth
@@ -312,6 +319,20 @@ app.get(
 const sendProjectSnapshot = asyncRoute(async (req, res) => {
   const { id } = req.params
   if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
+  // #19: 라이브 CRDT(ydoc)가 권위 소스. 있으면 정규 JSON으로 직렬화해 반환한다.
+  // (기존엔 최초 시드 JSON만 반환해 백업/복구 시 협업 이력이 통째로 소실됐다.)
+  try {
+    const state = await collabControl.fetchLiveState?.(id)
+    if (state?.length) {
+      const project = decodeProjectFromState(state, id)
+      return res.type('application/json').send(JSON.stringify(project))
+    }
+  } catch (e) {
+    appendLog('warn', `라이브 스냅샷 직렬화 실패 — 레거시 JSON로 폴백: ${id}`, {
+      message: e.message,
+    })
+  }
+  // 폴백: ydoc가 아직 없거나(협업 미개시) 디코드 실패 시 최초 시드 JSON.
   try {
     const raw = await fs.readFile(fileFor(id), 'utf8')
     res.type('application/json').send(raw)
@@ -341,6 +362,21 @@ app.delete(
     if (!idOk(id)) return res.status(400).json({ error: '잘못된 ID' })
     if (AUTH_ENABLED && !canAdmin(req.user)) {
       return res.status(403).json({ error: '프로젝트 삭제는 개발자 권한이 필요합니다.' })
+    }
+    // #20: 레거시 시드 JSON뿐 아니라 라이브 CRDT(ydoc .bin/row)·활성 연결까지 함께 정리.
+    if (collabControl.deleteProjectState) {
+      const existed =
+        (await fs.access(fileFor(id)).then(
+          () => true,
+          () => false,
+        )) ||
+        (await collabControl
+          .fetchLiveState?.(id)
+          .then((s) => !!s?.length)
+          .catch(() => false))
+      await collabControl.deleteProjectState(id)
+      if (!existed) return res.status(404).json({ error: '없음' })
+      return res.json({ ok: true })
     }
     try {
       await fs.unlink(fileFor(id))
@@ -518,6 +554,14 @@ const served = fssync.existsSync(CLIENT_DIST)
 export { app, authRepo }
 
 export async function startServer(options = {}) {
+  // #18: 운영 모드(secure)에서 AUTH_JWT_SECRET 미설정이면 기동 거부. dev 미설정이면 경고.
+  assertJwtSecret({ secure: secureCookie })
+  if (!jwtSecretConfigured()) {
+    appendLog(
+      'warn',
+      'AUTH_JWT_SECRET 미설정 — 프로세스별 랜덤 키 사용. 서버 재시작 시 모든 세션·프로젝트·collab 티켓이 무효화되어 전원 재로그인이 필요합니다. 운영에서는 server/.env에 AUTH_JWT_SECRET(16자 이상)을 설정하세요(start-lan.bat이 최초 실행 시 자동 생성).',
+    )
+  }
   const port = Number(options.port ?? PORT)
   const host = options.host ?? HOST
   const server = http.createServer(app)
@@ -533,6 +577,12 @@ export async function startServer(options = {}) {
       },
     },
   })
+  // 늦은 바인딩: 라우터/스냅샷/삭제 경로가 실행 시점에 collab 제어를 쓸 수 있게 연결.
+  collabControl.revokeProjectAccess = (projectId, userId) =>
+    collab.revokeProjectAccess(projectId, userId)
+  collabControl.revokeUser = (userId) => collab.revokeUser(userId)
+  collabControl.fetchLiveState = (id) => collab.fetchLiveState(id)
+  collabControl.deleteProjectState = (id) => collab.deleteProjectState(id)
 
   await new Promise((resolve, reject) => {
     server.once('error', reject)

@@ -56,3 +56,12 @@ CREATE TABLE IF NOT EXISTS ydocs (
   data        BYTEA NOT NULL,
   updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- #20: 프로젝트 삭제 시 라이브 CRDT 고아 방지 — 정합성 정리 후 FK(ON DELETE CASCADE) 추가(멱등).
+-- 앱 코드(deleteYDoc)와 별개 방어선. 기존 고아 row가 있으면 먼저 지워야 FK가 걸린다.
+DELETE FROM ydocs WHERE name NOT IN (SELECT id FROM projects);
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'ydocs_name_project_fk') THEN
+    ALTER TABLE ydocs ADD CONSTRAINT ydocs_name_project_fk
+      FOREIGN KEY (name) REFERENCES projects(id) ON DELETE CASCADE;
+  END IF;
+END $$;

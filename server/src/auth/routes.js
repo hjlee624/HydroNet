@@ -2,6 +2,14 @@
 import express from 'express'
 import { nanoid } from 'nanoid'
 import {
+  notifyProjectCreatedSafe,
+  notifyProjectDeletedSafe,
+  notifyRegistrationSafe,
+  notifyResetRequestSafe,
+  sendTestNotification,
+} from '../notify/works.js'
+import { createBoundedRateLimiter } from '../security.js'
+import {
   hashSecret,
   signCollabToken,
   signProjectToken,
@@ -10,14 +18,6 @@ import {
   verifyToken,
 } from './crypto.js'
 import { importUsers } from './importUsers.js'
-import {
-  notifyProjectCreatedSafe,
-  notifyProjectDeletedSafe,
-  notifyRegistrationSafe,
-  notifyResetRequestSafe,
-  sendTestNotification,
-} from '../notify/works.js'
-import { createBoundedRateLimiter } from '../security.js'
 import { validatePassword } from './password.js'
 import { normalizeLoginId } from './phone.js'
 import {
@@ -55,6 +55,23 @@ const fail = (status, message, expose = true) =>
 /** createAuthRouter(repo, {secure}) → { router, requireAuth, requireProjectToken }. */
 export function createAuthRouter(repo, opts = {}) {
   const secure = !!opts.secure
+  // #14: 멤버/역할·계정 상태 변경 시 '이미 열린' collab 연결을 강제 절단(늦은 바인딩).
+  // collab 서버가 아직 안 붙었거나(테스트) 훅이 없으면 조용히 무시 — best-effort.
+  const collab = opts.collab
+  const revokeProjectAccess = (projectId, userId) => {
+    try {
+      collab?.revokeProjectAccess?.(projectId, userId)
+    } catch {
+      /* best-effort: 절단 실패가 API 응답을 막지 않게 */
+    }
+  }
+  const revokeUser = (userId) => {
+    try {
+      collab?.revokeUser?.(userId)
+    } catch {
+      /* best-effort */
+    }
+  }
   const loginLimit = {
     maxFailures: opts.loginRateLimit?.maxFailures ?? 5,
     lockMs: opts.loginRateLimit?.lockMs ?? 15 * 60 * 1000,
@@ -102,7 +119,9 @@ export function createAuthRouter(repo, opts = {}) {
   const rejectLockedLogin = (res, lockedUntil, now) => {
     res.setHeader('Retry-After', String(Math.max(1, Math.ceil((lockedUntil - now) / 1000))))
     // locked:true — 클라이언트가 '비밀번호 초기화 요청' UI를 노출하도록.
-    res.status(429).json({ error: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.', locked: true })
+    res
+      .status(429)
+      .json({ error: '로그인 시도가 너무 많습니다. 잠시 후 다시 시도하세요.', locked: true })
   }
   // 특정 사용자에 대한 로그인 실패/잠금 기록 해제(비밀번호 재설정·변경 시 즉시 잠금 풀기).
   const clearLockout = (userId) => {
@@ -232,7 +251,10 @@ export function createAuthRouter(repo, opts = {}) {
       const u = await repo.getUser(req.user.id)
       if (!u) throw fail(404, '사용자를 찾을 수 없습니다.')
       // 강제 변경 상태는 이미 세션 인증됨 → 현재 비밀번호 재확인 생략. 그 외엔 현재 비밀번호 검증.
-      if (!u.mustChangePassword && !(await verifySecret(String(currentPassword || ''), u.passwordHash)))
+      if (
+        !u.mustChangePassword &&
+        !(await verifySecret(String(currentPassword || ''), u.passwordHash))
+      )
         throw fail(401, '현재 비밀번호가 올바르지 않습니다.')
       const chk = validatePassword(newPassword)
       if (!chk.ok) throw fail(400, chk.reason)
@@ -282,19 +304,25 @@ export function createAuthRouter(repo, opts = {}) {
       if (!pwChk.ok) throw fail(400, pwChk.reason)
       if (role !== 'pm' && role !== 'user') throw fail(400, '역할(관리자/사용자)을 선택하세요.')
       if (!isDivision(division)) throw fail(400, '본부를 선택하세요.')
-      if (await repo.getUser(id))
-        throw fail(409, '이미 등록된 전화번호입니다. 관리자에게 문의하세요.')
       const isPm = role === 'pm'
-      await repo.upsertUser({
-        id,
-        name: String(name || '').trim(),
-        role,
-        division,
-        passwordHash: await hashSecret(String(password)),
-        active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
-        pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
-        pendingAt: isPm ? Date.now() : null, // 승인 요청 시각(관리자 도구 표시용)
-      })
+      // #38: 검사→삽입 사이 TOCTOU 제거. insertUser는 존재 시 conflict를 던져
+      // 동시 등록이 먼저 등록자를 조용히 덮어쓰는 last-write-wins를 막는다.
+      try {
+        await repo.insertUser({
+          id,
+          name: String(name || '').trim(),
+          role,
+          division,
+          passwordHash: await hashSecret(String(password)),
+          active: !isPm, // 사용자는 즉시 활성, 관리자(PM)는 승인 전까지 비활성
+          pending: isPm, // 관리자 등록 → 개발자 승인 대기(/admin/pending 에 즉시 노출)
+          pendingAt: isPm ? Date.now() : null, // 승인 요청 시각(관리자 도구 표시용)
+        })
+      } catch (e) {
+        if (e?.code === 'conflict')
+          throw fail(409, '이미 등록된 전화번호입니다. 관리자에게 문의하세요.')
+        throw e
+      }
       // 계정 등록 → 개발자에게 네이버웍스 DM(설정 시). 역할 무관 모두 알림
       // (PM=승인 대기, 사용자=자동 활성). fire-and-forget — 발송 실패해도 등록은 성공.
       // notifyRegistrationSafe 는 절대 throw 안 하지만, 리팩터링 안전망으로 .catch 도 건다.
@@ -383,15 +411,23 @@ export function createAuthRouter(repo, opts = {}) {
       const accessCode = req.body?.accessCode
       const id = `p_${nanoid(10)}`
       const accessCodeHash = accessCode ? await hashSecret(String(accessCode)) : undefined
-      await repo.upsertProject({
+      const projectData = {
         id,
         name,
         division,
         createdBy: req.user.id,
         ...(accessCodeHash ? { accessCodeHash } : {}),
-      })
-      // 개발자는 전체 접근이라 멤버십 불필요. PM(관리자)이 만들면 그 프로젝트의 PM으로 등록 → 목록 노출·코드 면제 입장.
-      if (!canAccessAll(req.user)) await repo.addMember(id, req.user.id, 'pm', req.user.id)
+      }
+      if (canAccessAll(req.user)) {
+        await repo.upsertProject(projectData) // 개발자는 전체 접근이라 멤버십 불필요.
+      } else {
+        // #38: PM이 만들면 프로젝트 생성 + PM 멤버십을 원자적으로 묶어(트랜잭션/롤백) 멤버십 누락 방지.
+        await repo.createProjectWithMember(projectData, {
+          userId: req.user.id,
+          role: 'pm',
+          by: req.user.id,
+        })
+      }
       // 프로젝트 생성 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 실패해도 생성은 성공.
       void notifyProjectCreatedSafe({
         name,
@@ -414,6 +450,12 @@ export function createAuthRouter(repo, opts = {}) {
       const project = await repo.getProject(req.params.id)
       if (!project) throw fail(404, '프로젝트를 찾을 수 없습니다.')
       await repo.deleteProject(req.params.id) // 멤버십 함께 삭제(memory·pg CASCADE)
+      // #20: 라이브 CRDT(ydoc .bin/row)·레거시 시드 JSON·활성 연결까지 정리(고아 방지).
+      try {
+        await collab?.deleteProjectState?.(req.params.id)
+      } catch {
+        /* best-effort: ydoc 정리 실패가 삭제 응답을 막지 않게 */
+      }
       // 프로젝트 삭제 → 개발자에게 네이버웍스 DM(설정 시). fire-and-forget — 실패해도 삭제는 성공.
       void notifyProjectDeletedSafe({
         name: project.name,
@@ -539,14 +581,17 @@ export function createAuthRouter(repo, opts = {}) {
         if (!chk.ok) throw fail(400, chk.reason)
       }
       const passwordHash = password ? await hashSecret(String(password)) : undefined
+      const normalizedId = normalizeLoginId(id)
       await repo.upsertUser({
-        id: normalizeLoginId(id),
+        id: normalizedId,
         name: name ?? '',
         role,
         active: active ?? true,
         ...(isDivision(division) ? { division } : {}),
         ...(passwordHash ? { passwordHash } : {}),
       })
+      // #14: 관리자가 계정을 비활성화하면 열려 있는 collab 연결 절단.
+      if (active === false) revokeUser(normalizedId)
       res.json({ ok: true })
     }),
   )
@@ -588,6 +633,8 @@ export function createAuthRouter(repo, opts = {}) {
         active: approve,
         pending: false,
       })
+      // #14: 거절(비활성화) 시 열려 있는 collab 연결 절단.
+      if (!approve) revokeUser(id)
       res.json({ ok: true, approved: approve })
     }),
   )
@@ -651,6 +698,8 @@ export function createAuthRouter(repo, opts = {}) {
       if (id === req.user.id) throw fail(400, '본인 계정은 삭제할 수 없습니다.')
       if (!(await repo.getUser(id))) throw fail(404, '사용자를 찾을 수 없습니다.')
       await repo.deleteUser(id) // 프로젝트 멤버십 함께 삭제(memory 정리 · pg CASCADE)
+      // #14: 삭제된 계정의 모든 프로젝트 활성 연결 절단.
+      revokeUser(id)
       res.json({ ok: true })
     }),
   )
@@ -709,6 +758,8 @@ export function createAuthRouter(repo, opts = {}) {
       const normalizedUserId = normalizeLoginId(userId)
       if (!(await repo.getUser(normalizedUserId))) throw fail(404, '사용자를 찾을 수 없습니다.')
       await repo.addMember(req.params.id, normalizedUserId, role, req.user.id)
+      // #14: 역할 변경(강등 포함) 시 활성 연결을 절단 → 재접속 때 최신 권한으로 재적용.
+      revokeProjectAccess(req.params.id, normalizedUserId)
       res.json({ ok: true })
     }),
   )
@@ -717,7 +768,10 @@ export function createAuthRouter(repo, opts = {}) {
     authMw,
     manageMw,
     wrap(async (req, res) => {
-      await repo.removeMember(req.params.id, normalizeLoginId(req.params.userId))
+      const removedUserId = normalizeLoginId(req.params.userId)
+      await repo.removeMember(req.params.id, removedUserId)
+      // #14: 해임 즉시 활성 collab 연결 절단 → 열어둔 탭으로 무기한 편집 방지.
+      revokeProjectAccess(req.params.id, removedUserId)
       res.json({ ok: true })
     }),
   )
