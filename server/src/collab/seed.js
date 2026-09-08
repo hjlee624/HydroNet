@@ -44,6 +44,50 @@ const DEFAULT_VIEW = {
   monthLineWidth: 1,
 }
 
+/**
+ * 공기 산정 전제(Project.periodInputs) ↔ root/meta 스칼라 키 매핑.
+ * client/src/state/crdt.ts 의 PERIOD_INPUT_KEYS 와 **같은 키·같은 규칙**이어야 한다 —
+ * 여기서 빠뜨리면 스냅샷(GET /api/projects/:id/snapshot)에 허용 편차·준비기간이 실리지 않고,
+ * 그 JSON 을 되돌려 방을 다시 열면 모든 공정 판정이 기본값(±15%)으로 조용히 되돌아간다.
+ */
+const PERIOD_INPUT_KEYS = {
+  prepDays: 'piPrepDays',
+  cleanupDays: 'piCleanupDays',
+  holidayDays: 'piHolidayDays',
+  weatherDays: 'piWeatherDays',
+  tolerancePct: 'piTolerancePct',
+}
+
+/** PeriodInputs → meta 스칼라 키. 미입력 필드는 undefined 라 setPlainMap 이 아예 쓰지 않는다. */
+function periodInputsToMeta(inputs) {
+  const out = {}
+  for (const [field, metaKey] of Object.entries(PERIOD_INPUT_KEYS)) {
+    const value = inputs?.[field]
+    out[metaKey] = typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
+  return out
+}
+
+/**
+ * meta 스칼라 키 → PeriodInputs. 스칼라 키가 하나도 없으면 구버전 문서의 중첩
+ * meta.periodInputs 객체를 폴백으로 읽는다(하위 호환). 값이 하나도 없으면 undefined 를
+ * 돌려줘 스냅샷 JSON 에 periodInputs 키 자체를 만들지 않는다.
+ */
+function periodInputsFromMeta(meta) {
+  const flat = {}
+  let found = false
+  for (const [field, metaKey] of Object.entries(PERIOD_INPUT_KEYS)) {
+    const value = meta?.[metaKey]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      flat[field] = value
+      found = true
+    }
+  }
+  if (found) return flat
+  const legacy = meta?.periodInputs
+  return legacy && typeof legacy === 'object' && !Array.isArray(legacy) ? legacy : undefined
+}
+
 const cloneJson = (value) => JSON.parse(JSON.stringify(value))
 const compactObject = (value = {}, omitted = new Set()) => {
   const result = {}
@@ -153,6 +197,11 @@ export function encodeLegacyProject(project, documentName) {
   const sheets = doc.getMap('root/sheets')
   const modules = doc.getMap('root/modules')
   const baseline = doc.getMap('root/baseline')
+  // 변경 이력·확정본(F13) — client/src/state/crdt.ts 의 root/changeLog·root/baselineVersions 대칭.
+  // 여기서 빠뜨리면 버전 보관(versions.js)·스냅샷 GET 이 **감사기록 없는 프로젝트**를 만들어내고,
+  // 그걸로 되돌리면 방의 이력이 통째로 사라진다(복구 불가 — undo 추적 대상이 아니므로).
+  const changeLog = doc.getMap('root/changeLog')
+  const baselineVersions = doc.getMap('root/baselineVersions')
   doc.transact(() => {
     for (const name of [
       'meta',
@@ -167,6 +216,8 @@ export function encodeLegacyProject(project, documentName) {
       'sheets',
       'modules',
       'baseline',
+      'changeLog',
+      'baselineVersions',
     ]) {
       root.set(name, `root/${name}`)
     }
@@ -179,6 +230,8 @@ export function encodeLegacyProject(project, documentName) {
       facility: project?.facility,
       startDate: project?.startDate || '',
       commissioningEnabled: project?.commissioningEnabled,
+      // 공기 산정 전제 — 클라이언트(crdt.ts)와 같이 meta 스칼라 5개로 펼쳐 쓴다.
+      ...periodInputsToMeta(project?.periodInputs),
       createdAt: project?.meta?.createdAt || '',
       updatedAt: project?.meta?.updatedAt || '',
       schemaVersion: project?.meta?.schemaVersion ?? 1,
@@ -196,6 +249,9 @@ export function encodeLegacyProject(project, documentName) {
     setSheetRecords(sheets, residentSheets(project || {}))
     setModuleRecords(modules, project?.modules)
     setBaseline(baseline, project?.baseline)
+    // 레코드 단위 저장(id → 필드 Map) — 클라이언트와 같은 규칙이라야 병합·왕복이 성립한다.
+    setRecords(changeLog, project?.changeLog)
+    setRecords(baselineVersions, project?.baselineVersions)
   }, 'sequence-server-seed')
   const state = Y.encodeStateAsUpdate(doc)
   doc.destroy()
@@ -307,6 +363,32 @@ function readBaseline(target) {
   }
 }
 
+/**
+ * 변경 이력 RecordMap → ChangeEntry[]. client crdt.ts projectFromYDoc 과 **같은 정규화**:
+ * taskIds 는 항상 배열, 정렬은 기록 시각(at) → id. 두 피어가 동시에 append 하면 $position 이
+ * 겹칠 수 있어 위치 순서만으로는 문서마다 순서가 흔들린다.
+ */
+function readChangeLog(target) {
+  return orderedRecords(target)
+    .map((entry) => ({ ...entry, taskIds: Array.isArray(entry.taskIds) ? entry.taskIds : [] }))
+    .sort(
+      (a, b) =>
+        String(a.at ?? '').localeCompare(String(b.at ?? '')) ||
+        String(a.id ?? '').localeCompare(String(b.id ?? '')),
+    )
+}
+
+/** 확정본 RecordMap → BaselineVersion[]. tasks 는 항상 배열, 정렬은 박제 시각(capturedAt) → id. */
+function readBaselineVersions(target) {
+  return orderedRecords(target)
+    .map((version) => ({ ...version, tasks: Array.isArray(version.tasks) ? version.tasks : [] }))
+    .sort(
+      (a, b) =>
+        String(a.capturedAt ?? '').localeCompare(String(b.capturedAt ?? '')) ||
+        String(a.id ?? '').localeCompare(String(b.id ?? '')),
+    )
+}
+
 function readProjectFromDoc(doc, documentName) {
   const meta = doc.getMap('root/meta').toJSON()
   const view = doc.getMap('root/view')
@@ -320,6 +402,8 @@ function readProjectFromDoc(doc, documentName) {
   const sheetsMap = doc.getMap('root/sheets')
   const modules = readModules(doc.getMap('root/modules'))
   const baseline = readBaseline(doc.getMap('root/baseline'))
+  const changeLog = readChangeLog(doc.getMap('root/changeLog'))
+  const baselineVersions = readBaselineVersions(doc.getMap('root/baselineVersions'))
 
   const mirrorHidden = view.get('mirrorHidden')
   const logos = branding.get('logos')
@@ -338,6 +422,11 @@ function readProjectFromDoc(doc, documentName) {
     ...(typeof meta.facility === 'string' ? { facility: meta.facility } : {}),
     startDate: String(meta.startDate ?? ''),
     commissioningEnabled: meta.commissioningEnabled !== false,
+    // 공기 산정 전제 — meta 스칼라 5개를 모아 되돌린다(구버전 중첩 객체는 폴백).
+    ...(() => {
+      const periodInputs = periodInputsFromMeta(meta)
+      return periodInputs ? { periodInputs } : {}
+    })(),
     meta: {
       createdAt: String(meta.createdAt ?? ''),
       updatedAt: String(meta.updatedAt ?? ''),
@@ -356,6 +445,9 @@ function readProjectFromDoc(doc, documentName) {
     rainySeasons: activeSheet?.rainySeasons ?? orderedRecords(rainySeasons),
     ...(Object.keys(modules).length ? { modules } : {}),
     ...(baseline ? { baseline } : {}),
+    // 없는 컨테이너는 키 자체를 만들지 않는다(crdt.ts 와 같은 규칙 — 옛 프로젝트 JSON 형태 보존).
+    ...(changeLog.length ? { changeLog } : {}),
+    ...(baselineVersions.length ? { baselineVersions } : {}),
     ...(activeSheet
       ? {
           activeSheet: { id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },

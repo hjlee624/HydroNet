@@ -4,16 +4,20 @@
 
 import type { ChangeEvent } from 'react'
 import { useEffect, useMemo, useState } from 'react'
+import { standardDurationIndex } from '../data/facilities'
+import { findStandardRate, STANDARD_RATE_OPTIONS } from '../data/standardRates'
+import { assessConstructionPeriod, assessTaskAdequacy, normWorkName } from '../engine/adequacy'
 import { dateToDay, daysInMonth, dayToDate, parseISO, toISO } from '../engine/dates'
 import { computeLayout, fitToPaperView } from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
+import { type EditImpact, previewEdit } from '../engine/scheduling'
 import type { InspectorTab } from '../state/store'
 import { useEditor } from '../state/store'
 import { FONT_FAMILY_OPTIONS, TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS } from '../styles/theme'
-import type { LinkStyle, LinkType, PaperSize, TextRole } from '../types/model'
+import type { LinkStyle, LinkType, PaperSize, PeriodInputs, Task, TextRole } from '../types/model'
 import { PALETTE_MAX } from '../types/model'
-import { assessTaskAdequacy } from '../engine/adequacy'
-import { STANDARD_RATE_OPTIONS, findStandardRate } from '../data/standardRates'
+import { EditImpactCard } from './EditImpactCard'
+import { Modal } from './Modal'
 
 /** 4개 속성 탭(요구사항 3) — 도면·프로젝트 / 텍스트 / 공정 / 연결. SAMPLE.png 형태,
  *  색은 현 Sequence 크림/오렌지. 차트에서 항목을 클릭하면 해당 탭으로 자동 전환된다. */
@@ -176,10 +180,13 @@ function FloatField({
   value,
   onCommit,
   placeholder,
+  id,
 }: {
   value?: number
   onCommit: (v: number | undefined) => void
   placeholder?: string
+  /** 라벨(htmlFor)과 연결할 input id — 지정하면 접근성 연결이 만들어진다. */
+  id?: string
 }) {
   const [text, setText] = useState(value == null ? '' : String(value))
   useEffect(() => {
@@ -198,6 +205,7 @@ function FloatField({
   return (
     <input
       className="input"
+      id={id}
       inputMode="decimal"
       value={text}
       placeholder={placeholder}
@@ -298,9 +306,35 @@ function TaskInspector({ id }: { id: string }) {
   const project = useEditor((s) => s.project)
   const pro = useEditor((s) => s.uiMode) === 'pro'
   const selectedTaskIds = useEditor((s) => s.selectedTaskIds)
+  const editMode = useEditor((s) => s.editMode)
+  const autoCascade = useEditor((s) => s.autoCascade)
+  // 시작일·기간을 **직접 입력**할 때는 커밋 전에 영향(지연 변경·후행 이동·준공)을 먼저 보여준다.
+  const [pending, setPending] = useState<{ patch: Partial<Task>; impact: EditImpact } | null>(null)
   const task = project.tasks.find((t) => t.id === id)
   const a = useEditor.getState
+  // ② 표준대비 판정에 쓸 시설물 표준 템플릿 공기(일). 훅이므로 early return 앞에서 구한다.
+  const standardDuration = useMemo(() => {
+    if (!task || task.isMilestone) return undefined
+    const std = standardDurationIndex(project.facility).get(normWorkName(task.name))
+    return typeof std === 'number' ? std : undefined
+  }, [project.facility, task])
   if (!task) return <div className="empty-hint">선택된 공정이 없습니다.</div>
+
+  /** 일정 필드(시작일·기간) 입력 — 영향이 있으면 확인창을 먼저 띄우고, 없으면 바로 반영. */
+  const commitSchedulePatch = (patch: Partial<Task>) => {
+    const imp = previewEdit(
+      project.tasks,
+      project.links,
+      { id, start: patch.start, duration: patch.duration },
+      editMode,
+      autoCascade,
+    )
+    if (imp && (imp.lagChanges.length > 0 || imp.successorMoves.length > 0 || imp.clamped)) {
+      setPending({ patch, impact: imp })
+      return
+    }
+    a().updateTask(id, patch)
+  }
 
   // 색상 변경은 다중 선택 시 **선택된 공정 모두**에 적용(단일이면 그 하나만).
   const multiSel = selectedTaskIds.length > 1
@@ -315,7 +349,15 @@ function TaskInspector({ id }: { id: string }) {
     task.color ?? project.categories.find((c) => c.id === task.categoryId)?.color ?? '#7c93a8'
   const palette = project.palette ?? []
   // 물량 기반 공기 적정성(법정 산정식) — 마일스톤은 기간 개념이 없어 제외.
-  const adq = task.isMilestone ? null : assessTaskAdequacy(task)
+  // ② 표준대비는 표준 템플릿 공기를 넘겨야 판정된다. 넘기지 않으면 화면에선 영원히 null 이
+  // 되어 검토요청서(export/reviewRequest)와 판정이 어긋난다 — 같은 색인(standardDurationIndex)을 쓴다.
+  // 허용 편차도 같은 이유로 사용자 입력(periodInputs.tolerancePct)을 그대로 넘긴다.
+  const adq = task.isMilestone
+    ? null
+    : assessTaskAdequacy(task, {
+        standardDuration,
+        tolerancePct: project.periodInputs?.tolerancePct,
+      })
 
   return (
     <>
@@ -359,7 +401,7 @@ function TaskInspector({ id }: { id: string }) {
             value={startISO}
             onChange={(e) =>
               e.target.value &&
-              a().updateTask(id, { start: dateToDay(project.startDate, parseISO(e.target.value)) })
+              commitSchedulePatch({ start: dateToDay(project.startDate, parseISO(e.target.value)) })
             }
           />
         </div>
@@ -370,10 +412,38 @@ function TaskInspector({ id }: { id: string }) {
             min={1}
             max={100000}
             disabled={task.isMilestone}
-            onCommit={(v) => a().updateTask(id, { duration: v })}
+            onCommit={(v) => commitSchedulePatch({ duration: v })}
           />
         </div>
       </div>
+      {pending && (
+        <Modal
+          title="변경 영향 확인"
+          sub="이 편집이 실제로 무엇을 바꾸는지 먼저 확인하세요."
+          width={460}
+          onClose={() => setPending(null)}
+          footer={(close) => (
+            <>
+              <button type="button" className="btn" onClick={close}>
+                취소
+              </button>
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={() => {
+                  a().updateTask(id, pending.patch)
+                  a().setLastEditImpact(pending.impact)
+                  setPending(null)
+                }}
+              >
+                적용
+              </button>
+            </>
+          )}
+        >
+          <EditImpactCard impact={pending.impact} startDate={project.startDate} />
+        </Modal>
+      )}
       <div className="field">
         <label className="toggle">
           <input
@@ -531,13 +601,29 @@ function TaskInspector({ id }: { id: string }) {
               <input
                 className="input"
                 value={task.unit ?? ''}
-                placeholder="㎥"
+                placeholder={adq.unitCheck.rateUnit ?? '㎥'}
+                style={
+                  adq.unitCheck.status === 'mismatch'
+                    ? { borderColor: VERDICT_COLOR.과소, background: '#fdf3f2' }
+                    : undefined
+                }
                 onChange={(e) =>
                   a().updateTask(id, { unit: e.target.value || undefined }, { history: false })
                 }
               />
             </div>
           </div>
+          {adq.unitCheck.status === 'mismatch' && (
+            <p className="note" style={{ marginTop: 0, color: VERDICT_COLOR.과소 }}>
+              ⚠ {adq.unitCheck.message} 표준 단위 «{adq.unitCheck.rateUnit}» 로 바꾸거나 공종코드를
+              다시 선택하세요.
+            </p>
+          )}
+          {adq.unitCheck.status === 'missing' && adq.unitCheck.rateUnit && (
+            <p className="note" style={{ marginTop: 0 }}>
+              단위 미입력 — 표준 단위 «{adq.unitCheck.rateUnit}» 기준으로 <b>가정</b>해 계산합니다.
+            </p>
+          )}
           <div className="field">
             <label>표준 일작업량 (가이드라인 부록4 공종)</label>
             <select
@@ -613,6 +699,16 @@ function TaskInspector({ id }: { id: string }) {
                 물량과 표준 일작업량을 연결하면 이론 작업일수가 자동 계산됩니다.
               </div>
             )}
+            {adq.standardDeviationPct != null && standardDuration != null && (
+              <div style={{ marginBottom: 6 }}>
+                표준 템플릿 공기 <b>{standardDuration}일</b> 대비{' '}
+                <b style={{ color: VERDICT_COLOR[adq.verdict] }}>
+                  {adq.standardDeviationPct > 0 ? '+' : ''}
+                  {adq.standardDeviationPct}%
+                </b>{' '}
+                <span style={{ color: 'var(--stone)' }}>(② 표준대비)</span>
+              </div>
+            )}
             <div style={{ borderTop: '1px dashed var(--hairline)', paddingTop: 6 }}>
               {adq.basis.map((b, i) => (
                 <div key={i} style={{ margin: '2px 0' }}>
@@ -624,6 +720,27 @@ function TaskInspector({ id }: { id: string }) {
         </div>
       )}
 
+      {/* 변경 이력(F13)의 **수동** 진입점. 키 입력마다 결재를 만들지 않기 위해, 사용자가 스스로
+          '이건 남길 변경이다' 라고 판단한 순간에만 1건을 기록한다. 결과는 변경이력·확정본 모듈에서. */}
+      <button
+        type="button"
+        className="btn"
+        style={{ width: '100%', marginBottom: 6 }}
+        title="이 공정의 현재 기간·시작일을 사유와 함께 변경 이력에 남깁니다(변경이력·확정본 모듈에서 조회)"
+        onClick={() => {
+          if (typeof window === 'undefined') return
+          const reason = window.prompt(`'${task.name}' 변경 사유를 적어주세요`)
+          if (!reason?.trim()) return
+          a().appendChange({
+            kind: task.isMilestone ? 'schedule' : 'duration',
+            taskIds: [id],
+            summary: `${task.name} — 시작 ${startISO} · ${task.duration}일`,
+            reason: reason.trim(),
+          })
+        }}
+      >
+        ✎ 변경 사유 남기기
+      </button>
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteTask(id)}>
         공정 삭제
       </button>
@@ -757,6 +874,27 @@ function ProjectInspector() {
   }
   const rainy = project.rainySeasons[0]
   const logos = project.branding?.logos ?? []
+  // ③ 법정준수(총공기) — 지금까지는 .md 로 내보내야만 볼 수 있었던 산정 결과를 화면에서 바로 본다.
+  const periodInputs = project.periodInputs
+  const cp = useMemo(
+    () =>
+      assessConstructionPeriod({
+        tasks: project.tasks,
+        links: project.links,
+        rainySeasons: project.rainySeasons,
+        startDate: project.startDate,
+        prepDays: periodInputs?.prepDays,
+        cleanupDays: periodInputs?.cleanupDays,
+        holidayDays: periodInputs?.holidayDays,
+        weatherDays: periodInputs?.weatherDays,
+        tolerancePct: periodInputs?.tolerancePct,
+      }),
+    [project.tasks, project.links, project.rainySeasons, project.startDate, periodInputs],
+  )
+  /** 전제 1건 수정 — periodInputs 는 통째로 교체되므로 기존 값을 펼쳐 넘긴다. */
+  function setPeriod(patch: Partial<PeriodInputs>): void {
+    a().setProjectMeta({ periodInputs: { ...periodInputs, ...patch } })
+  }
 
   function onUploadLogo(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -793,6 +931,162 @@ function ProjectInspector() {
           value={project.startDate}
           onChange={(e) => e.target.value && a().setProjectMeta({ startDate: e.target.value })}
         />
+      </div>
+
+      <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
+      <div className="panel__title" style={{ marginBottom: 10 }}>
+        공기 산정 전제
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="pi-prep">준비기간(일)</label>
+          <FloatField
+            id="pi-prep"
+            value={periodInputs?.prepDays}
+            placeholder="30 (가정)"
+            onCommit={(v) => setPeriod({ prepDays: v })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="pi-cleanup">정리기간(일)</label>
+          <FloatField
+            id="pi-cleanup"
+            value={periodInputs?.cleanupDays}
+            placeholder="30 (가정)"
+            onCommit={(v) => setPeriod({ cleanupDays: v })}
+          />
+        </div>
+      </div>
+      <div className="field-row">
+        <div className="field">
+          <label htmlFor="pi-holiday">법정공휴일수(일)</label>
+          <FloatField
+            id="pi-holiday"
+            value={periodInputs?.holidayDays}
+            placeholder="0 (가정 · 부록1)"
+            onCommit={(v) => setPeriod({ holidayDays: v })}
+          />
+        </div>
+        <div className="field">
+          <label htmlFor="pi-weather">기상 공사불능일수(일)</label>
+          <FloatField
+            id="pi-weather"
+            value={periodInputs?.weatherDays}
+            placeholder="우기밴드 추정"
+            onCommit={(v) => setPeriod({ weatherDays: v })}
+          />
+        </div>
+      </div>
+      <div className="field" style={{ maxWidth: 140 }}>
+        <label htmlFor="pi-tol">허용 편차(±%)</label>
+        <FloatField
+          id="pi-tol"
+          value={periodInputs?.tolerancePct}
+          placeholder="15 (기본값)"
+          onCommit={(v) => setPeriod({ tolerancePct: v })}
+        />
+      </div>
+      <p className="note" style={{ marginTop: 0 }}>
+        미입력 항목은 기본 가정값(준비 30 · 정리 30 · 공휴일 0 · 허용편차 ±15%)으로 계산되며, 아래
+        산정 결과와 AI 검토요청서에 <b>‘가정 기반 참고값’</b>으로 표기됩니다. 허용편차 ±15%는
+        「산정기준」의 법정 수치가 아니라 이 제품의 기본 허용치입니다.
+      </p>
+
+      <div
+        style={{
+          border: '1px solid var(--hairline)',
+          borderRadius: 8,
+          padding: '10px 12px',
+          margin: '6px 0 12px',
+          fontSize: 12,
+          color: 'var(--slate)',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+          <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--charcoal)' }}>
+            ③ 법정 산정 총공기
+          </span>
+          <span
+            className="badge"
+            style={{ color: '#fff', background: VERDICT_COLOR[cp.verdict], fontWeight: 700 }}
+          >
+            {cp.verdict}
+          </span>
+        </div>
+        {cp.assumed && (
+          <div
+            style={{
+              background: '#fbf1dc',
+              border: '1px solid #f0d9a8',
+              borderRadius: 6,
+              padding: '6px 8px',
+              color: '#8a5a12',
+              marginBottom: 8,
+            }}
+          >
+            ⚠ <b>가정 기반 참고값</b> — 미입력 전제가 있어 확정(법정) 판정이 아닙니다. 위 전제를
+            입력하면 그대로 산정에 반영됩니다.
+          </div>
+        )}
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>
+            준비 {cp.parts.prep} + 비작업 {cp.parts.nonWork} + 작업 {cp.parts.work} + 정리{' '}
+            {cp.parts.cleanup}
+          </span>
+          <strong>{cp.legalTotal}일</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>현재 계획 공기(달력)</span>
+          <strong>
+            {cp.actualSpan}일
+            {cp.deviationPct != null
+              ? ` (${cp.deviationPct > 0 ? '+' : ''}${cp.deviationPct}%)`
+              : ''}
+          </strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+          <span>작업량 합계(주공정 {cp.criticalCount}개 총합 · 병렬 포함)</span>
+          <strong>{cp.workSum}일</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>경과 작업공기(선후행망 최장경로)</span>
+          <strong>{cp.workSpan}일</strong>
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+          <span>
+            비작업일수(주말 {cp.nonWork.weekend} + 기상 {cp.nonWork.weather} + 공휴일{' '}
+            {cp.nonWork.holiday} − 중복 {cp.nonWork.overlap})
+          </span>
+          <strong>{cp.nonWork.total}일</strong>
+        </div>
+        {cp.unitIssueCount > 0 && (
+          <div style={{ color: VERDICT_COLOR.과소, marginTop: 4 }}>
+            ⚠ 단위 불일치 {cp.unitIssueCount}개 공종은 물량 산정에서 제외(현 공기로 근사) — 공정
+            속성에서 단위를 정정하세요.
+          </div>
+        )}
+        <div style={{ borderTop: '1px dashed var(--hairline)', marginTop: 6, paddingTop: 6 }}>
+          <div style={{ fontWeight: 600, marginBottom: 2 }}>산정 전제</div>
+          {cp.assumptions.map((as) => (
+            <div key={as.key} style={{ margin: '2px 0' }}>
+              · {as.label} {as.value}
+              {as.key === 'tolerance' ? '%' : '일'}{' '}
+              <span style={{ color: as.source === 'default' ? '#8a5a12' : 'var(--stone)' }}>
+                ({as.source === 'default' ? '가정' : '입력'} · {as.note})
+              </span>
+            </div>
+          ))}
+        </div>
+        <details style={{ marginTop: 6 }}>
+          <summary style={{ cursor: 'pointer', color: 'var(--stone)' }}>산정 근거 보기</summary>
+          <div style={{ marginTop: 4, lineHeight: 1.55 }}>
+            {cp.basis.map((b) => (
+              <div key={b} style={{ margin: '2px 0' }}>
+                · {b}
+              </div>
+            ))}
+          </div>
+        </details>
       </div>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
@@ -1132,6 +1426,33 @@ function ProjectInspector() {
                 onCommit={(v) => a().setRainySeason({ endDay: v })}
               />
             </div>
+          </div>
+          {/* 우기 작업효율 — 기상 비작업일수(= 우기 평일 × (1−효율))를 좌우하는 값이라
+              모델·store 에만 있고 편집 UI 가 없으면 산정 결과를 손댈 방법이 없다. */}
+          <div className="field">
+            <label htmlFor="rainy-eff">
+              우기 작업효율{' '}
+              <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
+                {Math.round((rainy.efficiency ?? 1) * 100)}% · 기상 비작업{' '}
+                {Math.round((1 - (rainy.efficiency ?? 1)) * 100)}%
+              </span>
+            </label>
+            <input
+              id="rainy-eff"
+              type="range"
+              min={0}
+              max={100}
+              step={5}
+              value={Math.round((rainy.efficiency ?? 1) * 100)}
+              onChange={(e) => a().setRainySeason({ efficiency: Number(e.target.value) / 100 })}
+              aria-label="우기 작업효율"
+              style={{ width: '100%', accentColor: 'var(--primary)' }}
+            />
+            <p className="note" style={{ marginTop: 2 }}>
+              우기 구간의 평일 중 <b>(1−효율)</b>만큼을 기상 공사불능일로 산정합니다(효율 100% =
+              기상 비작업 0일). 위 <b>공기 산정 전제</b>의 ‘기상 공사불능일수’를 직접 입력하면 그
+              값이 우선합니다.
+            </p>
           </div>
           <button className="btn btn--sm" onClick={() => a().clearRainySeasons()}>
             우기 제거

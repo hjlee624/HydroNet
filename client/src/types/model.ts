@@ -87,6 +87,15 @@ export interface Task {
   forceCritical?: boolean
   /** 실적 진척률 0–100 (진척·실적 모듈). undefined = 미입력(0). */
   progress?: number
+  /** 사내 일정표(엑셀·CSV)의 고유 번호 — 재취입 시 **동일 ID 갱신** 키. undefined = 외부 연계 없음.
+   *  state/scheduleImport.ts 가 이 값으로 기존 공정을 찾아 append 대신 update 한다. */
+  extId?: string
+  /** 공정 담당자(실명/직책). 일정표 취입·진척 입력·주간 공정회의 자료의 책임자 열. */
+  owner?: string
+  /** 실적 착수일(ISO YYYY-MM-DD). 미입력 = 미착수. 계획(start)과 달리 CPM에 영향 없음. */
+  actualStart?: string
+  /** 실적 완료일(ISO YYYY-MM-DD). 미입력 = 미완료. 계획과 달리 CPM에 영향 없음. */
+  actualFinish?: string
   /** DUMMY(가상/연결) 공정 표시 — 막대를 공종색 60% 투명(opacity 0.4)으로 칠해
    *  실제 작업이 아닌 연결/대기 구간임을 나타낸다. CPM 계산엔 일반 공정과 동일하게
    *  참여(기간·선후행 유지). undefined/false = 일반 공정. */
@@ -274,6 +283,69 @@ export interface Baseline {
   tasks: BaselineTask[]
 }
 
+/** 변경 이력 한 건의 결재 상태 — 초안 → 검토요청 → 확정. undefined = 초안(구버전 호환). */
+export type ChangeState = 'draft' | 'review' | 'confirmed'
+
+/**
+ * 변경 이력 한 건. **제출·주요 일정 변경 단위**로만 기록한다(키 입력 단위 아님) —
+ * 사용자가 사유를 남기거나, AI 검토를 반영하거나, 일정표를 취입하거나, 확정본을 저장할 때.
+ * CRDT: root/changeLog 에 **레코드 단위**로 동기화되므로 두 사람이 서로 다른 이력을 동시에
+ * 남겨도 병합된다(중첩 객체 통값 저장이 아니라 id별 Y.Map). undo 대상이 아니다(감사기록).
+ */
+export interface ChangeEntry {
+  id: ID
+  /** 기록 시각(ISO timestamp). */
+  at: string
+  /** 작성자 계정 id(로컬 모드는 없음). */
+  actorId?: string
+  /** 작성자 표시 이름 — 이력 표의 '변경자' 열. */
+  actorName: string
+  /** 변경 구분. */
+  kind: 'duration' | 'schedule' | 'baseline' | 'review' | 'import' | 'note'
+  /** 관련 공정 id들(없으면 사업 단위 변경). */
+  taskIds: ID[]
+  /** 무엇이 바뀌었는지 한 줄 요약(자동 생성). */
+  summary: string
+  /** 왜 바꿨는지(사용자 입력). 빈 문자열 = 미기재. */
+  reason: string
+  state?: ChangeState
+  /** 확정/검토요청을 누른 사람·시각. */
+  decidedBy?: string
+  decidedAt?: string
+  /** 이 이력이 만들어낸 기준선 버전 id(kind==='baseline'). */
+  versionId?: ID
+}
+
+/** 기준선 '버전' — 기존 Baseline 스냅샷에 id·이름·작성자를 더해 **여러 개** 보존하는 확정본. */
+export interface BaselineVersion extends Baseline {
+  id: ID
+  /** 확정본 이름(예: '착공 기준선', '1차 변경'). */
+  name: string
+  authorName: string
+  note?: string
+}
+
+/**
+ * 공기(공사기간) 적정성 산정 전제 — 「공공 건설공사의 공사기간 산정기준」 4대 구성요소 중
+ * 달력·물량으로 계산할 수 **없는** 항목들을 사용자가 직접 입력하는 자리다(engine/adequacy.ts
+ * assessConstructionPeriod 로 그대로 전달). 모든 필드가 선택이며, **미입력 항목은 제품 기본
+ * 가정값**(준비 30 · 정리 30 · 공휴일 0 · 허용편차 ±15%)으로 계산되고 결과는 '가정 기반
+ * 참고값'으로 표기된다 — 법정 확정 판정이 아니다.
+ */
+export interface PeriodInputs {
+  /** 준비기간(일). 미입력 시 30일 — **제품 기본 가정값**이다. 가이드라인 p17 은 준비기간의
+   *  내용(설계도서 검토·측량·가설건물·조달 등)만 정의하고 기간을 정하지 않는다. */
+  prepDays?: number
+  /** 정리기간(일) — 가이드라인 p17 정의의 '준공 전 1개월 범위' 문언. 미입력 시 30일 가정. */
+  cleanupDays?: number
+  /** 법정공휴일수(일) — 부록1(대상연도). 미입력 시 0(임의 생성 금지). */
+  holidayDays?: number
+  /** 기상 공사불능일수(일) — 관측통계 기준. 미입력 시 우기밴드로 추정. */
+  weatherDays?: number
+  /** 적정 허용 편차(±%) — 제품 기본값 15%(법정 허용치 아님). */
+  tolerancePct?: number
+}
+
 export interface Project {
   id: ID
   name: string
@@ -299,11 +371,19 @@ export interface Project {
   palette: string[]
   /** When false, commissioning lanes/tasks are excluded (general dam mode). */
   commissioningEnabled: boolean
+  /** 공기 적정성 산정 전제(준비·정리·공휴일·기상·허용편차). 없으면 기본 가정값으로 계산
+   *  하고 '가정 기반 참고값'으로 표기(구버전 호환). CRDT: root/meta 에 동기화. */
+  periodInputs?: PeriodInputs
   /** 건설사업관리 기록형 모듈 데이터(키 = ModuleId). 사업 단위 — 시트 전환에도 보존.
    *  없으면 미설정(구버전 호환). CRDT: root/modules에 동기화. */
   modules?: Record<string, ModuleRecord[]>
-  /** 기준선(베이스라인) 스냅샷. 없으면 미설정. CRDT: root/baseline에 동기화. */
+  /** 기준선(베이스라인) 스냅샷 — 현재 비교 대상 포인터. 없으면 미설정. CRDT: root/baseline. */
   baseline?: Baseline
+  /** 변경 이력(작성자·사유·검토상태). 없으면 미기록(구버전 호환). CRDT: root/changeLog.
+   *  **undo 대상이 아니다** — 되돌리기가 감사기록을 지우면 안 되기 때문. */
+  changeLog?: ChangeEntry[]
+  /** 확정본(기준선 버전) 목록. 없으면 미설정(구버전 호환). CRDT: root/baselineVersions. */
+  baselineVersions?: BaselineVersion[]
   meta: ProjectMeta
 }
 
@@ -311,4 +391,8 @@ export interface Project {
 export const PALETTE_MAX = 10
 
 // v2: Task에 물량 기반 공기 적정성 필드(quantity·unit·workCode) 추가(추가·optional, 마이그레이션 불요).
-export const SCHEMA_VERSION = 2
+// v3: Project에 공기 산정 전제(periodInputs) 추가(추가·optional — 구버전 파일은 기본 가정값으로 동작).
+// v4: Task에 extId·owner·actualStart·actualFinish, Project에 changeLog·baselineVersions 추가
+//     (F12 일정표 취입 · F13 변경이력/확정본 · F16 주간 집계). 전부 optional 이라 마이그레이션 불요 —
+//     구버전 파일은 필드 부재로 로드되고, 신버전 파일은 구버전 리더가 모르는 키를 무시한다.
+export const SCHEMA_VERSION = 4

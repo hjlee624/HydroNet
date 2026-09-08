@@ -8,10 +8,12 @@
 // 불안정하므로 HWPX/PDF/엑셀 저장을 안내한다(대충 파서로 오류를 만들지 않는다).
 
 import { type CSSProperties, useState } from 'react'
-import { STANDARD_RATE_OPTIONS } from '../data/standardRates'
+import { findStandardRate, STANDARD_RATE_OPTIONS } from '../data/standardRates'
+import { compareUnits } from '../engine/units'
 import {
   type BoqColumns,
   type BoqParseResult,
+  type BoqRow,
   type BoqTaskMapping,
   extractRows,
   matchRowsToTasks,
@@ -78,7 +80,10 @@ async function readFileToLoaded(file: File): Promise<Loaded> {
           '구버전 HWP(바이너리)는 브라우저에서 안정적으로 읽기 어렵습니다. 한글에서 HWPX 또는 PDF·엑셀로 저장해 올리거나, 표를 복사해 아래에 붙여넣기 하세요.',
       }
     }
-    return { kind: 'error', message: `지원하지 않는 형식(.${ext})입니다. 엑셀·CSV·HWPX·PDF를 사용하세요.` }
+    return {
+      kind: 'error',
+      message: `지원하지 않는 형식(.${ext})입니다. 엑셀·CSV·HWPX·PDF를 사용하세요.`,
+    }
   } catch (e) {
     return {
       kind: 'error',
@@ -146,20 +151,34 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
   const [fileName, setFileName] = useState<string | null>(null)
   const [parse, setParse] = useState<BoqParseResult | null>(null)
   const [mappings, setMappings] = useState<BoqTaskMapping[]>([])
+  // 어떤 공정에도 붙지 않은 BoQ 행 — 조용히 버리지 않고 반영 전에 사용자에게 보여준다.
+  const [unmatched, setUnmatched] = useState<BoqRow[]>([])
   const [include, setInclude] = useState<Set<string>>(new Set())
   const [message, setMessage] = useState<string | null>(null)
   const [manual, setManual] = useState<string | null>(null)
   const [result, setResult] = useState<number | null>(null)
   // 다중 시트 엑셀 — 전 시트를 읽어두고 사용자가 선택(rowCount=자동 인식 행 수, 추천용).
-  const [sheets, setSheets] = useState<Array<{ name: string; aoa: string[][]; rowCount: number }> | null>(null)
+  const [sheets, setSheets] = useState<Array<{
+    name: string
+    aoa: string[][]
+    rowCount: number
+  }> | null>(null)
   const [activeSheet, setActiveSheet] = useState(0)
 
   function ingest(res: BoqParseResult): void {
     setParse(res)
     setMessage(res.warnings.join(' ') || null)
-    const { mappings: ms } = matchRowsToTasks(res.rows, project.tasks)
+    const { mappings: ms, unmatchedRows } = matchRowsToTasks(res.rows, project.tasks)
     setMappings(ms)
-    setInclude(new Set(ms.filter((m) => m.row && m.quantity != null).map((m) => m.taskId)))
+    setUnmatched(unmatchedRows)
+    // 자동 선택은 '단위가 맞는' 매칭만 — 단위 불일치 행은 사용자가 확인 후 직접 체크한다.
+    setInclude(
+      new Set(
+        ms
+          .filter((m) => m.row && m.quantity != null && m.unitCheck?.status !== 'mismatch')
+          .map((m) => m.taskId),
+      ),
+    )
     setResult(null)
   }
 
@@ -195,11 +214,13 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
         setMessage(loaded.note ?? '텍스트를 추출했습니다 — 아래에서 정리 후 [텍스트 인식].')
         setParse(null)
         setMappings([])
+        setUnmatched([])
       } else {
         setManual('')
         setMessage(loaded.message)
         setParse(null)
         setMappings([])
+        setUnmatched([])
       }
     }
     input.click()
@@ -221,7 +242,13 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
     if (!parse) return
     const headerRowIndex = parse.headerRowIndex >= 0 ? parse.headerRowIndex : 0
     const rows = extractRows(parse.aoa, headerRowIndex, cols)
-    const next: BoqParseResult = { ...parse, headerRowIndex, columns: cols, rows, warnings: parse.warnings }
+    const next: BoqParseResult = {
+      ...parse,
+      headerRowIndex,
+      columns: cols,
+      rows,
+      warnings: parse.warnings,
+    }
     ingest(next)
   }
 
@@ -251,7 +278,16 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
   }
 
   function patchMapping(taskId: string, patch: Partial<BoqTaskMapping>): void {
-    setMappings((prev) => prev.map((m) => (m.taskId === taskId ? { ...m, ...patch } : m)))
+    setMappings((prev) =>
+      prev.map((m) => {
+        if (m.taskId !== taskId) return m
+        const next = { ...m, ...patch }
+        // 단위·공종코드를 고치면 단위 검사도 즉시 다시 한다(⚠ 표시가 입력을 따라가야 한다).
+        if ('unit' in patch || 'workCode' in patch)
+          next.unitCheck = compareUnits(next.unit, findStandardRate(next.workCode)?.unit)
+        return next
+      }),
+    )
   }
   function toggle(taskId: string): void {
     setInclude((prev) => {
@@ -311,7 +347,10 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
           <button className="btn btn--sm" disabled={busy} onClick={() => void onPick()}>
             {busy ? '읽는 중…' : '📄 파일 선택 (엑셀·CSV·HWPX·PDF)'}
           </button>
-          <button className="btn btn--sm btn--ghost" onClick={() => setManual(manual == null ? '' : null)}>
+          <button
+            className="btn btn--sm btn--ghost"
+            onClick={() => setManual(manual == null ? '' : null)}
+          >
             ✎ 붙여넣기
           </button>
           {fileName && <span style={{ fontSize: 12.5, color: '#5b6b7a' }}>{fileName}</span>}
@@ -402,8 +441,8 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
           >
             <b>시트 미리보기 — 열 선택</b>
             <span style={{ color: '#5b6b7a' }}>
-              각 열 위 칸에서 <b>항목·단위·수량·규격</b>을 고르세요. 행 번호를 누르면 그 행이 머리글이
-              됩니다.
+              각 열 위 칸에서 <b>항목·단위·수량·규격</b>을 고르세요. 행 번호를 누르면 그 행이
+              머리글이 됩니다.
             </span>
             <span style={{ flex: 1 }} />
             <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
@@ -446,8 +485,8 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
                   {Array.from({ length: colCount }, (_, c) => {
                     const role = roleOfColumn(c)
                     return (
-                      // biome-ignore lint/suspicious/noArrayIndexKey: 고정 열 인덱스
                       <th
+                        // biome-ignore lint/suspicious/noArrayIndexKey: 고정 열 인덱스
                         key={c}
                         style={{
                           ...boqColHead,
@@ -476,8 +515,14 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
                   const isData = parse.headerRowIndex >= 0 && r > parse.headerRowIndex
                   const dim = parse.headerRowIndex >= 0 && !isHeader && !isData
                   return (
-                    // biome-ignore lint/suspicious/noArrayIndexKey: 고정 행 인덱스
-                    <tr key={r} style={{ background: isHeader ? '#eaf2f8' : undefined, opacity: dim ? 0.5 : 1 }}>
+                    <tr
+                      // biome-ignore lint/suspicious/noArrayIndexKey: 고정 행 인덱스(미리보기 행 번호)
+                      key={r}
+                      style={{
+                        background: isHeader ? '#eaf2f8' : undefined,
+                        opacity: dim ? 0.5 : 1,
+                      }}
+                    >
                       <td
                         style={{
                           ...boqRowHead,
@@ -494,12 +539,13 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
                       {Array.from({ length: colCount }, (_, c) => {
                         const role = roleOfColumn(c)
                         return (
-                          // biome-ignore lint/suspicious/noArrayIndexKey: 고정 셀 인덱스
                           <td
+                            // biome-ignore lint/suspicious/noArrayIndexKey: 고정 셀 인덱스
                             key={c}
                             style={{
                               ...boqCell,
-                              background: role !== 'none' && isData ? BOQ_ROLE_COLOR[role] : undefined,
+                              background:
+                                role !== 'none' && isData ? BOQ_ROLE_COLOR[role] : undefined,
                             }}
                           >
                             {String(row[c] ?? '')}
@@ -520,12 +566,44 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
         </section>
       )}
 
+      {/* ②-B 미매칭 행 — 어떤 공정에도 붙지 않은 BoQ 행을 반영 전에 그대로 보여준다 */}
+      {unmatched.length > 0 && (
+        <section style={{ marginBottom: 12 }}>
+          <div
+            style={{
+              background: '#fdf3f2',
+              border: '1px solid #f2cfcb',
+              borderRadius: 8,
+              padding: '8px 10px',
+              fontSize: 12.5,
+              color: '#8a3b32',
+            }}
+          >
+            <b>연결되지 않은 BoQ 행 {unmatched.length}건</b> — 이름이 닮은 공정을 찾지 못해 어떤
+            공정에도 붙지 않았습니다. 이 물량은 <b>반영되지 않습니다</b>. 아래 매핑 표에서 해당
+            공정에 물량을 직접 입력하거나, 공정 이름을 내역서 항목명에 맞춘 뒤 다시 취입하세요.
+            <div style={{ maxHeight: 120, overflowY: 'auto', marginTop: 6 }}>
+              {unmatched.map((r, i) => (
+                // biome-ignore lint/suspicious/noArrayIndexKey: 파싱 순서 고정 목록
+                <div key={i} style={{ color: '#5b6b7a' }}>
+                  · {r.name}
+                  {r.spec ? ` (${r.spec})` : ''} — {r.quantity}
+                  {r.unit ?? ''}
+                </div>
+              ))}
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* ③ 매핑 표 */}
       {mappings.length > 0 && (
         <section>
           <div style={{ fontSize: 12.5, color: '#5b6b7a', marginBottom: 6 }}>
             공정에 연결된 물량을 확인·수정한 뒤 체크한 항목만 반영합니다. 공종코드는 표준 일작업량
-            DB와 매칭돼 이론 작업일수·적정성 판정에 쓰입니다.
+            DB와 매칭돼 이론 작업일수·적정성 판정에 쓰입니다. 표준 일작업량과{' '}
+            <b>단위가 다른 행은 ⚠</b> 로 표시되며 자동 선택에서 제외됩니다(그대로 반영하면 적정성은
+            ‘판정불가’).
           </div>
           <div
             style={{
@@ -550,8 +628,12 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
                 {mappings.map((m) => {
                   const on = include.has(m.taskId)
                   const applicable = m.quantity != null && m.quantity > 0
+                  const unitBad = m.unitCheck?.status === 'mismatch'
                   return (
-                    <tr key={m.taskId} style={{ borderTop: '1px solid #eef2f6', opacity: applicable ? 1 : 0.6 }}>
+                    <tr
+                      key={m.taskId}
+                      style={{ borderTop: '1px solid #eef2f6', opacity: applicable ? 1 : 0.6 }}
+                    >
                       <td style={tdStyle}>
                         <input
                           type="checkbox"
@@ -580,12 +662,29 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
                         />
                       </td>
                       <td style={tdStyle}>
-                        <input
-                          type="text"
-                          value={m.unit ?? ''}
-                          style={{ ...numInput, width: 64, textAlign: 'left' }}
-                          onChange={(e) => patchMapping(m.taskId, { unit: e.target.value })}
-                        />
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                          <input
+                            type="text"
+                            value={m.unit ?? ''}
+                            style={{
+                              ...numInput,
+                              width: 56,
+                              textAlign: 'left',
+                              ...(unitBad
+                                ? { border: '1px solid #c33b3b', background: '#fdf3f2' }
+                                : {}),
+                            }}
+                            onChange={(e) => patchMapping(m.taskId, { unit: e.target.value })}
+                          />
+                          {unitBad && (
+                            <span
+                              title={m.unitCheck?.message}
+                              style={{ color: '#c33b3b', fontWeight: 700, cursor: 'help' }}
+                            >
+                              ⚠
+                            </span>
+                          )}
+                        </span>
                       </td>
                       <td style={tdStyle}>
                         <select

@@ -17,7 +17,7 @@ import express from 'express'
 import { assertJwtSecret, jwtSecretConfigured, verifyToken } from './auth/crypto.js'
 import { createPgRepo } from './auth/pgRepo.js'
 import { createMemoryRepo } from './auth/repo.js'
-import { canAccessAll, canAdmin, canEnterProject } from './auth/roles.js'
+import { canAccessAll, canAdmin, canEditProjectDiv, canEnterProjectDiv } from './auth/roles.js'
 import { bootstrapDeveloper, createAuthRouter } from './auth/routes.js'
 import { bootstrapSampleProjects } from './auth/sampleProjects.js'
 import { attachCollaborationServer } from './collab/index.js'
@@ -179,7 +179,7 @@ const sessionCookie = (req) => {
 }
 
 async function resolveProjectAccess(req, projectId) {
-  if (!AUTH_ENABLED) return { user: null, projectId, projRole: 'local' }
+  if (!AUTH_ENABLED) return { user: null, projectId, projRole: 'local', canEdit: true }
   if (!idOk(projectId)) return null
 
   const project = await authRepo.getProject(projectId)
@@ -190,7 +190,7 @@ async function resolveProjectAccess(req, projectId) {
     const session = await verifyToken(cookie, 'session').catch(() => null)
     const user = session?.sub ? await authRepo.getUser(String(session.sub)) : null
     if (user && user.active !== false && canAccessAll(user)) {
-      return { user, projectId, projRole: 'developer' }
+      return { user, projectId, projRole: 'developer', canEdit: true }
     }
   }
 
@@ -201,11 +201,29 @@ async function resolveProjectAccess(req, projectId) {
 
   const user = await authRepo.getUser(String(grant.sub))
   if (!user || user.active === false) return null
+  // 비활성화된 프로젝트는 개발자만 접근 가능(관리·복구용) — POST /auth/projects/:id/enter 와
+  // **같은 기준**이다. 예전엔 여기서 project.active 를 아예 보지 않아, 비활성화 전에 발급된
+  // project grant(12시간)를 들고 있으면 snapshot 조회도, 버전 쓰기도 그대로 통과했다.
+  // 관리자가 프로젝트를 끈 뒤에도 최대 12시간 동안 읽고 쓸 수 있었다는 뜻이다.
+  if (!canAccessAll(user) && project.active === false) return null
   const membership = canAccessAll(user)
     ? { projectId, userId: user.id, role: 'developer' }
     : await authRepo.getMembership(projectId, user.id)
-  if (!canEnterProject(user, membership)) return null
-  return { user, projectId, projRole: canAccessAll(user) ? 'developer' : membership.role }
+  // 입장·편집 판정은 CRDT 연결(collab/auth.js)과 **같은 기준**을 쓴다. 예전엔 여기서만
+  // canEnterProject(멤버십 유무)로 입장을 보고 편집 권한은 아예 보지 않아, ① 같은 본부
+  // 조회 입장자는 버전 목록조차 못 보면서 ② 일단 통과한 요청은 전부 쓰기까지 허용됐다.
+  if (!canEnterProjectDiv(user, project, membership)) return null
+  return {
+    user,
+    projectId,
+    project,
+    // 배정(멤버십) 자체를 그대로 노출한다 — '편집 가능'과 '배정된 담당자'는 다른 사실이고
+    // (체험존은 같은 본부 누구나 편집 가능), 복구 이력 쓰기 게이트가 후자를 봐야 한다.
+    membership: membership ?? null,
+    projRole: canAccessAll(user) ? 'developer' : (membership?.role ?? user.role),
+    // 조회 전용(같은 본부 PM 등)은 false — 버전 보관 등 쓰기 라우트는 projectEditGate 가 막는다.
+    canEdit: canEditProjectDiv(user, project, membership),
+  }
 }
 
 const projectDeniedStatus = (req) =>
@@ -224,6 +242,46 @@ const projectGate = async (req, res, next) => {
   } catch (error) {
     next(error)
   }
+}
+
+// 프로젝트 **쓰기** 게이트 — projectGate 뒤에만 붙인다. CRDT 연결이 조회 전용
+// (connectionConfig.readOnly)으로 강등되는 사용자는 HTTP 쓰기 경로에서도 동일하게 막힌다.
+const projectEditGate = (req, res, next) => {
+  if (req.projectGrant?.canEdit) return next()
+  res.status(403).json({ error: '이 프로젝트를 편집할 권한이 없습니다(조회 전용).' })
+}
+
+// 복구 이력(POST .../versions) **쓰기** 게이트 — 편집 권한보다 한 단계 좁다.
+//
+// 이 라우트는 보관 개수 상한(keep)이 오래된 것부터 지우므로 사실상 '복구 이력 삭제 권한'이다.
+// 그런데 체험존(sample) 프로젝트에서는 canEditProjectDiv 가 **같은 본부 누구나**에게 편집을
+// 준다(roles.js). 그래서 배정도 없는 같은 본부 사용자가 keep=20 · 최소 간격 10분 기준으로
+// 약 200분이면 진짜 복구 지점 20개를 전부 밀어낼 수 있었다(실측: 미배정 PM·미배정 일반
+// 사용자 모두 200 + 실제 버전 파일 생성).
+// 자동 보관(CRDT 영속 훅)은 체험존에서도 그대로 돌아가므로 데모 사용성은 잃지 않는다.
+const projectVersionWriteGate = (req, res, next) => {
+  if (!AUTH_ENABLED) return next()
+  const grant = req.projectGrant
+  if (grant?.projRole === 'developer' || grant?.membership) return next()
+  res.status(403).json({
+    error: '복구 이력은 이 프로젝트에 배정된 담당자만 남길 수 있습니다.',
+  })
+}
+
+// 사용자가 직접 누르는 버전 저장(POST .../versions)용 속도 제한. 버전 보관은 개수 상한이
+// 있고 오래된 것부터 지워지므로, 제한 없는 연타 하나로 진짜 복구 지점 전부가 밀려날 수 있다.
+const versionWriteLimiter = createBoundedRateLimiter({
+  limit: 6,
+  windowMs: 60_000,
+  maxTracked: 5_000,
+})
+const versionWriteRateGate = (req, res, next) => {
+  const actor = req.user?.id || 'anonymous'
+  const ip = req.ip || req.socket?.remoteAddress || 'unknown'
+  const result = versionWriteLimiter.consume(`${ip}\0${actor}\0${req.params.id}`)
+  if (result.allowed) return next()
+  res.setHeader('Retry-After', String(result.retryAfter))
+  res.status(429).json({ error: '버전 저장 요청이 너무 잦습니다. 잠시 후 다시 시도하세요.' })
 }
 
 // Per-id write serialization. Concurrent PUTs for the same project (multiple
@@ -415,7 +473,13 @@ function resolveAutosaveDir() {
   return DATA_DIR
 }
 const AUTOSAVE_DIR = resolveAutosaveDir()
-appendLog('info', `자동 임시저장 폴더: ${AUTOSAVE_DIR}`)
+// F15: 버전 보관 상한/간격. 둘 다 env 로 조정 가능하며 아카이브가 1~200으로 클램프한다.
+const AUTOSAVE_KEEP = Number(process.env.HN_AUTOSAVE_KEEP || 20)
+const AUTOSAVE_INTERVAL_MS = Number(process.env.HN_AUTOSAVE_INTERVAL_MS ?? 600_000)
+appendLog(
+  'info',
+  `자동 임시저장 폴더: ${AUTOSAVE_DIR} (프로젝트 ID별 버전 ${AUTOSAVE_KEEP}개 보관, 최소 간격 ${AUTOSAVE_INTERVAL_MS}ms)`,
+)
 
 /** Project name → safe .json filename base. */
 function safeName(name) {
@@ -427,6 +491,8 @@ function safeName(name) {
   return base || 'untitled'
 }
 
+// 레거시(이름 키) — 기존 ProgramData 평면 파일 복구용으로만 남긴다.
+// 신규 저장/복구는 /api/projects/:id/versions 를 쓴다(동명 프로젝트 충돌 없음).
 app.get(
   '/api/autosave',
   listGate,
@@ -463,6 +529,13 @@ app.get(
   }),
 )
 
+// 레거시(이름 키) 읽기 — 예전 평면 파일이 남아 있는 서버에서의 복구 경로.
+//
+// 인가 수준은 **의도적으로** GET /api/projects/:id/snapshot 과 같다(resolveProjectAccess =
+// 입장 등급). 이 파일의 내용은 그 프로젝트의 스냅샷이고, 입장 가능한 사람은 이미
+// /snapshot·/versions 로 같은 내용을 읽을 수 있다 — 즉 여기서만 조이면 얻는 것이 없다.
+// 반면 아래 DELETE 는 '복구 이력 파괴'라 등급이 다르다(개발자 전용). 읽기·삭제가 같은
+// 게이트를 쓰던 것이 회귀의 원인이었으므로 둘을 명시적으로 갈라 둔다.
 app.get(
   '/api/autosave/file/:name',
   asyncRoute(async (req, res) => {
@@ -483,33 +556,32 @@ app.get(
   }),
 )
 
-app.post(
-  '/api/autosave',
-  asyncRoute(async (req, res) => {
-    const project = req.body
-    if (!project || typeof project !== 'object' || !idOk(project.id))
-      return res.status(400).json({ error: '잘못된 본문' })
-    const access = await resolveProjectAccess(req, project.id)
-    if (!access)
-      return res
-        .status(projectDeniedStatus(req))
-        .json({ error: '이 프로젝트 접근 권한이 없습니다.' })
-    const name = safeName(project.name)
-    const file = path.join(AUTOSAVE_DIR, `${name}.json`)
-    await serializeWrite(`autosave:${name}`, async () => {
-      const tmp = `${file}.${process.pid}.${Date.now()}.${Math.random().toString(36).slice(2)}.tmp`
-      try {
-        await fs.writeFile(tmp, JSON.stringify(project, null, 2), 'utf8')
-        await fs.rename(tmp, file)
-      } catch (e) {
-        await fs.unlink(tmp).catch(() => {})
-        throw e
-      }
-    })
-    res.json({ ok: true, file: name, dir: AUTOSAVE_DIR })
-  }),
-)
+// 임시저장 **쓰기** 경로는 폐지됐다(410). 이 라우트는 호출자가 보낸 본문을 그대로 복구
+// 이력에 적재했는데, 그 이력이 곧 [저장 칩 → ⏱ 서버 버전에서 복구] 목록이다. 즉 임의의
+// JSON 한 번으로 '가장 최근 복구 지점'을 위조해, 그걸 되돌린 편집자가 팀 전체의 방을
+// 조작된 내용으로 덮어쓰게 만들 수 있었다. 복구 이력에 들어가는 스냅샷은 이제 서버가
+// 라이브 CRDT 에서 직접 뜬 것(POST /api/projects/:id/versions)만 인정한다.
+// (client/src 에는 이 경로를 호출하는 코드가 없다 — grep 확인.)
+app.post('/api/autosave', (_req, res) => {
+  res.status(410).json({
+    error:
+      '본문을 그대로 저장하는 임시저장은 폐지되었습니다. 서버가 라이브 상태를 스스로 기록하는 버전 저장을 사용하세요.',
+    replacement: 'POST /api/projects/:id/versions',
+  })
+})
 
+// 레거시(이름 키) 삭제 — 예전 평면 파일 정리용. **개발자 전용**.
+//
+// 회귀 이력: resolveProjectAccess 가 canEnterProject(멤버십 필수)에서 canEnterProjectDiv
+// (같은 본부 PM 은 미배정도 입장, sample 프로젝트는 같은 본부 누구나)로 넓어지면서, 이
+// 라우트만 입장 등급에 머물러 있던 탓에 **조회 전용으로 강등된 사람**(POST .../versions 는
+// 403 으로 막히는 바로 그 신분)이 예전 배포들이 남긴 평면 복구 파일을 영구 삭제할 수
+// 있었다. AUTOSAVE_DIR 는 운영에서 %ProgramData%\Sequence — 지워지면 되돌릴 수 없다.
+// 파일명은 safeName(project.name) 이라 같은 본부에 이름이 노출된 사람은 열거조차 필요 없다.
+//
+// 그래서 파괴적 등급을 DELETE /api/projects/:id 와 **동일하게** 맞춘다:
+//   ① 프로젝트 접근(resolveProjectAccess) → ② canAdmin(개발자).
+// (client/src 에는 이 경로를 호출하는 코드가 없다 — api.ts 의 deleteAutosave 는 제거됨.)
 app.delete(
   '/api/autosave/file/:name',
   asyncRoute(async (req, res) => {
@@ -522,12 +594,82 @@ app.delete(
         return res
           .status(projectDeniedStatus(req))
           .json({ error: '이 프로젝트 접근 권한이 없습니다.' })
+      if (AUTH_ENABLED && !canAdmin(access.user)) {
+        return res.status(403).json({ error: '복구 파일 삭제는 개발자 권한이 필요합니다.' })
+      }
       await fs.unlink(file)
       res.json({ ok: true })
     } catch (e) {
       if (e.code === 'ENOENT') return res.status(404).json({ error: '없음' })
       throw e
     }
+  }),
+)
+
+// ── 서버 버전 보관(프로젝트 ID 기준) — F15 ──────────────────────────────────
+// CRDT 영속 시점마다 남긴 스냅샷 이력을 목록·열람하고, 사용자가 직접 한 건 남길 수 있다.
+// 되돌리기 자체는 클라이언트가 내용을 받아 협업 방에 덮어쓰는 방식이라(파일 불러오기와 동일 경로)
+// 서버에 파괴적 restore 엔드포인트를 만들지 않는다 — 실수 한 번으로 방이 날아가지 않도록.
+app.get(
+  '/api/projects/:id/versions',
+  projectGate,
+  asyncRoute(async (req, res) => {
+    const items = (await collabControl.versions?.list(req.params.id)) ?? []
+    res.json({ dir: AUTOSAVE_DIR, keep: collabControl.versions?.keep ?? AUTOSAVE_KEEP, items })
+  }),
+)
+
+app.get(
+  '/api/projects/:id/versions/:version',
+  projectGate,
+  asyncRoute(async (req, res) => {
+    const raw = await collabControl.versions?.read(req.params.id, req.params.version)
+    if (!raw) return res.status(404).json({ error: '없음' })
+    res.type('application/json').send(raw)
+  }),
+)
+
+// 사용자가 직접 남기는 버전 1건. 보관 개수 상한(prune)이 오래된 것부터 지우므로 이 라우트는
+// 곧 '복구 이력 삭제 권한'이기도 하다 — 그래서 ① 편집 권한, ② **배정된 담당자일 것**,
+// ③ 속도 제한, ④ 자동 보관과 같은 최소 간격(minIntervalMs)을 모두 통과해야 한다. 넷 중 하나만
+// 빠져도 연타 한 번으로 진짜 복구 지점이 전부 밀려난다. ②가 없던 시절에는 체험존(sample)
+// 프로젝트에서 같은 본부 **미배정** 사용자도 이 라우트를 통과했다(projectVersionWriteGate 주석).
+app.post(
+  '/api/projects/:id/versions',
+  projectGate,
+  projectEditGate,
+  projectVersionWriteGate,
+  versionWriteRateGate,
+  asyncRoute(async (req, res) => {
+    const { id } = req.params
+    if (!collabControl.versions)
+      return res.status(503).json({ error: '버전 보관소가 준비되지 않았습니다.' })
+    // 간격 제한 응답은 사전 점검 경로와 TOCTOU 경로가 **같은 문구·같은 상태코드**를 쓴다.
+    const respondThrottled = () => {
+      const waitMs =
+        collabControl.versions.retainWaitMs(id) || collabControl.versions.minIntervalMs || 1_000
+      const seconds = Math.max(1, Math.ceil(waitMs / 1_000))
+      res.setHeader('Retry-After', String(seconds))
+      return res.status(429).json({
+        error: `방금 전 버전이 보관되었습니다. ${seconds}초 후에 다시 남길 수 있습니다.`,
+        retryAfterMs: waitMs,
+      })
+    }
+    if (collabControl.versions.retainWaitMs(id) > 0) return respondThrottled()
+    const state = await collabControl.fetchLiveState?.(id)
+    if (!state?.length) return res.status(409).json({ error: '아직 저장할 협업 상태가 없습니다.' })
+    // 자동 보관(CRDT 영속 훅)과 같은 프로젝트 폴더를 건드리므로 쓰기를 직렬화한다.
+    const result = await serializeWrite(`versions:${id}`, () =>
+      collabControl.versions.retain(id, state),
+    )
+    // 위 사전 점검과 retain 내부 재검사 사이에 자동 보관이 끼어들면(탭 두 개·CRDT 영속 훅과
+    // 경합) 여기서 'throttled' 가 돌아온다. 그건 실패가 아니라 간격 제한이므로 500 이 아니라
+    // 429 로 답한다 — 예전엔 500 '버전 저장에 실패했습니다' 토스트가 떠서 사용자가 재시도로
+    // 분당 6회 제한만 소진했다.
+    if (result?.status === 'throttled') return respondThrottled()
+    if (result?.status !== 'ok' || !result.version)
+      return res.status(500).json({ error: '버전 저장에 실패했습니다.' })
+    res.json({ ok: true, version: result.version })
   }),
 )
 
@@ -571,6 +713,11 @@ export async function startServer(options = {}) {
     dataDir: DATA_DIR,
     allowedOrigins: options.allowedOrigins,
     timeout: options.collabTimeout,
+    // F15: 영속 시점 버전 보관(프로젝트 ID 폴더). 개수·간격은 env 로 조정.
+    versionsDir: AUTOSAVE_DIR,
+    versionKeep: AUTOSAVE_KEEP,
+    // 테스트가 최소 보관 간격을 실제 라우트 위에서 검증할 수 있도록 주입 가능(기본은 env).
+    versionIntervalMs: options.versionIntervalMs ?? AUTOSAVE_INTERVAL_MS,
     logger: {
       error(message, error) {
         appendLog('error', message, { message: error?.message, stack: error?.stack })
@@ -583,6 +730,7 @@ export async function startServer(options = {}) {
   collabControl.revokeUser = (userId) => collab.revokeUser(userId)
   collabControl.fetchLiveState = (id) => collab.fetchLiveState(id)
   collabControl.deleteProjectState = (id) => collab.deleteProjectState(id)
+  collabControl.versions = collab.versions
 
   await new Promise((resolve, reject) => {
     server.once('error', reject)

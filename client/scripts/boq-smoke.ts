@@ -51,7 +51,10 @@ eq(res.rows[0].quantity, 1040, 'parseBoqAoa: 행0 수량(콤마 파싱)')
 eq(res.rows[0].unit, '㎥', 'parseBoqAoa: 행0 단위')
 
 // 헤더 미검출 → rows 빈배열 + 경고(크래시 없음)
-const noHeader = parseBoqAoa([['a', 'b'], ['c', 'd']])
+const noHeader = parseBoqAoa([
+  ['a', 'b'],
+  ['c', 'd'],
+])
 eq(noHeader.rows.length, 0, 'parseBoqAoa: 헤더 없으면 rows 빈배열')
 assert(noHeader.warnings.length > 0, 'parseBoqAoa: 헤더 없으면 경고')
 
@@ -83,5 +86,48 @@ eq(mA?.unit, '㎥', 'matchRowsToTasks: A 단위 ㎥')
 const mZ = mappings.find((m) => m.taskId === 'Z')
 eq(mZ?.row, null, 'matchRowsToTasks: Z 미매칭(row=null)')
 eq(unmatchedRows.length, 0, 'matchRowsToTasks: 미사용 행 0(2행 모두 매칭)')
+
+// ── 미매칭 행: 어떤 공정에도 붙지 않은 BoQ 행은 조용히 버리지 않고 돌려준다 ──
+const extraRows = [
+  ...res.rows,
+  { name: '아무 공정에도 없는 항목ZZZ', quantity: 33, unit: '㎥' },
+  { name: '또다른 미매칭 항목QQQ', quantity: 12, unit: 'm' },
+]
+const leftover = matchRowsToTasks(extraRows, tasks)
+eq(leftover.unmatchedRows.length, 2, 'matchRowsToTasks: 미매칭 행 2건을 그대로 반환')
+eq(
+  leftover.unmatchedRows[0].name,
+  '아무 공정에도 없는 항목ZZZ',
+  'matchRowsToTasks: 미매칭 행 내용 보존(사용자 확인용)',
+)
+eq(
+  leftover.mappings.filter((m) => m.row).length,
+  2,
+  'matchRowsToTasks: 미매칭 행이 있어도 정상 매칭은 그대로 2건',
+)
+
+// ── 단위 검사(engine/units 연동) — 값은 고치지 않고 판정만 덧붙인다 ──
+const unitTasks: Task[] = [
+  {
+    id: 'U',
+    categoryId: 'c',
+    name: '토사 굴착',
+    start: 0,
+    duration: 2,
+    isMilestone: false,
+    workCode: 'earthwork-cut-soil', // 표준 단위 ㎥
+  },
+]
+const badUnit = matchRowsToTasks([{ name: '토사 굴착', quantity: 520, unit: 'ton' }], unitTasks)
+eq(badUnit.mappings[0].unitCheck?.status, 'mismatch', 'matchRowsToTasks: ton vs ㎥ → 단위 불일치')
+eq(badUnit.mappings[0].unit, 'ton', 'matchRowsToTasks: 단위 값은 자동 수정하지 않는다')
+const synUnit = matchRowsToTasks([{ name: '토사 굴착', quantity: 1040, unit: 'm3' }], unitTasks)
+eq(synUnit.mappings[0].unitCheck?.status, 'match', 'matchRowsToTasks: m3 는 ㎥ 동의표기 → 일치')
+
+// suggestWorkCode 의 단위 보너스도 동의표기를 인정한다
+const codeSquare = suggestWorkCode('토사 굴착', '굴삭기 1.0㎥', '㎥')
+const codeM3 = suggestWorkCode('토사 굴착', '굴삭기 1.0㎥', 'm3')
+assert(!!codeSquare, 'suggestWorkCode: 토사 굴착(㎥) → 코드 추천됨')
+eq(codeM3, codeSquare, 'suggestWorkCode: m3 와 ㎥ 가 같은 코드를 추천')
 
 console.log(`✓ boq-smoke: ${checks} checks passed`)

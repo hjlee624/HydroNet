@@ -8,8 +8,9 @@
 //
 // 표준 열: 항목(품명/공종) · 규격(선택) · 단위 · 수량. (BoQ 표준 구조 참조.)
 
-import { normWorkName } from '../engine/adequacy'
-import { STANDARD_RATES, findStandardRate } from '../data/standardRates'
+import { findStandardRate, STANDARD_RATES } from '../data/standardRates'
+import { nameMatchScore, normWorkName, tokenizeWorkName } from '../engine/adequacy'
+import { compareUnits, normalizeUnit, type UnitCheck } from '../engine/units'
 import type { Task } from '../types/model'
 
 export interface BoqRow {
@@ -48,7 +49,8 @@ const NAME_KEYS = /품\s*명|명\s*칭|공\s*종|항\s*목|작업|내역|공종�
 const QTY_KEYS = /수\s*량|물\s*량|q'?ty|quantity/i
 const UNIT_KEYS = /단\s*위|unit/i
 const SPEC_KEYS = /규\s*격|사\s*양|spec|치수/i
-const TOTAL_ROW = /^\s*(합\s*계|소\s*계|총\s*계|계|합계금액)\s*$/
+/** 합계/소계 행 판별 — 일정표 취입(state/scheduleImport.ts)도 같은 규칙을 쓴다. */
+export const TOTAL_ROW = /^\s*(합\s*계|소\s*계|총\s*계|계|합계금액)\s*$/
 
 const cell = (v: unknown): string => (v == null ? '' : String(v).trim())
 
@@ -123,7 +125,11 @@ function detectColumns(aoa: string[][]): { headerRowIndex: number; columns: BoqC
 }
 
 /** 검출/사용자 지정 열로 데이터 행을 추출. name 필수·qty>0 만 채택, 합계행 제외. */
-export function extractRows(aoa: string[][], headerRowIndex: number, columns: BoqColumns): BoqRow[] {
+export function extractRows(
+  aoa: string[][],
+  headerRowIndex: number,
+  columns: BoqColumns,
+): BoqRow[] {
   if (columns.name < 0 || columns.qty < 0 || headerRowIndex < 0) return []
   const out: BoqRow[] = []
   for (let r = headerRowIndex + 1; r < aoa.length; r++) {
@@ -148,20 +154,17 @@ export function parseBoqAoa(aoaIn: unknown[][]): BoqParseResult {
     warnings.push('표준 헤더(항목·수량)를 찾지 못했습니다 — 아래에서 열을 직접 지정하세요.')
     return { aoa, headerRowIndex, columns, rows: [], warnings }
   }
-  if (columns.unit < 0) warnings.push('단위 열을 찾지 못했습니다 — 단위는 표준 일작업량에서 보완합니다.')
+  if (columns.unit < 0)
+    warnings.push('단위 열을 찾지 못했습니다 — 단위는 표준 일작업량에서 보완합니다.')
   const rows = extractRows(aoa, headerRowIndex, columns)
   if (rows.length === 0) warnings.push('데이터 행을 읽지 못했습니다 — 열 지정을 확인하세요.')
   return { aoa, headerRowIndex, columns, rows, warnings }
 }
 
 // ── 공종코드 추천(표준 일작업량 DB 매칭) ────────────────────────────────────────
-function tokenize(s: string): string[] {
-  return s
-    .toLowerCase()
-    .replace(/[()[\]{}<>·,/\\.\-_:;'"]+/g, ' ')
-    .split(/\s+/)
-    .filter((w) => w.length >= 1)
-}
+// 토큰화·이름 점수는 engine/adequacy 와 **같은 규칙**을 쓴다(검토요청서의 표준공기 유사
+// 매칭과 동일한 결정론 기준 — 규칙이 갈라지면 화면과 AI 요청서가 서로 다른 매칭을 한다).
+const tokenize = tokenizeWorkName
 
 /**
  * BoQ 항목명/규격/단위로 표준 일작업량 DB의 workCode 를 추천(결정론 점수).
@@ -179,7 +182,8 @@ export function suggestWorkCode(name: string, spec?: string, unit?: string): str
       if (rt.includes(w)) score += 2
       else if (w.length >= 2 && hay.includes(w)) score += 1
     }
-    if (unit && rate.unit && cell(unit) === rate.unit) score += 2
+    // 단위 보너스는 정규화 후 비교 — 'm3'·'루베'도 '㎥' 와 같은 단위로 인정한다(engine/units).
+    if (unit && rate.unit && normalizeUnit(unit) === normalizeUnit(rate.unit)) score += 2
     if (!best || score > best.score) best = { code: rate.code, score }
   }
   return best && best.score >= 3 ? best.code : undefined
@@ -196,18 +200,11 @@ export interface BoqTaskMapping {
   quantity?: number
   unit?: string
   workCode?: string
+  /** 단위 검사(BoQ 단위 vs 표준 일작업량 단위). 값은 고치지 않고 판정만 덧붙인다. */
+  unitCheck?: UnitCheck
 }
 
-function nameScore(a: string, b: string): number {
-  const ta = tokenize(normWorkName(a))
-  const tb = tokenize(normWorkName(b))
-  if (!ta.length || !tb.length) return 0
-  let s = 0
-  for (const w of ta) if (tb.includes(w)) s += 2
-  // 정규화 후 완전일치 강한 가점
-  if (normWorkName(a) === normWorkName(b)) s += 6
-  return s
-}
+const nameScore = nameMatchScore
 
 /**
  * BoQ 행들을 공정(비마일스톤)에 자동 매핑 — 이름 유사도 최고 행을 붙이고, 단위/공종코드는
@@ -232,6 +229,9 @@ export function matchRowsToTasks(
       const row = rows[best.idx]
       const workCode = t.workCode ?? suggestWorkCode(row.name, row.spec, row.unit)
       const unit = row.unit ?? t.unit ?? findStandardRate(workCode)?.unit
+      // 단위 검사 — 표준 일작업량과 단위가 다르면 물량÷생산성이 성립하지 않는다. 값은
+      // 자동 수정하지 않고(원칙 유지) 판정만 실어 UI 가 ⚠ 로 알리고 자동선택에서 뺀다.
+      const unitCheck = compareUnits(unit, findStandardRate(workCode)?.unit)
       mappings.push({
         taskId: t.id,
         taskName: normWorkName(t.name),
@@ -240,6 +240,7 @@ export function matchRowsToTasks(
         quantity: row.quantity,
         ...(unit ? { unit } : {}),
         ...(workCode ? { workCode } : {}),
+        unitCheck,
       })
     } else {
       mappings.push({

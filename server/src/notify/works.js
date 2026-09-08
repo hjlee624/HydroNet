@@ -85,7 +85,9 @@ async function issueAccessToken(cfg) {
   try {
     key = await importPKCS8(cfg.privateKey, 'RS256')
   } catch {
-    throw new Error('프라이빗 키 형식 오류 — PKCS8 PEM(-----BEGIN PRIVATE KEY-----)인지 확인하세요.')
+    throw new Error(
+      '프라이빗 키 형식 오류 — PKCS8 PEM(-----BEGIN PRIVATE KEY-----)인지 확인하세요.',
+    )
   }
   const assertion = await new SignJWT({})
     .setProtectedHeader({ alg: 'RS256', typ: 'JWT' })
@@ -214,6 +216,36 @@ export async function notifyResetRequestSafe(user) {
   }
 }
 
+/** 프로젝트 접근 요청 알림 본문(순수 함수) — F07. 요청은 접근이 아니며 승인이 필요함을 명시한다. */
+export function buildAccessRequestText(
+  { projectName, projectId, division, name, id, role, reason } = {},
+  appUrl = '',
+) {
+  const lines = [
+    '🙋 프로젝트 접근 요청',
+    `프로젝트: ${projectName || projectId || '(미상)'}`,
+    `본부: ${divisionLabel(division)}`,
+    `요청자: ${name || '(미입력)'} (${formatPhone(id)})${role ? ` · ${roleLabel(role)}` : ''}`,
+  ]
+  if (reason) lines.push(`사유: ${reason}`)
+  lines.push('', '승인 전까지 입장은 계속 차단됩니다. 프로젝트 › 참여 인원에서 승인/거절하세요.')
+  if (appUrl) lines.push(appUrl)
+  return lines.join('\n')
+}
+
+/** 접근 요청 알림 발송(설정 시). 절대 throw 안 함 — 요청 라우트에서 fire-and-forget. */
+export async function notifyAccessRequestSafe(info) {
+  try {
+    const cfg = worksConfig()
+    if (!isConfigured(cfg)) return { ok: false, skipped: true }
+    await sendText(cfg, buildAccessRequestText(info, cfg.appUrl))
+    return { ok: true }
+  } catch (e) {
+    console.warn('[works] 접근 요청 알림 발송 실패:', e?.message || e)
+    return { ok: false, error: e?.message || String(e) }
+  }
+}
+
 /** 생성/삭제 행위자 표기 — "이름 (전화)" 또는 이름/전화 단독. */
 function actorLabel(byName, by) {
   const name = String(byName || '').trim()
@@ -281,7 +313,11 @@ export async function notifyProjectDeletedSafe(info) {
 export async function sendTestNotification() {
   const cfg = worksConfig()
   if (!isConfigured(cfg)) {
-    return { ok: false, configured: false, error: '네이버웍스 알림 미설정 — WORKS_* 환경변수를 설정하세요.' }
+    return {
+      ok: false,
+      configured: false,
+      error: '네이버웍스 알림 미설정 — WORKS_* 환경변수를 설정하세요.',
+    }
   }
   try {
     await sendText(cfg, '✅ Sequence 알림 테스트 — 네이버웍스 연동이 정상 동작합니다.')

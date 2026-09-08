@@ -1,0 +1,9 @@
+
+> sequence-client@0.1.0 smoke:schedule-import
+> tsx scripts/schedule-import-smoke.ts
+
+✓ schedule-import-smoke: 238 checks passed
+[Sequence] 불러온 파일을 현재 프로젝트에 적용했습니다. 
+[Sequence] 불러온 파일을 현재 프로젝트에 적용했습니다. 
+[Sequence] 불러온 파일을 현재 프로젝트에 적용했습니다. 
+[Sequence] 일정표 취입: 공종을 찾지 못해 반영하지 않은 행 1건 — 고아 공정(공종 '존재하지 않는 공종') 

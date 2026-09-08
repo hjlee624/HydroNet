@@ -10,12 +10,21 @@
 // computeSchedule을 내부에서 돌려 es/ef/critical을 스스로 채우므로 입력이 pre-schedule여도 안전.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Category, ID, ModuleRecord, Project, Task } from '../types/model'
-import { dateToDay } from './dates'
+import type { Baseline, Category, ID, ModuleRecord, Project, Task } from '../types/model'
+import { dateToDay, toISO } from './dates'
 import { computeSchedule } from './scheduling'
 
 /** 지연 공정 임계값(%p): 실적 − 계획 ≤ 이 값이면 '지연 공정'. 세 화면 공유. */
 export const BEHIND_THRESHOLD = -10
+/**
+ * **사업 전체(누계) 지연 경보 임계값(%p)** — BEHIND_THRESHOLD 는 공정 1건 단위 규칙이라
+ * "개별 공정은 다 −8%p 인데 사업 전체가 −8%p" 인 상황을 아무도 경보하지 않았다. 기간가중
+ * 누계 실적 − 누계 계획 ≤ 이 값이면 사업 단위 경보를 올린다(개별 지연 공정 경보와 별개).
+ * 값이 더 엄격한(작은 절댓값) 이유: 누계는 여러 공정이 상쇄된 뒤의 수치라 같은 %p 라도 무겁다.
+ */
+export const CUMULATIVE_BEHIND_THRESHOLD = -5
+/** 주간 집계 창(일) — '지난 7일 / 다음 7일'. */
+const WEEK_DAYS = 7
 
 export const clampPct = (n: number): number => Math.max(0, Math.min(100, n))
 const clamp01 = (n: number): number => Math.max(0, Math.min(1, n))
@@ -72,6 +81,16 @@ export interface ProgressRow {
   actualPct: number
   deltaPct: number
   critical: boolean
+  /** 공정 담당자(Task.owner). 주간 공정회의 자료의 책임자 열. */
+  owner?: string
+  /** 실적 착수일 ISO(미착수면 undefined). */
+  actualStart?: string
+  /** 실적 완료일 ISO(미완료면 undefined). */
+  actualFinish?: string
+  /** 계획 착수일(사업 시작 기준 day offset, es 우선). */
+  plannedStartDay: number
+  /** 계획 종료일(day offset, ef 우선). */
+  plannedFinishDay: number
 }
 export interface ProgressKpis {
   plannedPct: number
@@ -80,6 +99,10 @@ export interface ProgressKpis {
   behindCount: number
   doneCount: number
   activityCount: number
+  /** 계획 착수일이 지났는데 실적 착수일도 없고 진척도 0인 공정 수(미착수 초과). */
+  notStartedButDue: number
+  /** 계획 종료일이 지났는데 실적 완료일도 없고 진척<100 인 공정 수(미완료 초과). */
+  overdueFinish: number
   rows: ProgressRow[]
 }
 /** 단위 = 천원. */
@@ -229,6 +252,11 @@ export function projectKpis(project: Project, asOf: Date = new Date()): ProjectK
       actualPct,
       deltaPct: actualPct - plannedPct,
       critical: !!t.critical,
+      ...(t.owner ? { owner: t.owner } : {}),
+      ...(t.actualStart ? { actualStart: t.actualStart } : {}),
+      ...(t.actualFinish ? { actualFinish: t.actualFinish } : {}),
+      plannedStartDay: start,
+      plannedFinishDay: finiteOr(t.ef, t.start + t.duration),
     }
   })
   const totDur = rows.reduce((s, r) => s + Math.max(1, r.duration), 0) || 1
@@ -241,6 +269,13 @@ export function projectKpis(project: Project, asOf: Date = new Date()): ProjectK
     behindCount: rows.filter((r) => r.deltaPct <= BEHIND_THRESHOLD).length,
     doneCount: rows.filter((r) => r.actualPct >= 100).length,
     activityCount: rows.length,
+    // 실적 일자 기반 판정 — 진척%가 아니라 '착수/완료를 실제로 찍었는가'를 본다.
+    notStartedButDue: rows.filter(
+      (r) => r.plannedStartDay < todayDay && !r.actualStart && r.actualPct <= 0,
+    ).length,
+    overdueFinish: rows.filter(
+      (r) => r.plannedFinishDay < todayDay && !r.actualFinish && r.actualPct < 100,
+    ).length,
     rows,
   }
 
@@ -300,6 +335,30 @@ export function projectKpis(project: Project, asOf: Date = new Date()): ProjectK
       label: '지연 공정',
       text: `계획比 10%p↓ ${progress.behindCount}건`,
       count: progress.behindCount,
+      severity: 'warn',
+    })
+  // 사업 전체(누계) 지연 — 개별 공정 경보와 별개다. 공정 하나하나는 임계 미만이어도 누계가
+  // 계획에 뒤처지면 준공이 밀린다. 진행 중(계획 실적이 잡히는) 사업에서만 의미가 있다.
+  if (
+    progress.activityCount > 0 &&
+    plannedAll > 0 &&
+    progress.deltaPct <= CUMULATIVE_BEHIND_THRESHOLD
+  )
+    alerts.push({
+      module: 'progress',
+      icon: '🚩',
+      label: '누계 지연',
+      text: `사업 전체 계획比 ${Math.round(progress.deltaPct)}%p (임계 ${CUMULATIVE_BEHIND_THRESHOLD}%p)`,
+      count: Math.abs(Math.round(progress.deltaPct)),
+      severity: progress.deltaPct <= CUMULATIVE_BEHIND_THRESHOLD * 2 ? 'danger' : 'warn',
+    })
+  if (progress.overdueFinish > 0)
+    alerts.push({
+      module: 'progress',
+      icon: '⏰',
+      label: '미완료 초과',
+      text: `계획 종료 경과 ${progress.overdueFinish}건`,
+      count: progress.overdueFinish,
       severity: 'warn',
     })
   const riskOpen = countWhere(recs(project, 'risk'), 'status', ['열림', '진행'])
@@ -396,6 +455,109 @@ export function projectKpis(project: Project, asOf: Date = new Date()): ProjectK
   }
 
   return { todayDay, schedule, progress, cost, boq, coverage, evm, alerts, baseline }
+}
+
+// ── 확정본 비교(F13) ─────────────────────────────────────────────────────────
+/** 기준선 대비 한 공정의 차이. 델타가 0인 공정은 행으로 만들지 않는다. */
+export interface BaselineDiffRow {
+  id: ID
+  name: string
+  baseStart: number
+  baseDuration: number
+  curStart: number
+  curDuration: number
+  /** 현재 시작 − 기준 시작(일). 양수 = 늦어짐. */
+  startDeltaDays: number
+  /** 현재 종료 − 기준 종료(일). 양수 = 늦어짐. */
+  finishDeltaDays: number
+}
+
+/**
+ * 확정본(기준선) 대비 현재 계획의 **공정별 날짜 차이**. 대시보드의 BaselineDrift 가 사업 단위
+ * 요약(준공 표류·지연 건수)이라면 이쪽은 '어느 공정이 며칠 밀렸는가' 를 그대로 보여준다.
+ * 기준선에 없는 공정(확정 후 신설)과 차이 0 인 공정은 제외한다.
+ */
+export function baselineDiff(project: Project, base: Baseline): BaselineDiffRow[] {
+  const safeLinks = project.links.map((l) => (Number.isFinite(l.lag) ? l : { ...l, lag: 0 }))
+  const scheduled = computeSchedule(project.tasks, safeLinks).tasks
+  const baseById = new Map(base.tasks.map((t) => [t.id, t]))
+  const out: BaselineDiffRow[] = []
+  for (const t of scheduled) {
+    const b = baseById.get(t.id)
+    if (!b) continue
+    const curStart = finiteOr(t.es, t.start)
+    const startDeltaDays = curStart - b.start
+    const finishDeltaDays = curStart + t.duration - (b.start + b.duration)
+    if (startDeltaDays === 0 && finishDeltaDays === 0) continue
+    out.push({
+      id: t.id,
+      name: t.name,
+      baseStart: b.start,
+      baseDuration: b.duration,
+      curStart,
+      curDuration: t.duration,
+      startDeltaDays,
+      finishDeltaDays,
+    })
+  }
+  return out.sort((a, b) => Math.abs(b.finishDeltaDays) - Math.abs(a.finishDeltaDays))
+}
+
+// ── 주간 공정회의 자동 집계(F16) ──────────────────────────────────────────────
+export interface WeeklyDigest {
+  /** 집계 구간 시작(ISO, 오늘 −7일). */
+  fromISO: string
+  /** 집계 구간 끝(ISO, 오늘). */
+  toISO: string
+  /** 지난 7일 안에 실적 착수일이 찍힌 공정. */
+  started: ProgressRow[]
+  /** 지난 7일 안에 실적 완료일이 찍힌 공정. */
+  finished: ProgressRow[]
+  /** 계획比 임계 이상 지연된 공정(BEHIND_THRESHOLD). */
+  behind: ProgressRow[]
+  /** 계획 착수일이 오늘~+7일 안인 공정(다음 주 착수 예정). */
+  nextWeek: ProgressRow[]
+  /** 계획 종료일이 지났는데 완료 실적이 없는 공정. */
+  overdue: ProgressRow[]
+  /** 임박 마일스톤(기존 schedule.upcoming 재사용). */
+  milestones: UpcomingMilestone[]
+  /** 사업 전체 누계 계획/실적/편차(%p) — 회의록 머리말 숫자. */
+  plannedPct: number
+  actualPct: number
+  deltaPct: number
+}
+
+/**
+ * 주간 공정회의 자료 — **별도 수기 집계 없이** 지난주 착수·완료 / 지연 / 다음주 착수 예정을
+ * 뽑는다. 내부에서 projectKpis 를 1회만 부르므로 대시보드·진척 화면과 산식이 절대 갈라지지 않는다
+ * (이 파일 머리말의 '단일 셀렉터' 원칙). 원본 공정 id 가 그대로 실려 보고 숫자 → 공정 추적이 된다.
+ */
+export function weeklyDigest(project: Project, asOf: Date = new Date()): WeeklyDigest {
+  const k = projectKpis(project, asOf)
+  const rows = k.progress.rows
+  const today = k.todayDay
+  const fromDate = new Date(asOf)
+  fromDate.setDate(fromDate.getDate() - WEEK_DAYS)
+  const fromISO = toISO(fromDate)
+  const toISOStr = toISO(asOf)
+  const inWindow = (iso: string | undefined): boolean => !!iso && iso >= fromISO && iso <= toISOStr
+  return {
+    fromISO,
+    toISO: toISOStr,
+    started: rows.filter((r) => inWindow(r.actualStart)),
+    finished: rows.filter((r) => inWindow(r.actualFinish)),
+    behind: rows
+      .filter((r) => r.deltaPct <= BEHIND_THRESHOLD)
+      .sort((a, b) => a.deltaPct - b.deltaPct),
+    nextWeek: rows
+      .filter((r) => r.plannedStartDay >= today && r.plannedStartDay <= today + WEEK_DAYS)
+      .sort((a, b) => a.plannedStartDay - b.plannedStartDay),
+    overdue: rows.filter((r) => r.plannedFinishDay < today && !r.actualFinish && r.actualPct < 100),
+    milestones: k.schedule.upcoming,
+    plannedPct: k.progress.plannedPct,
+    actualPct: k.progress.actualPct,
+    deltaPct: k.progress.deltaPct,
+  }
 }
 
 /** 시트별(예정공정표/마일스톤) 요약 — 활성 시트는 top-level, 나머지는 resident sheet에서. */

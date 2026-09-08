@@ -9,9 +9,11 @@ import {
 } from '../state/collaboration'
 import {
   getCurrentCrdtRuntime,
+  observeLocalPersistence,
   type ProjectCrdtRuntime,
   subscribeProjectCrdtRuntime,
 } from '../state/crdt'
+import { usePersistence } from '../state/persistence'
 import { useEditor } from '../state/store'
 
 /** Lifecycle-only bridge: collaboration transport and presence never enter the Project model. */
@@ -33,6 +35,18 @@ export function CollaborationBridge() {
   useEffect(() => {
     useEditor.getState().setReadOnly(!!entered && entered.canEdit === false)
   }, [entered])
+
+  // 저장 위치·로컬 확정 배선(F01). 협업 방에 입장하지 않은 문서는 '로컬만 저장'이며,
+  // 이 브라우저 편집과 IndexedDB flush 확정만이 표시의 근거가 된다.
+  useEffect(() => {
+    if (!runtime) return
+    const persistence = usePersistence.getState()
+    if (!entered) persistence.setTarget('local', '이 브라우저(로컬 저장소)')
+    return observeLocalPersistence(runtime, {
+      onLocalChange: () => usePersistence.getState().markLocalChange(),
+      onLocalFlushed: () => usePersistence.getState().markLocalPersisted(),
+    })
+  }, [runtime, entered])
 
   useEffect(() => {
     let cancelled = false

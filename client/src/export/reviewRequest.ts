@@ -9,7 +9,12 @@
 // 그대로) 왕복 매핑을 결정적으로 만든다(ADR-003 §9-①).
 
 import { facilityLabel, standardDurationIndex } from '../data/facilities'
-import { assessConstructionPeriod, assessTaskAdequacy } from '../engine/adequacy'
+import {
+  assessConstructionPeriod,
+  assessTaskAdequacy,
+  DEFAULT_TOLERANCE_PCT,
+  findSimilarWorkName,
+} from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
 import { computeSchedule } from '../engine/scheduling'
 import { reviewFingerprint } from '../state/reviewFingerprint'
@@ -26,6 +31,36 @@ function fmtPct(cur: number, std: number): string {
   if (!std) return '—'
   const p = Math.round(((cur - std) / std) * 100)
   return p === 0 ? '±0%' : p > 0 ? `+${p}%` : `${p}%`
+}
+
+/** 이미 계산된 편차%를 부호와 함께 표기('+12.3%' · '-8%' · '±0%'). */
+function signPct(p: number): string {
+  if (p === 0) return '±0%'
+  return p > 0 ? `+${p}%` : `${p}%`
+}
+
+/** 표준공기 앵커 1건(일수 + 유사 매칭 여부). */
+interface StdAnchor {
+  days: number
+  /** 이름이 정확히 일치하지 않아 토큰 겹침으로 이은 근사 앵커. */
+  approx: boolean
+  /** 유사 매칭에 쓰인 표준 템플릿 공정명(approx 일 때만). */
+  via?: string
+}
+
+/**
+ * 공정명 → 표준 템플릿 공기. 완전일치가 없으면 **결정론 토큰 겹침**으로 유사 매칭한다
+ * ('가물막이 설치' ↔ '상류 가물막이'). 유사 매칭은 approx 로 표시해 근사임을 알린다.
+ * front-matter 의 standardDays 에는 **완전일치만** 싣는다(라운드트립 계약 불변).
+ */
+function resolveStandard(name: string, stdIdx: Map<string, number | null>): StdAnchor | null {
+  const exact = stdIdx.get(normName(name))
+  if (typeof exact === 'number') return { days: exact, approx: false }
+  const keys = [...stdIdx.keys()].filter((k) => typeof stdIdx.get(k) === 'number')
+  const hit = findSimilarWorkName(name, keys)
+  if (!hit) return null
+  const days = stdIdx.get(hit.key)
+  return typeof days === 'number' ? { days, approx: true, via: hit.key } : null
 }
 
 function isoOffset(d: Date): string {
@@ -70,7 +105,9 @@ export function buildReviewRequestMd(project: Project): string {
   const startDate = project.startDate
   const stdIdx = standardDurationIndex(project.facility)
   // CPM 계산으로 주공정(critical) 을 확정 — 표의 주공정 표기·적정성 판정(주공정선 한정)이 실측 기반이 된다.
-  const scheduled = computeSchedule(project.tasks, project.links).tasks
+  // 미해결 문제(순환 의존성)가 있으면 이 일정 자체가 '잠정'이므로 외부 검토자에게 그대로 알린다.
+  const sched = computeSchedule(project.tasks, project.links)
+  const scheduled = sched.tasks
   const critById = new Map(scheduled.map((t) => [t.id, t] as const))
   const tasks = project.tasks
   const work = tasks.filter((t) => !t.isMilestone)
@@ -87,6 +124,10 @@ export function buildReviewRequestMd(project: Project): string {
     if (typeof std === 'number') standardById.push([t.id, std])
   }
 
+  // 공기 산정 전제 — 표(공정별 판정)와 아래 「법정 산정 근거」가 **같은 허용 편차**를 쓰도록
+  // 표를 그리기 전에 꺼내 둔다. 표에 넘기지 않으면 문서 안에서 '허용 편차 5%(입력)' 라고
+  // 적어 놓고 각 공정은 15%로 판정하는 자기모순이 생긴다.
+  const pi = project.periodInputs
   const totalDays = tasks.reduce((m, t) => Math.max(m, t.start + t.duration), 0)
   const cats = [...project.categories].sort((a, b) => a.order - b.order)
   const catCount = cats.filter((c) => work.some((t) => t.categoryId === c.id)).length
@@ -103,6 +144,8 @@ export function buildReviewRequestMd(project: Project): string {
   out.push(`reviewFingerprint: ${yamlStr(reviewFingerprint(project))}`)
   out.push('unit: integer-days')
   out.push(`exportedAt: ${yamlStr(isoOffset(new Date()))}`)
+  out.push(`unresolvedProblems: ${sched.problems.length}`)
+  out.push(`scheduleStatus: ${sched.problems.length > 0 ? 'provisional' : 'final'}`)
   out.push('taskDurations:')
   for (const [id, d] of durationsById) out.push(`  ${yamlStr(id)}: ${d}`)
   out.push('standardDays:')
@@ -139,6 +182,13 @@ export function buildReviewRequestMd(project: Project): string {
     out.push(
       '- **표준공기 기준:** 없음(사용자 정의 시설물) — 유사 실적·공학적 판단으로 검토해 주세요.',
     )
+  // 잠정 상태를 사람이 읽는 본문에도 명시 — front-matter 만으로는 검토자가 놓친다.
+  if (sched.problems.length > 0) {
+    out.push(
+      `- **⚠ 미해결 일정 문제:** ${sched.problems.length}건(순환 의존성) — 아래 일정(시작·종료·주공정)은 **잠정** 산정입니다.`,
+    )
+    for (const p of sched.problems) out.push(`  - ${p.message}`)
+  }
   out.push('')
 
   // ── 마일스톤(참고) ──
@@ -151,7 +201,17 @@ export function buildReviewRequestMd(project: Project): string {
   }
 
   // ── [4] 공정표 본표 (공종별) ──
+  // 표를 그리면서 모으는 주의 항목(단위 불일치·유사 매칭) — 표 아래에 한 번에 알린다.
+  const unitIssues: string[] = []
+  const approxStd: string[] = []
   out.push('## 공정표 (공기 적정성 검토 대상)')
+  out.push('')
+  // 표의 「적정성(법정)」 칸이 어떤 허용 편차로 판정됐는지 문서에 명시 — 아래 「산정 전제」와
+  // 반드시 같은 값이어야 한다(같은 project.periodInputs.tolerancePct 를 쓴다).
+  out.push(
+    `> 「적정성(법정)」 판정 허용 편차: **±${pi?.tolerancePct ?? DEFAULT_TOLERANCE_PCT}%**` +
+      ` (${pi?.tolerancePct != null ? '사용자 입력' : '제품 기본 가정'}) — 아래 「산정 전제」와 동일한 값입니다.`,
+  )
   out.push('')
   for (const c of cats) {
     const rows = work.filter((t) => t.categoryId === c.id)
@@ -168,17 +228,36 @@ export function buildReviewRequestMd(project: Project): string {
       const start = toISO(dayToDate(startDate, t.start))
       const end = toISO(dayToDate(startDate, t.start + t.duration))
       const crit = sTask.critical ? '●' : ''
-      const std = stdIdx.get(normName(t.name))
-      const stdCell = typeof std === 'number' ? String(std) : '—'
-      const cmp = typeof std === 'number' ? fmtPct(t.duration, std) : '—'
+      const anchor = resolveStandard(t.name, stdIdx)
+      // 유사 매칭은 '≈' 와 매칭된 표준 공정명을 함께 적어, 앵커가 근사임을 LLM 이 알게 한다.
+      const stdCell = anchor ? `${anchor.approx ? '≈' : ''}${anchor.days}` : '—'
+      const cmp = anchor ? fmtPct(t.duration, anchor.days) : '—'
       const adq = assessTaskAdequacy(sTask, {
-        standardDuration: typeof std === 'number' ? std : undefined,
+        standardDuration: anchor?.days,
+        tolerancePct: pi?.tolerancePct,
       })
       const theo = adq.theoretical != null ? String(adq.theoretical) : '—'
-      const verdictCell =
-        adq.verdict === '판정불가'
+      const unitBad = adq.unitCheck.status === 'mismatch'
+      if (unitBad)
+        unitIssues.push(
+          `${normName(t.name)} — 입력 «${adq.unitCheck.taskUnit}» vs 표준 «${adq.unitCheck.rateUnit}»`,
+        )
+      if (anchor?.approx) approxStd.push(`${normName(t.name)} ← 표준 «${anchor.via}» (유사 매칭)`)
+      // 판정이 **근사 앵커(유사 매칭 표준공기)에만 기대어** 내려졌는지 — ①산정식(물량÷생산성)
+      // 편차가 없어 ②표준대비로 승격된 경우다. 이때 판정 셀에도 '≈'·'근사 앵커'를 달아,
+      // 표준(일) 칸의 '≈' 만 보고 판정은 확정으로 읽는 오독(외부 LLM 포함)을 막는다.
+      const approxVerdict =
+        !!anchor?.approx && adq.deviationPct == null && adq.standardDeviationPct != null
+      const verdictCell = unitBad
+        ? '판정불가(⚠단위)'
+        : adq.verdict === '판정불가'
           ? '—'
-          : `${adq.verdict}${adq.deviationPct != null ? ` (${adq.deviationPct > 0 ? '+' : ''}${adq.deviationPct}%)` : ''}`
+          : `${approxVerdict ? '≈' : ''}${adq.verdict}` +
+            (adq.deviationPct != null
+              ? ` (${adq.deviationPct > 0 ? '+' : ''}${adq.deviationPct}%${approxVerdict ? ', 근사 앵커' : ''})`
+              : approxVerdict
+                ? ` (${signPct(adq.standardDeviationPct as number)}, 근사 앵커)`
+                : '')
       out.push(
         `| ${escCell(name)} | ${t.duration} | ${theo} | ${verdictCell} | ${start} | ${end} | ${crit} | ${stdCell} | ${cmp} | \`[[id:${t.id}]]\` |`,
       )
@@ -192,9 +271,18 @@ export function buildReviewRequestMd(project: Project): string {
     links: project.links,
     rainySeasons: project.rainySeasons,
     startDate: project.startDate,
+    prepDays: pi?.prepDays,
+    cleanupDays: pi?.cleanupDays,
+    holidayDays: pi?.holidayDays,
+    weatherDays: pi?.weatherDays,
+    tolerancePct: pi?.tolerancePct,
   })
   out.push('## 공기 적정성 — 법정 산정 근거')
   out.push('')
+  if (cp.assumed)
+    out.push(
+      '> ⚠️ **가정 기반 참고값** — 아래 「산정 전제」 중 사용자가 입력하지 않아 기본 가정값으로 계산한 항목이 있습니다. 확정(법정) 판정이 아니므로 검토 의견에 그 한계를 함께 적어 주세요.',
+    )
   out.push(
     '> 아래는 「공공 건설공사의 공사기간 산정기준」(국토부고시 제2024-1021호)에 따른 **결정론 산정 결과**입니다. 일반 지식이 아니라 **이 근거를 우선**으로 각 공정과 전체 공기의 적정성을 판단하세요.',
   )
@@ -209,12 +297,50 @@ export function buildReviewRequestMd(project: Project): string {
         : ''),
   )
   out.push(
-    `- **작업일수:** 주공정 ${cp.criticalCount}개 중 물량기반 산정 ${cp.workByQuantityCount}개(나머지는 현 공기로 근사)`,
+    `- **작업량 합계:** ${cp.workSum}일(주공정 ${cp.criticalCount}개 작업일수 총합 · **병렬 포함**) · ` +
+      `**경과 작업공기:** ${cp.workSpan}일(선후행망 최장경로) — 총공기 산정에는 경과 작업공기를 씁니다. 두 값을 합산하거나 혼용하지 마세요.`,
   )
   out.push(
-    `- **비작업일수:** 주말 ${cp.nonWork.weekend} + 기상(우기밴드) ${cp.nonWork.weather} + 법정공휴일 ${cp.nonWork.holiday} = ${cp.nonWork.total}일`,
+    `- **작업일수 산정:** 주공정 ${cp.criticalCount}개 중 물량기반 산정 ${cp.workByQuantityCount}개(나머지는 현 공기로 근사)`,
+  )
+  out.push(
+    `- **비작업일수:** 주말 ${cp.nonWork.weekend} + 기상 ${cp.nonWork.weather} + 법정공휴일 ${cp.nonWork.holiday} − 중복 ${cp.nonWork.overlap} = ${cp.nonWork.total}일`,
+  )
+  if (cp.unitIssueCount > 0)
+    out.push(
+      `- **⚠ 단위 불일치 ${cp.unitIssueCount}개 공종** — 물량 산정에서 제외했습니다(현 공기로 근사). 회신 전 단위를 정정하세요.`,
+    )
+  out.push('')
+  out.push('### 산정 전제')
+  out.push('')
+  for (const as of cp.assumptions)
+    out.push(
+      `- ${as.label} **${as.value}${as.key === 'tolerance' ? '%' : '일'}** ` +
+        `(${as.source === 'default' ? '가정' : '입력'} · ${escCell(as.note)})`,
+    )
+  out.push('')
+  out.push(
+    `> 허용 편차 ±${cp.assumptions.find((a) => a.key === 'tolerance')?.value ?? 15}% 는 이 제품의 기본 허용치이며 「산정기준」이 정한 법정 수치가 아닙니다.`,
   )
   out.push('')
+  if (unitIssues.length > 0) {
+    out.push('### ⚠ 단위 불일치 공정 (적정성 판정 제외)')
+    out.push('')
+    out.push(
+      '아래 공정은 입력 물량의 단위가 표준 일작업량(부록4)의 단위와 달라 **물량÷생산성이 성립하지 않습니다**. 임의 환산 없이 판정을 보류했으니, 기간 검토 시 이 점을 감안해 주세요.',
+    )
+    for (const u of unitIssues) out.push(`- ${escCell(u)}`)
+    out.push('')
+  }
+  if (approxStd.length > 0) {
+    out.push('### 표준공기 유사 매칭 (근사 앵커)')
+    out.push('')
+    out.push(
+      '아래 공정은 표준 템플릿에 **같은 이름이 없어** 이름이 닮은 공정의 표준공기를 근사 앵커로 붙였습니다(표의 "표준(일)" 앞 `≈` 표시). 정확한 동일 공종이 아닐 수 있으니 참고값으로만 쓰세요.',
+    )
+    for (const s of approxStd) out.push(`- ${escCell(s)}`)
+    out.push('')
+  }
   for (const b of cp.basis) out.push(`  - ${escCell(b)}`)
   out.push('')
 

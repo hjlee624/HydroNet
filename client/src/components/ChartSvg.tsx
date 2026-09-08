@@ -633,6 +633,14 @@ function ChartSvgBase({
               : (userColor ?? (emphasizeCrit ? colors.critical : laneColor(model, lt.categoryId)))
           // DUMMY 공정은 항상 공종색을 60% 투명(0.4)으로 칠한다.
           const fill = isDummy ? laneColor(model, lt.categoryId) : baseFill
+          // 공기 적정성 부적정 판정(과소/과다). 툴팁(<title>)은 **마우스를 실제로 받는 막대**에
+          // 붙인다 — 아래 경보 그래픽 그룹은 pointer-events:none 이라 그 안의 <title>은 히트
+          // 테스트에 절대 걸리지 않아 영원히 뜨지 않았다.
+          const adqMark = mirror || isDummy ? undefined : adequacyByTaskId?.get(t.id)
+          const adqWarn =
+            adqMark && (adqMark.verdict === '과소' || adqMark.verdict === '과다')
+              ? adqMark
+              : undefined
           if (lt.isMilestone) {
             // Critical milestones are enlarged with a red halo so the critical
             // path reads clearly even at the diamond markers.
@@ -755,10 +763,19 @@ function ChartSvgBase({
                 style={mirror ? { pointerEvents: 'none' } : undefined}
                 onPointerDown={mirror ? undefined : (e) => onTaskPointerDown(e, t.id)}
                 onMouseEnter={
-                  mirror || !onTaskHover ? undefined : (e) => onTaskHover(t.id, e.clientX, e.clientY)
+                  mirror || !onTaskHover
+                    ? undefined
+                    : (e) => onTaskHover(t.id, e.clientX, e.clientY)
                 }
                 onMouseLeave={mirror || !onTaskHover ? undefined : () => onTaskHover(null, 0, 0)}
-              />
+              >
+                {/* 화면 전용 안내라 출력에서는 뺀다(data-export-hide). */}
+                {adqWarn && (
+                  <title data-export-hide="1">
+                    {`${adqWarn.verdict}${adqWarn.criticalApplicable ? ' (주공정)' : ' (참고용 · 주공정선 아님)'}`}
+                  </title>
+                )}
+              </rect>
               <text
                 x={lt.x}
                 y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
@@ -767,21 +784,41 @@ function ChartSvgBase({
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
               </text>
-              {/* 부적정(과소/과다) 경보 — 화면 전용(내보내기 제외). 결정론 엔진(adequacy) 판정 기반. */}
+              {/* 부적정(과소/과다) 경보 — 화면 전용(내보내기 제외). 결정론 엔진(adequacy) 판정 기반.
+                  주공정선이 아닌 공정(criticalApplicable=false)은 법정 산정식의 직접 적용 대상이
+                  아니므로 '참고용'임이 보이게 옅은 점선 + 작은 기호로 낮춰 표시한다. */}
               {(() => {
-                const mark = adequacyByTaskId?.get(t.id)
-                if (mirror || isDummy || !mark) return null
-                if (mark.verdict !== '과소' && mark.verdict !== '과다') return null
-                const warnColor = mark.verdict === '과소' ? '#d64541' : '#e0972a'
+                if (!adqWarn) return null
+                const warnColor = adqWarn.verdict === '과소' ? '#d64541' : '#e0972a'
+                const ref = !adqWarn.criticalApplicable // 참고용(주공정 아님)
                 return (
-                  <g data-export-hide="1" pointerEvents="none">
-                    <rect x={lt.x} y={lt.y - 0.5} width={lt.w} height={2.5} rx={1} fill={warnColor} />
+                  <g data-export-hide="1" pointerEvents="none" opacity={ref ? 0.45 : 1}>
+                    {ref ? (
+                      <line
+                        x1={lt.x}
+                        y1={lt.y + 0.75}
+                        x2={lt.x + lt.w}
+                        y2={lt.y + 0.75}
+                        stroke={warnColor}
+                        strokeWidth={1.5}
+                        strokeDasharray="3 2.5"
+                      />
+                    ) : (
+                      <rect
+                        x={lt.x}
+                        y={lt.y - 0.5}
+                        width={lt.w}
+                        height={2.5}
+                        rx={1}
+                        fill={warnColor}
+                      />
+                    )}
                     <text
                       x={lt.endX - 4}
                       y={lt.cy + 4}
                       textAnchor="end"
-                      fontSize={11}
-                      fontWeight={700}
+                      fontSize={ref ? 8.5 : 11}
+                      fontWeight={ref ? 400 : 700}
                       fill={warnColor}
                     >
                       ⚠

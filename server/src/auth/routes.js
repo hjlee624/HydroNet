@@ -2,6 +2,7 @@
 import express from 'express'
 import { nanoid } from 'nanoid'
 import {
+  notifyAccessRequestSafe,
   notifyProjectCreatedSafe,
   notifyProjectDeletedSafe,
   notifyRegistrationSafe,
@@ -28,12 +29,20 @@ import {
   canEditProjectDiv,
   canEnterProjectDiv,
   canManageProject,
+  canSeeProject,
   isDeveloper,
   isDivision,
   isRole,
   PROJECT_ROLES,
   sameDivision,
 } from './roles.js'
+
+/** F07: 접근 요청 유효기간(7일). 만료는 읽기 시점에 계산한다(백그라운드 잡 없음). */
+const ACCESS_REQUEST_TTL_MS = 7 * 24 * 60 * 60 * 1000
+/** 저장된 status + 만료 시각으로 실제 상태를 정한다. pending 인데 기한이 지났으면 expired.
+ *  만료는 저장에도 확정되지만(재요청/결재 시), 확정 전 조회까지 덮도록 읽기에서도 계산한다. */
+const effectiveRequestStatus = (r, now = Date.now()) =>
+  r.status === 'pending' && Number(r.expiresAt) <= now ? 'expired' : r.status
 
 const COOKIE = 'hn_session'
 const parseCookies = (req) => {
@@ -81,6 +90,12 @@ export function createAuthRouter(repo, opts = {}) {
   let loginAttemptOps = 0
   // 비밀번호 초기화 요청 남용 방지(IP당 5회/10분) — 알림 DoS·전화번호 열거 완화.
   const resetLimiter = createBoundedRateLimiter({
+    limit: 5,
+    windowMs: 10 * 60 * 1000,
+    maxTracked: 5000,
+  })
+  // F07: 접근 요청 남용 방지(IP당 5회/10분) — 담당자 알림 DoS 완화. reset 과 같은 정책.
+  const accessRequestLimiter = createBoundedRateLimiter({
     limit: 5,
     windowMs: 10 * 60 * 1000,
     maxTracked: 5000,
@@ -171,6 +186,11 @@ export function createAuthRouter(repo, opts = {}) {
         return res.status(401).json({ error: '유효하지 않은 계정입니다.' })
       const project = await repo.getProject(projectId)
       if (!project) return res.status(404).json({ error: '프로젝트를 찾을 수 없습니다.' })
+      // 비활성화된 프로젝트는 개발자만(관리·복구용). POST /auth/projects/:id/enter 와 같은 기준.
+      // 예전엔 이 게이트가 project.active 를 보지 않아, 비활성화 **전에** 발급된 12시간짜리
+      // project grant 로 collab-ticket 을 계속 새로 발급받아 CRDT 방을 편집할 수 있었다.
+      if (!canAccessAll(user) && project.active === false)
+        return res.status(403).json({ error: '비활성화된 프로젝트입니다.' })
       const membership = canAccessAll(user)
         ? { role: 'developer' }
         : await repo.getMembership(projectId, user.id)
@@ -475,6 +495,10 @@ export function createAuthRouter(repo, opts = {}) {
       if (!(await repo.getProject(req.params.id))) throw fail(404, '프로젝트를 찾을 수 없습니다.')
       const active = req.body?.active !== false
       await repo.setProjectActive(req.params.id, active)
+      // 비활성화는 '이미 들어와 있는 사람'에게도 즉시 효력이 있어야 한다 — 멤버 해임(#14)과
+      // 같은 처리로 그 방의 활성 WebSocket 연결을 전부 끊는다. 끊지 않으면 관리자가 프로젝트를
+      // 끈 뒤에도 열려 있던 CRDT 연결로 계속 편집이 들어온다.
+      if (!active) revokeProjectAccess(req.params.id, null)
       res.json({ ok: true, active })
     }),
   )
@@ -523,6 +547,10 @@ export function createAuthRouter(repo, opts = {}) {
       const userId = String(req.projectGrant?.sub ?? req.user?.id ?? '')
       const user = userId ? await repo.getUser(userId) : null
       if (!user || user.active === false) throw fail(401, '유효하지 않은 계정입니다.')
+      // requireProjectToken 이 이미 같은 판정을 하지만, 티켓 발급은 '5분짜리 CRDT 쓰기 권한'을
+      // 새로 찍어내는 지점이라 여기서도 명시적으로 막는다(게이트 하나가 바뀌어도 남는 방어선).
+      if (!canAccessAll(user) && project.active === false)
+        throw fail(403, '비활성화된 프로젝트입니다.')
       const membership = canAccessAll(user)
         ? { role: 'developer' }
         : await repo.getMembership(projectId, user.id)
@@ -775,6 +803,180 @@ export function createAuthRouter(repo, opts = {}) {
       res.json({ ok: true })
     }),
   )
+  // ── F07 프로젝트 접근 요청 ────────────────────────────────────────────────────
+  // 설계 원칙: **요청은 접근이 아니다.** 아래 라우트 중 어느 것도 입장 판정
+  // (canEnterProjectDiv)에 관여하지 않는다. 오직 decide(approve=true)가 만드는
+  // 프로젝트 멤버십만이 /auth/projects/:id/enter 를 연다.
+
+  /** 담당자 안내 — 입장 불가 화면에서 '누구에게 요청하는지'를 보여준다. 전화번호는 반환하지 않는다. */
+  router.get(
+    '/auth/projects/:id/contacts',
+    authMw,
+    wrap(async (req, res) => {
+      const project = await repo.getProject(req.params.id)
+      if (!project) throw fail(404, '프로젝트를 찾을 수 없습니다.')
+      // 목록에 보이는 범위(개발자 또는 같은 본부)에서만 담당자를 알려준다 — 본부 경계 그대로.
+      if (!canSeeProject(req.user, project))
+        throw fail(403, '이 프로젝트를 조회할 권한이 없습니다.')
+      const members = await repo.listMembers(req.params.id)
+      const users = new Map((await repo.listUsers()).map((u) => [u.id, u]))
+      const managers = members
+        .filter((m) => m.role === 'pm')
+        .map((m) => ({
+          name: users.get(m.userId)?.name ?? '',
+          division: users.get(m.userId)?.division ?? null,
+          role: 'pm',
+        }))
+      // 담당 PM 이 아직 없으면 생성자를 폴백으로 안내(개발자가 만든 프로젝트 등).
+      if (managers.length === 0 && project.createdBy) {
+        const creator = users.get(project.createdBy)
+        if (creator)
+          managers.push({
+            name: creator.name ?? '',
+            division: creator.division ?? null,
+            role: creator.role ?? 'pm',
+          })
+      }
+      res.json({ managers })
+    }),
+  )
+
+  /** 접근 요청 접수 — 기록만 남긴다. 응답 성공이 입장 권한을 뜻하지 않는다. */
+  router.post(
+    '/auth/projects/:id/access-request',
+    authMw,
+    wrap(async (req, res) => {
+      const projectId = req.params.id
+      const project = await repo.getProject(projectId)
+      if (!project) throw fail(404, '프로젝트를 찾을 수 없습니다.')
+      if (!canSeeProject(req.user, project))
+        throw fail(403, '이 프로젝트를 조회할 권한이 없습니다.')
+      if (project.active === false) throw fail(403, '비활성화된 프로젝트입니다.')
+      if (await repo.getMembership(projectId, req.user.id))
+        throw fail(400, '이미 이 프로젝트에 배정되어 있습니다.')
+      const rl = accessRequestLimiter.consume(req.socket?.remoteAddress || req.ip || 'unknown')
+      if (!rl.allowed) {
+        res.setHeader('Retry-After', String(rl.retryAfter))
+        throw fail(429, '접근 요청이 너무 많습니다. 잠시 후 다시 시도하세요.')
+      }
+      const now = Date.now()
+      let created
+      try {
+        created = await repo.createAccessRequest({
+          id: `ar_${nanoid(10)}`,
+          projectId,
+          userId: req.user.id,
+          reason: String(req.body?.reason || '').slice(0, 300),
+          status: 'pending',
+          requestedAt: now,
+          expiresAt: now + ACCESS_REQUEST_TTL_MS,
+        })
+      } catch (e) {
+        if (e?.code === 'conflict') throw fail(409, '이미 처리 대기 중인 요청이 있습니다.')
+        throw e
+      }
+      // 담당자 알림(설정 시). fire-and-forget — 발송 실패해도 요청 접수는 성공.
+      void notifyAccessRequestSafe({
+        projectName: project.name,
+        projectId,
+        division: project.division,
+        name: req.user.name,
+        id: req.user.id,
+        role: req.user.role,
+        reason: created.reason,
+      }).catch(() => {})
+      res.status(201).json({ ok: true, request: { ...created, status: 'pending' } })
+    }),
+  )
+
+  /** 내 요청 + 내가 처리할 요청. 만료는 여기서 계산해 status='expired' 로 내려준다. */
+  router.get(
+    '/auth/access-requests',
+    authMw,
+    wrap(async (req, res) => {
+      const now = Date.now()
+      const all = await repo.listAccessRequests()
+      const users = new Map((await repo.listUsers()).map((u) => [u.id, u]))
+      const projects = new Map((await repo.listProjects()).map((p) => [p.id, p]))
+      const decorate = (r) => ({
+        id: r.id,
+        projectId: r.projectId,
+        projectName: projects.get(r.projectId)?.name ?? '',
+        userId: r.userId,
+        userName: users.get(r.userId)?.name ?? '',
+        division: users.get(r.userId)?.division ?? null,
+        reason: r.reason ?? '',
+        status: effectiveRequestStatus(r, now),
+        requestedAt: Number(r.requestedAt),
+        expiresAt: Number(r.expiresAt),
+        decidedBy: r.decidedBy ?? null,
+        decidedByName: r.decidedBy ? (users.get(r.decidedBy)?.name ?? '') : null,
+        decidedAt: r.decidedAt != null ? Number(r.decidedAt) : null,
+        decisionReason: r.decisionReason ?? '',
+      })
+      const mine = all.filter((r) => r.userId === req.user.id).map(decorate)
+      // 처리 대상: 개발자는 전체, 그 외에는 내가 PM 인 프로젝트만(멤버 관리 권한과 같은 기준).
+      // 기한이 지난 요청은 처리할 수 없으므로(아래 decide 가 409) 처리 목록에서 뺀다 —
+      // 저장 status 가 아니라 만료를 반영한 effectiveRequestStatus 로 거른다.
+      let incoming = []
+      if (canAccessAll(req.user)) {
+        incoming = all.filter((r) => effectiveRequestStatus(r, now) === 'pending').map(decorate)
+      } else {
+        const managed = new Set(
+          (await repo.listMembershipsForUser(req.user.id))
+            .filter((m) => m.role === 'pm')
+            .map((m) => m.projectId),
+        )
+        incoming = all
+          .filter((r) => effectiveRequestStatus(r, now) === 'pending' && managed.has(r.projectId))
+          .map(decorate)
+      }
+      res.json({ mine, incoming })
+    }),
+  )
+
+  /** 승인/거절 — 승인만이 접근을 만든다(멤버십 삽입). 거절은 사유가 필수다. */
+  router.post(
+    '/auth/access-requests/:reqId/decide',
+    authMw,
+    wrap(async (req, res) => {
+      const ar = await repo.getAccessRequest(req.params.reqId)
+      if (!ar) throw fail(404, '요청을 찾을 수 없습니다.')
+      const project = await repo.getProject(ar.projectId)
+      if (!project) throw fail(404, '프로젝트를 찾을 수 없습니다.')
+      const membership = canAccessAll(req.user)
+        ? { role: 'developer' }
+        : await repo.getMembership(ar.projectId, req.user.id)
+      if (!canManageProject(req.user, membership))
+        throw fail(403, '프로젝트 관리 권한(PM/개발자)이 필요합니다.')
+      // 본인 요청을 본인이 결재하면 '요청자·승인자' 기록이 무의미해진다(개발자는 멤버십 없이도
+      // 요청을 만들 수 있으므로 실제로 가능한 경로다). 권한 문제가 아니라 기록 신뢰성 문제.
+      if (ar.userId === req.user.id) throw fail(403, '본인 요청은 본인이 처리할 수 없습니다.')
+      if (ar.status !== 'pending') throw fail(409, '이미 처리된 요청입니다.')
+      if (Number(ar.expiresAt) <= Date.now()) {
+        // 만료를 저장에 확정한다 — 표시만 바꾸면 담당자 목록에 영원히 남고 재요청도 막힌다.
+        await repo.resolveAccessRequest(ar.id, { status: 'expired' })
+        throw fail(409, '기한이 지난 요청입니다. 요청자에게 다시 요청하도록 안내하세요.')
+      }
+      // 승인은 **명시적 true** 만 인정한다 — 빈 본문이 실수로 권한을 부여하지 않도록.
+      const approve = req.body?.approve === true
+      const decisionReason = String(req.body?.decisionReason || '').slice(0, 300)
+      if (!approve && !decisionReason.trim()) throw fail(400, '거절 사유를 입력하세요.')
+      if (approve) {
+        await repo.addMember(ar.projectId, ar.userId, 'user', req.user.id)
+        // #14 와 같은 결: 권한이 바뀌었으니 열린 연결을 끊어 재접속 때 최신 권한을 적용.
+        revokeProjectAccess(ar.projectId, ar.userId)
+      }
+      const saved = await repo.resolveAccessRequest(ar.id, {
+        status: approve ? 'approved' : 'rejected',
+        decidedBy: req.user.id,
+        decidedAt: Date.now(),
+        decisionReason: approve ? '' : decisionReason,
+      })
+      res.json({ ok: true, status: saved?.status ?? (approve ? 'approved' : 'rejected') })
+    }),
+  )
+
   router.post(
     '/projects/:id/access-code',
     authMw,

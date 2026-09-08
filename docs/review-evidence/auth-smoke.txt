@@ -1,0 +1,140 @@
+
+> sequence-server@0.1.0 auth-smoke
+> node scripts/auth-smoke.mjs
+
+  ✓ memory backend config
+  ✓ pg backend without DATABASE_URL rejected
+  ✓ server startup fails clearly for incomplete pg config
+  ✓ HTTP origin policy allows non-browser request
+  ✓ HTTP origin policy allows same-origin LAN request
+  ✓ HTTP origin policy rejects unlisted cross-origin LAN request
+  ✓ HTTP origin policy honors the same explicit allowlist as WebSocket
+  ✓ client log fields are bounded, allowlisted, and log-injection safe
+  ✓ client log batch count is bounded
+  ✓ client log IP/actor limiter rejects bursts and resets by window
+  ✓ client log limiter keeps bounded actor/IP state
+  ✓ 전화번호 ID canonical digits
+  ✓ 잘못된 전화번호 ID 거부
+  ✓ 문자가 섞인 전화번호 ID 거부
+  ✓ 비정상 구분자 전화번호 ID 거부
+  ✓ 비전화 break-glass ID exact 보존
+  ✓ 숫자 입력 자동 하이픈 표시
+  ✓ 한글 roster 전화번호·그룹 엄격 매핑
+  ✓ unknown/invalid/duplicate/blank roster 전체 거부
+  ✓ roster 검증 실패 시 쓰기 0건
+  ✓ 신규 전화계정 last4 초기비밀번호 해시
+  ✓ roster 재실행은 기존 비밀번호 보존
+  ✓ 명시 reset에서만 초기비밀번호 재설정
+  ✓ 개발자 부트스트랩 로그인
+  ✓ 세션 /auth/me
+  ✓ 엑셀 사용자 임포트 2명
+  ✓ 한글 전화번호 roster API 임포트
+  ✓ 잘못된 roster API 400 안전 거부
+  ✓ 하이픈 전화번호 로그인 canonical lookup
+  ✓ 로그인 성공 시 실패 횟수 초기화
+  ✓ 5회 실패 후 15분 429/Retry-After
+  ✓ 프로젝트 생성 + 접속코드
+  ✓ PM 멤버 추가
+  ✓ user 멤버 추가
+  ✓ 개발자: 코드 없이 입장(전체 접근)
+  ✓ project grant 없는 collab ticket 발급 거부
+  ✓ user 로그인
+  ✓ user 접근가능 목록에 projA
+  ✓ user 잘못된 접속코드 거부(401)
+  ✓ user 올바른 접속코드 → 입장+프로젝트토큰
+  ✓ project grant → 5분 collab ticket claim 검증
+  ✓ 멤버십 제거 후 기존 grant의 collab ticket 교환 거부
+  ✓ user 멤버관리 거부(403)
+  ✓ PM 로그인
+  ✓ PM 멤버 조회(2명)
+  ✓ PM: 담당 프로젝트 코드 면제 입장
+  ✓ PM 새 프로젝트 생성(201)
+  ✓ PM 생성 프로젝트가 목록에 pm으로 노출
+  ✓ PM 생성 프로젝트 코드 면제 입장
+  ✓ user 재로그인
+  ✓ user 프로젝트 생성 거부(403)
+  ✓ 개발자 재로그인
+  ✓ 개발자 새 프로젝트 생성(201)
+  ✓ 사용자 셀프등록(즉시 활성)
+  ✓ 등록 사용자 로그인 + 본부 반영
+  ✓ 다른 본부 사용자는 타 본부 프로젝트 미노출
+  ✓ 관리자 셀프등록(승인 대기)
+  ✓ 승인 전 관리자 로그인 거부
+  ✓ 개발자 승인대기 목록 노출(알림)
+  ✓ 승인 대기 항목에 요청 시각(requestedAt) 포함
+  ✓ 개발자 관리자 승인
+  ✓ 승인 후 관리자 로그인
+  ✓ 개발자 본인 계정 삭제 거부(400)
+  ✓ 개발자 사용자 삭제(200) + 저장소 제거
+  ✓ 약한 비밀번호 등록 거부(정책)
+  ✓ 정책 통과 비밀번호 등록(201)
+  ✓ 정책 통과 로그인 — 강제변경 없음
+  ✓ 비밀번호 초기화 요청 접수
+  ✓ 초기화 요청 목록 노출
+  ✓ 초기화 요청 항목에 요청 시각(requestedAt) 포함
+  ✓ 관리자 새 비밀번호 지정(200)
+  ✓ 지정 후 요청 목록에서 제거
+  ✓ 관리자 지정 비밀번호로 로그인
+  ✓ 현재 비밀번호 불일치 변경 거부(401)
+  ✓ 약한 새 비밀번호 변경 거부(정책)
+  ✓ 본인 비밀번호 변경(200)
+  ✓ 변경된 비밀번호로 로그인
+  ✓ 구 정책 비밀번호 → 강제 변경 플래그
+  ✓ 사용자 검색 결과에 division 포함
+  ✓ 검색 결과 division 값 정확(road)
+  ✓ 같은 본부 미배정 사용자 등록
+  ✓ 미배정 사용자 로그인
+  ✓ 미배정 사용자 목록에 projA 노출 + canEnter=false
+  ✓ 입장 불가 화면 담당자 조회 — 담당 PM 이름 노출
+  ✓ 담당자 응답에 전화번호(로그인 ID) 미포함(개인정보 최소화)
+  ✓ 타 본부(road) 사용자 로그인
+  ✓ 타 본부 사용자 담당자 조회 거부(403) — 본부 경계 유지
+  ✓ 접근 요청 접수(201·대기)
+  ✓ 대기 중 중복 요청 거부(409)
+  ✓ 대기 중 요청 상태에서도 /enter 403 (요청 ≠ 접근)
+  ✓ 요청자 본인 목록에 대기 상태 노출
+  ✓ 담당 PM 처리 목록에 요청자·요청시각·만료시각 노출
+  ✓ 무관한 제3자 PM 의 승인 거부(403)
+  ✓ 무관한 PM 의 처리 목록은 비어 있음(권한 범위)
+  ✓ 거절 사유 없는 처리 거부(400)
+  ✓ 담당 PM 거절 처리(200)
+  ✓ 거절 기록 — 승인자·처리시각·거절 사유 영속
+  ✓ 거절 후에도 /enter 403
+  ✓ 거절 후 재요청 허용(201)
+  ✓ 담당 PM 승인 처리(200)
+  ✓ 승인 후 목록 canEnter/canEdit=true
+  ✓ 승인 후 /enter 200 — 승인만이 접근을 만든다
+  ✓ 이미 배정된 프로젝트 재요청 거부(400)
+  ✓ 만료 검증용 사용자 등록
+  ✓ 기한 지난 요청은 읽기 시점에 expired 로 표기
+  ✓ 기한 지난 요청은 담당 PM 처리 목록에서 제외(저장 status 가 pending 이어도)
+  ✓ 만료된 요청 승인 거부(409)
+  ✓ 만료 요청 결재 시도 시 저장 status 를 expired 로 확정(큐 자가 정리)
+  ✓ 만료 요청자는 여전히 입장 불가(403)
+  ✓ 만료 후 재요청 허용(201) — 영구 잠금 없음
+  ✓ 만료 이력은 남고 새 요청만 대기 상태
+  ✓ 재요청만 담당 PM 처리 목록에 노출(만료 행은 제외)
+  ✓ 방치 시나리오용 사용자 등록
+  ✓ 방치 요청자 로그인
+  ✓ 아무도 결재하지 않은 만료 요청도 재요청 허용(201) — 저장소가 만료를 인정
+  ✓ 재요청 시 방치된 만료 행이 expired 로 확정(대기 행 중복 없음)
+  ✓ 같은 프로젝트·사용자 대기 요청은 여전히 하나만
+  ✓ 개발자(미배정)도 접근 요청 생성 가능 — 자기결재 경로가 실재함
+  ✓ 본인 요청 자기 승인 거부(403)
+  ✓ 본인 요청 자기 거절도 거부(403) — 승인·거절 모두 제3자만
+  ✓ 자기 승인 차단 후 멤버십도 생기지 않음
+  ✓ 같은 요청도 제3자(담당 PM)는 정상 처리(200) — 차단이 자기결재에만 걸림
+  ✓ 비로그인 접근 요청 401
+  ✓ 비로그인 접근 요청 목록 401
+  ✓ repo.js: 같은 프로젝트·사용자 대기 요청 중복 차단(conflict)
+  ✓ repo.js: 만료된 대기 요청이 있어도 재요청 허용(conflict 아님)
+  ✓ repo.js: 재요청 시 만료 행 status 를 expired 로 확정(표시용 아님)
+  ✓ repo.js: 요청자·승인자·만료·거절사유 파일 영속 왕복
+  ✓ repo.js: 프로젝트 삭제 시 해당 프로젝트 접근 요청만 정리(pg CASCADE 와 동일)
+  ✓ pgRepo.js/repo.js 양쪽에 접근 요청 4개 메서드 구현(연결 없이 시그니처 확인)
+  ✓ pgRepo.js: 삽입과 같은 트랜잭션에서 만료 행 확정(연결 없이 쿼리문 확인)
+  ✓ schema.sql: access_requests.status 'expired' 허용 — 신규 정의 + 기존 DB 마이그레이션
+  ✓ 접근 요청 알림 본문에 프로젝트·요청자·차단 사실 포함
+  ✓ 비로그인 /auth/me 401
+
+✅ AUTH SMOKE PASS

@@ -10,10 +10,10 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { jsPDF } from 'jspdf'
-import type { PaperSettings } from '../types/model'
 import { paperPx } from '../engine/paper'
-import { colors } from '../styles/theme'
 import { logError, logInfo } from '../state/logger'
+import { colors } from '../styles/theme'
+import type { PaperSettings } from '../types/model'
 
 export type ExportFormat = 'svg' | 'png' | 'jpg' | 'pdf' | 'dxf'
 
@@ -22,11 +22,13 @@ interface ContentSize {
   height: number
 }
 
-/** Clone the live chart SVG as a standalone, namespaced document string. */
-function serializeSvg(
+/** Clone the live chart SVG as a standalone, namespaced document string.
+ *  출력 대화상자의 미리보기도 같은 함수를 써서 **실제 출력물과 동일한** 그림을 만든다.
+ *  opts.stamp 를 주면 우측 하단에 버전 표기(사업명·시트·범위·시각)를 한 줄 얹는다. */
+export function buildExportSvgString(
   svg: SVGSVGElement,
   content: ContentSize,
-  opts: { background?: string },
+  opts: { background?: string; stamp?: string },
 ): string {
   const clone = svg.cloneNode(true) as SVGSVGElement
   // Drop on-screen-only overlays (selection grips, link anchors, logo handles).
@@ -51,6 +53,18 @@ function serializeSvg(
   const style = document.createElementNS('http://www.w3.org/2000/svg', 'style')
   style.textContent = `text{font-family:'KoPubWorld Dotum_Pro Medium','KoPubWorldDotum_Pro Medium','Malgun Gothic',sans-serif;}`
   clone.insertBefore(style, clone.firstChild)
+
+  // 버전 표기(선택) — 우측 하단 한 줄. 미지정이면 출력물은 기존과 완전히 동일하다.
+  if (opts.stamp) {
+    const stamp = document.createElementNS('http://www.w3.org/2000/svg', 'text')
+    stamp.setAttribute('x', String(content.width - 8))
+    stamp.setAttribute('y', String(content.height - 8))
+    stamp.setAttribute('text-anchor', 'end')
+    stamp.setAttribute('font-size', '10')
+    stamp.setAttribute('fill', colors.steel)
+    stamp.textContent = opts.stamp
+    clone.appendChild(stamp)
+  }
 
   return new XMLSerializer().serializeToString(clone)
 }
@@ -113,14 +127,17 @@ export interface ExportOptions {
   format: ExportFormat
   /** PNG transparency; ignored for JPG/PDF which always matte white. */
   transparent?: boolean
+  /** 우측 하단 버전 표기 한 줄(사업명·시트·출력 범위·시각). 미지정이면 표기 없음. */
+  stamp?: string
 }
 
 export async function exportChart(opts: ExportOptions): Promise<{ clamped: boolean }> {
   const { svg, content, paper, filename, format } = opts
   try {
     if (format === 'svg') {
-      const str = serializeSvg(svg, content, {
+      const str = buildExportSvgString(svg, content, {
         background: opts.transparent ? undefined : colors.canvas,
+        stamp: opts.stamp,
       })
       triggerDownload(new Blob([str], { type: 'image/svg+xml' }), `${filename}.svg`)
       logInfo(`SVG 내보내기 완료: ${filename}.svg`)
@@ -131,7 +148,10 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
     const whiteBg = colors.canvas
     const wantWhite = format !== 'png' || !opts.transparent
     const bg = wantWhite ? whiteBg : null
-    const svgString = serializeSvg(svg, content, { background: bg ?? undefined })
+    const svgString = buildExportSvgString(svg, content, {
+      background: bg ?? undefined,
+      stamp: opts.stamp,
+    })
 
     const canvas = await rasterize(svgString, content, px.wPx, px.hPx, bg)
 

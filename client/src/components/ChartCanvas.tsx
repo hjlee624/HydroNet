@@ -9,16 +9,26 @@
 import type { MouseEvent as RMouseEvent, PointerEvent as RPointerEvent } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { standardDurationIndex } from '../data/facilities'
-import { assessTasks, type AdequacyResult } from '../engine/adequacy'
+import { type AdequacyResult, assessTasks } from '../engine/adequacy'
 import { dateToDay, daysInMonth, dayToDate, toISO } from '../engine/dates'
 import { computeLayout, type LayoutModel } from '../engine/layout'
 import { augmentForMirror } from '../engine/mirror'
 import { routeLinks } from '../engine/routing'
+import { type EditImpact, editImpactUndoable, previewEdit } from '../engine/scheduling'
 import { publishPresenceCursor, usePresence } from '../state/collaboration'
+import { getCurrentCrdtRuntime } from '../state/crdt'
 import { filterActive, useEditor } from '../state/store'
-import type { LinkType } from '../types/model'
+import type { Link, LinkType, Task } from '../types/model'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
+import { EditImpactCard } from './EditImpactCard'
 import { Modal } from './Modal'
+
+/**
+ * 현재 되돌리기 스택 깊이 — 영향 카드가 '스택 맨 위'를 계속 설명하는지 판정하는 근거.
+ * CRDT 런타임이 아직 없으면(초기 부팅·테스트) 0.
+ * 컴포넌트 밖에 두는 이유: 렌더마다 새 함수를 만들면 useEffect 의존성으로 끌려 들어간다.
+ */
+const undoDepth = (): number => getCurrentCrdtRuntime()?.undoManager.undoStack.length ?? 0
 
 type Drag =
   | { kind: 'move'; taskId: string; grabOffsetDays: number; started: boolean }
@@ -52,6 +62,11 @@ export function ChartCanvas() {
   const linking = useEditor((s) => s.linking)
   const filter = useEditor((s) => s.filter)
   const colorMode = useEditor((s) => s.colorMode)
+  // 편집 의미론 + 연쇄 자동 — 드래그 중 '변경 영향' 미리보기를 실제 커밋과 같은 조건으로 계산한다.
+  const editMode = useEditor((s) => s.editMode)
+  const autoCascade = useEditor((s) => s.autoCascade)
+  const lastEditImpact = useEditor((s) => s.lastEditImpact)
+  const focusTaskId = useEditor((s) => s.focusTaskId)
   const remotePresences = usePresence((s) => s.remote)
 
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -88,6 +103,14 @@ export function ChartCanvas() {
     null,
   )
   const marqueeRef = useRef<{ x0: number; y0: number } | null>(null)
+  // ── 변경 영향 미리보기(F09) ─────────────────────────────────────────────────
+  // 드래그가 시작될 때의 원본(제스처 이전 상태)을 한 번만 스냅샷해 두고, 포인터가 '하루'를
+  // 넘어갈 때만 previewEdit 를 돌린다(픽셀마다 CPM 을 돌리지 않기 위한 스로틀).
+  const baseRef = useRef<{ tasks: Task[]; links: Link[] } | null>(null)
+  const previewDayRef = useRef<number | null>(null)
+  const [impact, setImpact] = useState<EditImpact | null>(null)
+  // pointerup 핸들러는 pointerdown 시점의 클로저라 state 를 못 읽는다 — ref 로 같이 들고 간다.
+  const impactRef = useRef<EditImpact | null>(null)
 
   useEffect(() => () => publishPresenceCursor(null), [])
 
@@ -103,12 +126,16 @@ export function ChartCanvas() {
   const routed = useMemo(() => routeLinks(model, augmented.links), [model, augmented.links])
 
   // 공정별 공기 적정성(검토서 B4) — 막대 호버 툴팁·부적정 경보의 데이터원. CPM 결과 기반(주공정 한정).
+  // 허용 편차는 사용자가 산정 전제(periodInputs.tolerancePct)에 넣은 값을 그대로 쓴다.
+  // 넘기지 않으면 엔진 기본값 15%로 판정해, 같은 공정이 화면에선 '적정' 검토요청서에선
+  // '과다' 로 갈리는 모순이 생긴다.
   const adequacy = useMemo(
     () =>
       assessTasks(project.tasks, project.links, {
         standardDurationByName: standardDurationIndex(project.facility),
+        tolerancePct: project.periodInputs?.tolerancePct,
       }),
-    [project.tasks, project.links, project.facility],
+    [project.tasks, project.links, project.facility, project.periodInputs?.tolerancePct],
   )
   const [hover, setHover] = useState<{ id: string; x: number; y: number } | null>(null)
   const onTaskHover = useCallback((id: string | null, x: number, y: number) => {
@@ -429,6 +456,32 @@ export function ChartCanvas() {
     if (src) setGhost({ x1: edge === 'start' ? src.startX : src.endX, y1: src.cy, x2: x, y2: y })
   }
 
+  /** 제스처 시작 시점의 원본(공정·연결)을 한 번 복사해 둔다 — 미리보기의 '변경 전' 기준. */
+  function snapshotBase() {
+    const p = useEditor.getState().project
+    baseRef.current = {
+      tasks: p.tasks.map((t) => ({ ...t })),
+      links: p.links.map((l) => ({ ...l })),
+    }
+    previewDayRef.current = null
+  }
+
+  /** 미리보기 카드 상태를 state 와 ref 에 함께 반영(ref 는 pointerup 클로저용). */
+  function putImpact(next: EditImpact | null) {
+    impactRef.current = next
+    setImpact(next)
+  }
+
+  /** 하루 단위로만 미리보기를 갱신(픽셀마다 CPM 재계산 방지). 커밋과 같은 함수·같은 옵션. */
+  function previewDrag(id: string, edit: { start?: number; duration?: number }, key: number) {
+    const base = baseRef.current
+    if (!base) return
+    const day = Math.round(key)
+    if (previewDayRef.current === day) return
+    previewDayRef.current = day
+    putImpact(previewEdit(base.tasks, base.links, { id, ...edit }, editMode, autoCascade))
+  }
+
   // Apply the active gesture at a given client pointer position. Shared by the
   // pointermove handler and the edge auto-scroll loop, so the bar/link/target keeps
   // tracking the cursor while the canvas scrolls under it.
@@ -439,10 +492,12 @@ export function ChartCanvas() {
     if (drag.kind === 'move') {
       if (!drag.started) {
         drag.started = true
+        snapshotBase()
         useEditor.getState().beginGesture()
       }
       movedRef.current = true
       const newStart = model.dayOf(x) - drag.grabOffsetDays
+      previewDrag(drag.taskId, { start: newStart }, newStart)
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
       // Vertical component → preview which row the bar would join / create (skip
       // when a filter is active: lanes/rows are a subset and the math is ambiguous).
@@ -455,24 +510,31 @@ export function ChartCanvas() {
       // 다중 선택 막대 수평 동시 이동 — 세로(줄 재배치)는 건드리지 않는다.
       if (!drag.started) {
         drag.started = true
+        snapshotBase()
         useEditor.getState().beginGesture()
       }
       movedRef.current = true
       const delta = model.dayOf(x) - drag.grabDay
+      // 다중 이동은 대표 막대(첫 선택) 하나만 미리보기한다 — 카드에도 그 사실을 적는다.
+      const lead = drag.base[0]
+      if (lead) previewDrag(lead.id, { start: lead.start + delta }, lead.start + delta)
       useEditor
         .getState()
         .setTasksStartLive(drag.base.map((b) => ({ id: b.id, start: b.start + delta })))
     } else if (drag.kind === 'resize') {
       if (!drag.started) {
         drag.started = true
+        snapshotBase()
         useEditor.getState().beginGesture()
       }
       movedRef.current = true
       const day = model.dayOf(x)
       if (drag.edge === 'end') {
+        previewDrag(drag.taskId, { start: drag.startDay, duration: day - drag.startDay }, day)
         useEditor.getState().setTaskSpanLive(drag.taskId, drag.startDay, day - drag.startDay)
       } else {
         const s = Math.min(drag.endDay - 1, Math.round(day)) // 시작 핸들: day 0 이전(음수)도 허용
+        previewDrag(drag.taskId, { start: s, duration: drag.endDay - s }, s)
         useEditor.getState().setTaskSpanLive(drag.taskId, s, drag.endDay - s)
       }
     } else if (drag.kind === 'logo') {
@@ -511,6 +573,8 @@ export function ChartCanvas() {
       dragRef.current = null
       setGhost(null)
       setReorderHint(null)
+      putImpact(null)
+      baseRef.current = null
       if (drag.kind === 'link') useEditor.getState().cancelLinking()
       else if ('started' in drag && drag.started) useEditor.getState().endGesture()
       return
@@ -604,7 +668,15 @@ export function ChartCanvas() {
     }
     if (drag.kind !== 'link' && 'started' in drag && drag.started) {
       useEditor.getState().endGesture()
+      // 제스처가 하나의 undo 엔트리로 봉인된 직후 — 방금 무슨 일이 일어났는지 카드로 남기고
+      // 한 번의 클릭으로 통째로 되돌릴 수 있게 한다(store.undo = 이 제스처 전체 복원).
+      // 봉인 시점의 스택 깊이를 함께 찍는다 — 이후 다른 편집이 쌓이면 카드의 ↩ 가 엉뚱한
+      // 편집을 되돌리게 되므로(editImpactUndoable) 그 즉시 카드를 내리기 위한 근거다.
+      if (impactRef.current)
+        useEditor.getState().setLastEditImpact({ ...impactRef.current, historyDepth: undoDepth() })
     }
+    putImpact(null)
+    baseRef.current = null
     if (drag.kind === 'link') {
       const el = document.elementFromPoint(e.clientX, e.clientY) as Element | null
       const target = el?.closest('[data-task-id]') as HTMLElement | null
@@ -689,8 +761,69 @@ export function ChartCanvas() {
         ? ` nav-pan${panning ? ' panning' : ''}`
         : ''
 
+  // 문제 목록에서 '공정 칩'을 누르면 그 막대가 보이도록 스크롤한다(1회성 요청 → 즉시 소비).
+  useEffect(() => {
+    if (!focusTaskId) return
+    const lt = model.tasks.find((t) => t.task.id === focusTaskId)
+    const wrap = wrapRef.current
+    if (lt && wrap) {
+      wrap.scrollLeft = Math.max(0, lt.startX * zoom - wrap.clientWidth / 3)
+      wrap.scrollTop = Math.max(0, lt.cy * zoom - wrap.clientHeight / 2)
+    }
+    useEditor.getState().clearFocusTask()
+  }, [focusTaskId, model, zoom])
+
+  // 커밋 직후 영향 카드는 잠깐만 남긴다(되돌리기 기회) — 8초 뒤 자동으로 사라진다.
+  // 그 8초 안에 **다른** 편집이 히스토리에 쌓이면 카드는 더 이상 스택 맨 위를 설명하지 않는다
+  // (↩ 를 누르면 설명과 무관한 최신 편집이 되돌아간다) → 그 즉시 카드를 내린다.
+  useEffect(() => {
+    if (!lastEditImpact) return
+    const timer = setTimeout(() => useEditor.getState().setLastEditImpact(null), 8000)
+    const undoManager = getCurrentCrdtRuntime()?.undoManager
+    const dropIfStale = () => {
+      if (!editImpactUndoable(lastEditImpact, undoDepth()))
+        useEditor.getState().setLastEditImpact(null)
+    }
+    undoManager?.on('stack-item-added', dropIfStale)
+    return () => {
+      clearTimeout(timer)
+      undoManager?.off('stack-item-added', dropIfStale)
+    }
+  }, [lastEditImpact])
+
   return (
     <div className="canvas-host">
+      {impact && (
+        <div className="edit-impact" data-export-hide="1">
+          <EditImpactCard
+            impact={impact}
+            startDate={project.startDate}
+            note={
+              dragRef.current?.kind === 'moveGroup'
+                ? '다중 선택 이동 — 잡은 막대 기준 미리보기입니다.'
+                : undefined
+            }
+          />
+        </div>
+      )}
+      {!impact && lastEditImpact && (
+        <div className="edit-impact edit-impact--done" data-export-hide="1">
+          <EditImpactCard
+            impact={lastEditImpact}
+            startDate={project.startDate}
+            onUndo={() => {
+              // 이중 방어: 스택 맨 위가 더 이상 이 카드의 편집이 아니면 되돌리지 않고 카드만
+              // 내린다(설명하지 않은 편집을 조용히 되돌리는 것이 이 버그의 본체였다).
+              if (!editImpactUndoable(lastEditImpact, undoDepth())) {
+                useEditor.getState().setLastEditImpact(null)
+                return
+              }
+              useEditor.getState().undo()
+              useEditor.getState().setLastEditImpact(null)
+            }}
+          />
+        </div>
+      )}
       {navMode !== 'edit' && (
         <div className="nav-mode-badge" data-export-hide="1">
           <span>
@@ -947,6 +1080,15 @@ function AdequacyTooltip({
         {adq.theoretical != null ? ` · 이론 ${adq.theoretical}일(물량÷생산성)` : ''}
         {adq.standardDeviationPct != null ? ` · 표준대비 ${dev(adq.standardDeviationPct)}` : ''}
       </div>
+      {adq.unitCheck.status === 'mismatch' && (
+        <div style={{ color: '#c33b3b', fontWeight: 600 }}>
+          ⚠ 단위 불일치(입력 «{adq.unitCheck.taskUnit}» vs 표준 «{adq.unitCheck.rateUnit}») —
+          판정불가
+        </div>
+      )}
+      {!adq.criticalApplicable && (
+        <div style={{ color: '#8a94a0' }}>※ 주공정선이 아니므로 참고용 판정입니다.</div>
+      )}
       <ul style={{ margin: '6px 0 0', padding: 0, listStyle: 'none' }}>
         {adq.basis.slice(0, 3).map((b, i) => (
           <li

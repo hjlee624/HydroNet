@@ -1,0 +1,6 @@
+
+> sequence-client@0.1.0 smoke:crdt
+> tsx scripts/crdt-smoke.ts
+
+CRDT SMOKE OK: convergence, authority, JSON, hydration gate, undo, gesture, local sheet, periodInputs merge, task actuals merge, changeLog/baselineVersions audit
+[Sequence] 공정표 전환: Sheet B 

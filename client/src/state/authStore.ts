@@ -1,6 +1,9 @@
-// 인증/세션 상태(zustand) — 서버가 있을 때만 로그인 게이트. 오프라인 단일 HTML(file://)·
-// 서버 미탐지 시 'local' 단일사용자 모드로 자동 우회(로그인 없이 편집). ADR-002.
+// 인증/세션 상태(zustand) — 서버가 있을 때만 로그인 게이트. 오프라인 단일 HTML(file://)은
+// 'local' 단일사용자 모드로 우회(로그인 없이 편집). ADR-002.
+// F05: 서버 대상 배포에서는 /api/health 무응답을 '서버 없음'으로 단정하지 않는다 — 3회 재시도 후
+// 실패하면 serverUnreachable 로 표시해 AuthGate 가 장애 안내 + 명시적 선택을 받게 한다.
 import { create } from 'zustand'
+import { useProjectPrefs } from './projectPrefsStore'
 
 export const loginPhoneDigits = (value: string) => value.replace(/\D/g, '').slice(0, 11)
 export const formatLoginPhoneInput = (value: string) => {
@@ -15,6 +18,41 @@ export const normalizeLoginSubmission = (value: string) => {
 }
 
 export type AuthMode = 'checking' | 'local' | 'server'
+/** 이 빌드가 겨냥한 배포 형태. standalone=오프라인 단독 HTML, server=사내 서버 대상. */
+export type DeployMode = 'standalone' | 'server'
+
+/**
+ * 주입된 배포 플래그를 배포 모드로 해석한다(F05).
+ * vite define 이 없는 실행 환경(tsx 스모크·jsdom mount-test)은 애초에 사내 서버를 겨냥한
+ * 배포가 아니므로 'standalone' — 서버 장애 안내를 띄울 대상이 아니다.
+ */
+export function resolveDeployMode(flag: unknown): DeployMode {
+  return flag === 'server' ? 'server' : 'standalone'
+}
+
+const DEPLOY_MODE: DeployMode = resolveDeployMode(
+  typeof __SEQUENCE_DEPLOY__ === 'undefined' ? null : __SEQUENCE_DEPLOY__,
+)
+
+/** 서버 대상 배포에서 /api/health 재시도 타임아웃(고정 3회). 무한 백오프는 쓰지 않는다. */
+const PROBE_TIMEOUTS = [1500, 2500, 4000] as const
+/** 사용자가 '오프라인으로 계속'을 명시적으로 고른 브라우저 표식. */
+const OFFLINE_ACK_KEY = 'sequence:offline-ack'
+
+const lsGetSafe = (key: string): string | null => {
+  try {
+    return localStorage.getItem(key)
+  } catch {
+    return null
+  }
+}
+const lsRemoveSafe = (key: string): void => {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    /* 저장소 차단(사생활 보호 모드 등) — 지울 것도 없다 */
+  }
+}
 export type UserRole = 'developer' | 'pm' | 'user'
 export interface SessionUser {
   id: string
@@ -80,6 +118,31 @@ export interface SearchableUser {
   division?: string | null
 }
 
+/** F07 프로젝트 접근 요청. status='expired' 는 서버가 읽기 시점에 계산해 내려주는 값이다. */
+export interface AccessRequest {
+  id: string
+  projectId: string
+  projectName?: string
+  userId: string
+  userName?: string
+  division?: string | null
+  reason: string
+  status: 'pending' | 'approved' | 'rejected' | 'expired'
+  requestedAt: number
+  expiresAt: number
+  decidedBy?: string | null
+  decidedByName?: string | null
+  decidedAt?: number | null
+  decisionReason?: string
+}
+
+/** 입장 불가 화면에 보여줄 담당자. 전화번호(로그인 ID)는 서버가 내려주지 않는다. */
+export interface ProjectContact {
+  name: string
+  division?: string | null
+  role: string
+}
+
 export interface AdminUser {
   id: string
   name: string
@@ -92,6 +155,12 @@ export interface AdminUser {
 
 interface AuthState {
   mode: AuthMode
+  /** 빌드 시점에 정해지는 배포 형태 — 화면 라벨과 health 실패 처리 정책이 여기서 갈린다. */
+  deployMode: DeployMode
+  /** 서버 대상 배포인데 /api/health 가 끝내 응답하지 않음(사용자 선택 대기). */
+  serverUnreachable: boolean
+  /** 이번 init 에서 시도한 health 프로브 횟수(안내 화면 표시용). */
+  probeAttempts: number
   user: SessionUser | null
   projects: ProjectSummary[]
   /** 선택했으나 아직 입장(접속코드) 전 */
@@ -111,6 +180,10 @@ interface AuthState {
   pendingApprovals: PendingUser[]
   /** 비밀번호 초기화 요청 목록(개발자 전용). */
   resetRequests: PendingUser[]
+  /** 내가 낸 프로젝트 접근 요청(F07) — 카드 배지·요청 화면 상태 표시. */
+  myAccessRequests: AccessRequest[]
+  /** 내가 처리해야 할 접근 요청(개발자·해당 프로젝트 PM). */
+  incomingAccessRequests: AccessRequest[]
   /** 구 정책 비밀번호로 로그인 → 다음 단계에서 강제 변경 필요. */
   mustChangePassword: boolean
   /** 직전 로그인이 5회 초과 잠금(429)이었나 — 초기화 요청 UI 노출용. */
@@ -118,6 +191,10 @@ interface AuthState {
   adminLoading: boolean
   adminError: string | null
   init: () => Promise<void>
+  /** 서버 연결 실패 화면의 [다시 시도] — 프로브부터 처음처럼 다시 돈다. */
+  retryInit: () => Promise<void>
+  /** 서버 연결 실패 화면의 [오프라인으로 계속] — 이 브라우저에 선택을 기억한다. */
+  continueOffline: () => void
   login: (username: string, password: string) => Promise<void>
   logout: () => Promise<void>
   refreshProjects: () => Promise<void>
@@ -144,6 +221,21 @@ interface AuthState {
   fetchResetRequests: () => Promise<void>
   /** 관리자가 사용자 비밀번호 직접 지정(초기화 처리·임의 변경). 성공 시 목록 갱신. */
   adminSetPassword: (id: string, password: string) => Promise<boolean>
+  /** 내 요청 + 처리 대상 요청 로드(F07). 로그인 사용자 누구나. */
+  fetchAccessRequests: () => Promise<void>
+  /** 접근 요청 접수. **성공해도 입장 권한은 생기지 않는다** — 승인만이 권한을 만든다. */
+  requestProjectAccess: (
+    projectId: string,
+    reason: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+  /** 접근 요청 승인/거절(개발자·해당 프로젝트 PM). 거절은 사유 필수. */
+  decideAccessRequest: (
+    reqId: string,
+    approve: boolean,
+    decisionReason?: string,
+  ) => Promise<{ ok: boolean; error?: string }>
+  /** 담당자(PM) 조회 — 입장 불가 화면에서 '누구에게 요청하는지' 안내용. */
+  fetchProjectContacts: (projectId: string) => Promise<ProjectContact[]>
   select: (p: ProjectSummary) => Promise<void>
   enter: (code: string) => Promise<void>
   exitProject: () => void
@@ -192,11 +284,11 @@ const post = (path: string, body?: unknown) =>
     body: body ? JSON.stringify(body) : undefined,
   })
 
-/** 서버 존재 여부 프로브(짧은 타임아웃). 실패=오프라인/로컬. */
-async function probeServer(): Promise<boolean> {
+/** 서버 존재 여부 프로브(짧은 타임아웃). 실패=응답 없음 — 곧바로 '서버 없음'으로 단정하지 않는다. */
+async function probeServer(timeoutMs = 1500): Promise<boolean> {
   try {
     const ctrl = new AbortController()
-    const t = setTimeout(() => ctrl.abort(), 1500)
+    const t = setTimeout(() => ctrl.abort(), timeoutMs)
     const res = await fetch('/api/health', { signal: ctrl.signal, credentials: 'include' })
     clearTimeout(t)
     return res.ok
@@ -207,6 +299,9 @@ async function probeServer(): Promise<boolean> {
 
 export const useAuth = create<AuthState>((set, get) => ({
   mode: 'checking',
+  deployMode: DEPLOY_MODE,
+  serverUnreachable: false,
+  probeAttempts: 0,
   user: null,
   projects: [],
   selected: null,
@@ -219,27 +314,63 @@ export const useAuth = create<AuthState>((set, get) => ({
   adminUsers: [],
   pendingApprovals: [],
   resetRequests: [],
+  myAccessRequests: [],
+  incomingAccessRequests: [],
   mustChangePassword: false,
   loginLocked: false,
   adminLoading: false,
   adminError: null,
 
   init: async () => {
-    const hasServer = await probeServer()
-    if (!hasServer) {
-      set({ mode: 'local' }) // 오프라인/단일 HTML/테스트 → 로그인 없이 편집
+    // 오프라인 단독 실행본(단일 HTML)은 서버가 존재하지 않는 배포 — 프로브 없이 로컬 모드.
+    if (get().deployMode === 'standalone') {
+      set({ mode: 'local', serverUnreachable: false })
       return
     }
+    // 서버 대상 배포: 한 번 느렸다고 조용히 로컬로 떨어뜨리지 않는다. 3회 재시도 후에도
+    // 응답이 없으면 사용자에게 '장애' 사실을 알리고 명시적 선택을 받는다.
+    const acked = lsGetSafe(OFFLINE_ACK_KEY) === '1'
+    let hasServer = false
+    for (const [index, timeout] of PROBE_TIMEOUTS.entries()) {
+      set({ probeAttempts: index + 1 })
+      hasServer = await probeServer(timeout)
+      if (hasServer) break
+    }
+    if (!hasServer) {
+      // 이미 '오프라인으로 계속'을 고른 브라우저는 매번 막지 않되, 배지로 상태를 계속 알린다.
+      set({ mode: 'local', serverUnreachable: !acked })
+      return
+    }
+    // 서버가 돌아왔다 — '오프라인으로 계속' 표식은 그 장애 한 번에 대한 동의였을 뿐이므로
+    // 여기서 지운다. 남겨 두면 이후의 **진짜** 장애가 매번 조용히 로컬 단독 모드로 새고
+    // (ServerUnreachableScreen 없이), 사용자는 공유 프로젝트라 믿는 로컬 파일에서 하루를 보낸다.
+    lsRemoveSafe(OFFLINE_ACK_KEY)
+    set({ serverUnreachable: false })
     // 서버 존재 — 기존 세션 있으면 바로 로그인 상태로.
     const me = await j('/api/auth/me').catch(() => ({ status: 0, ok: false, data: null }))
     if (me.ok && me.data?.user) {
       const u = me.data.user as SessionUser
       set({ mode: 'server', user: u, mustChangePassword: !!me.data.mustChangePassword })
       await get().refreshProjects()
+      void get().fetchAccessRequests()
       if (u.role === 'developer') await get().fetchPendingApprovals()
     } else {
       set({ mode: 'server', user: null })
     }
+  },
+
+  retryInit: async () => {
+    set({ mode: 'checking', serverUnreachable: false, probeAttempts: 0 })
+    await get().init()
+  },
+
+  continueOffline: () => {
+    try {
+      localStorage.setItem(OFFLINE_ACK_KEY, '1')
+    } catch {
+      /* 저장소 차단(사생활 보호 모드 등) — 이번 세션에만 적용된다 */
+    }
+    set({ mode: 'local', serverUnreachable: false })
   },
 
   login: async (username, password) => {
@@ -256,6 +387,7 @@ export const useAuth = create<AuthState>((set, get) => ({
       const u = r.data?.user as SessionUser
       set({ user: u, mode: 'server', mustChangePassword: !!r.data?.mustChangePassword })
       await get().refreshProjects()
+      void get().fetchAccessRequests()
       if (u?.role === 'developer') await get().fetchPendingApprovals()
     } catch (e) {
       set({ error: e instanceof Error ? e.message : '로그인 오류' })
@@ -277,6 +409,8 @@ export const useAuth = create<AuthState>((set, get) => ({
       adminUsers: [],
       pendingApprovals: [],
       resetRequests: [],
+      myAccessRequests: [],
+      incomingAccessRequests: [],
       mustChangePassword: false,
       loginLocked: false,
     })
@@ -384,6 +518,54 @@ export const useAuth = create<AuthState>((set, get) => ({
     return true
   },
 
+  // ── F07 접근 요청 ───────────────────────────────────────────────────────────
+  fetchAccessRequests: async () => {
+    const r = await j('/api/auth/access-requests').catch(() => ({
+      status: 0,
+      ok: false,
+      data: null,
+    }))
+    // 서버가 { mine, incoming } 객체를 준다. 배열(스텁·구버전)이면 조용히 무시 — 목록 화면이
+    // 빈 배열로 안전하게 동작한다.
+    if (!r.ok || !r.data || Array.isArray(r.data)) return
+    const d = r.data as { mine?: unknown; incoming?: unknown }
+    set({
+      myAccessRequests: Array.isArray(d.mine) ? (d.mine as AccessRequest[]) : [],
+      incomingAccessRequests: Array.isArray(d.incoming) ? (d.incoming as AccessRequest[]) : [],
+    })
+  },
+
+  requestProjectAccess: async (projectId, reason) => {
+    const r = await post(`/api/auth/projects/${encodeURIComponent(projectId)}/access-request`, {
+      reason,
+    })
+    if (!r.ok) return { ok: false, error: (r.data?.error as string) || '요청에 실패했습니다.' }
+    await get().fetchAccessRequests()
+    return { ok: true }
+  },
+
+  decideAccessRequest: async (reqId, approve, decisionReason) => {
+    const r = await post(`/api/auth/access-requests/${encodeURIComponent(reqId)}/decide`, {
+      approve,
+      ...(decisionReason ? { decisionReason } : {}),
+    })
+    if (!r.ok) return { ok: false, error: (r.data?.error as string) || '처리에 실패했습니다.' }
+    await get().fetchAccessRequests()
+    // 승인은 멤버십을 만든다 — 목록의 canEnter/canEdit 이 즉시 바뀌므로 다시 읽는다.
+    await get().refreshProjects()
+    return { ok: true }
+  },
+
+  fetchProjectContacts: async (projectId) => {
+    const r = await j(`/api/auth/projects/${encodeURIComponent(projectId)}/contacts`).catch(() => ({
+      status: 0,
+      ok: false,
+      data: null,
+    }))
+    const managers = (r.data as { managers?: unknown } | null)?.managers
+    return r.ok && Array.isArray(managers) ? (managers as ProjectContact[]) : []
+  },
+
   select: async (p) => {
     set({ selected: p, error: null, projectMembers: null })
     // 개발자·PM은 코드 면제, 그리고 접속코드가 없는 프로젝트는 사용자도 바로 입장.
@@ -408,6 +590,8 @@ export const useAuth = create<AuthState>((set, get) => ({
         },
         projectMembers: null,
       })
+      // F08 '최근 열기' — 카드 클릭이 아니라 **입장 성공** 시점에만 기록한다.
+      useProjectPrefs.getState().pushRecent(sel.id)
     } catch (e) {
       set({ error: e instanceof Error ? e.message : '입장 오류' })
     } finally {

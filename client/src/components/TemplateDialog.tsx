@@ -15,6 +15,7 @@ import {
 import { KIND_META, makeProject, PROJECT_TYPES, type ProjectTypeDef } from '../data/templates'
 import { useAuth } from '../state/authStore'
 import { logInfo } from '../state/logger'
+import { useOnboarding } from '../state/onboardingStore'
 import { useEditor } from '../state/store'
 import { Modal } from './Modal'
 
@@ -63,6 +64,8 @@ export function TemplateDialog({ onClose }: { onClose: () => void }) {
       setProject(project)
     }
     logInfo(`새 도면 생성: ${KIND_META[selectedType.kind].label} / ${selectedFacility.label}`)
+    // F06 1단계 '샘플(템플릿) 선택' — 템플릿이 실제로 적용된 이 지점에서만 체크한다.
+    useOnboarding.getState().markStep('sample')
     onClose()
   }
 

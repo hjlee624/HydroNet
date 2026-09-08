@@ -1,0 +1,5 @@
+
+> sequence-client@0.1.0 smoke:adequacy
+> tsx scripts/adequacy-smoke.ts
+
+✓ adequacy-smoke: 108 checks passed

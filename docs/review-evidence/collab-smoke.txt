@@ -1,0 +1,131 @@
+
+> sequence-server@0.1.0 collab-smoke
+> node scripts/collab-smoke.mjs
+
+
+Sequence server listening on all interfaces:
+  Local:  http://127.0.0.1:50913/
+  LAN:    http://10.12.29.180:50913/
+
+다른 PC에서 LAN URL이 안 열리면 Windows Defender 방화벽에서 TCP 50913 포트를 허용하세요.
+
+  ✓ 동시 legacy fetch도 단일 원자 seed binary로 직렬화
+  ✓ same-origin/LAN allowlist가 외부 Origin handshake 거부
+  ✓ token 없는 WebSocket을 인증 timeout으로 종료
+  ✓ 잘못된 collab token 거부
+  ✓ 12시간 project grant의 WS 직접 사용 거부
+  ✓ ticket과 다른 room 교차 접근 거부
+  ✓ ticket 발급 후 멤버십 제거도 최신 저장소 조회로 거부
+  ✓ 두 provider 동시 편집 수렴
+  ✓ awareness가 Y.Doc binary를 변경하지 않음
+  ✓ 원격 선택·커서 awareness 전파 후 clear로 유령 상태 제거
+  ✓ legacy JSON을 안정된 named Y type으로 1회 seed
+  ✓ legacy seed에서 CPM/mirror 파생 필드 제거
+  ✓ legacy 순서와 active/inactive sheet 구조 보존
+  ✓ legacy active sheet selection remains client-local
+  ✓ legacy active sheet becomes the first resident sheet without a shared selection pointer
+  ✓ legacy가 없는 신규 room도 서버가 stable container bootstrap
+  ✓ blank room has complete canonical metadata without shared active-sheet state
+  ✓ blank room has client-compatible paper defaults
+  ✓ blank room has client-compatible view defaults
+  ✓ blank room has default palette and a valid first resident sheet
+  ✓ legacy 전체 JSON PUT 405 강등
+  ✓ 명시적 snapshot GET 백업 경로 유지
+  ✓ 프로젝트 DELETE는 개발자 권한으로 제한
+  ✓ S1 본문 그대로 적재하던 POST /api/autosave 는 인증 여부와 무관하게 폐지(410)
+  ✓ 레거시 autosave read 는 입장 등급, delete 는 개발자 등급 (read=200, 멤버 삭제=403, 개발자 삭제=200)
+  ✓ F15 이름 키 임시저장 파일이 다시 만들어지지 않는다
+  ✓ S1 위조 본문이 복구 이력에 적재되지 않는다 (검사 1건)
+  ✓ #19 snapshot이 최초 시드가 아닌 라이브 CRDT 편집을 반영
+  ✓ 모듈 레코드 두 provider 간 동기화(root/modules)
+  ✓ 모듈이 서버 스냅샷(decodeProjectFromState)에 반영
+  ✓ F01 서버 영속 완료 후 sequence:persisted 확정 메시지가 실제로 도착
+  ✓ S3 모든 영속 확정이 상태벡터(압축 svz)를 함께 싣는다
+  ✓ R5-1 확정에 집계 증명(cs/cn)이 항상 함께 실린다
+  ✓ R5-1 집계 cn 이 실제 상태벡터의 clientID 개수와 일치한다
+  ✓ S3 확정의 상태벡터가 방금 그 편집을 담고 있다(clock ≥ 8)
+  ✓ S3 확정 상태벡터가 아직 기록되지 않은 편집을 앞질러 주장하지 않는다
+  ✓ B2 일반 편집은 여전히 곧바로 '완료'에 도달한다 (편집→인정되는 확정 540ms)
+  ✓ B2 전제: 삭제해도 상태벡터는 그대로고 삭제 총량만 는다 (1→2)
+  ✓ B2 삭제 이전의 확정 1건은 삭제 이후 문서를 담았다고 인정되지 않는다
+  ✓ B2 삭제를 담은 다음 확정이 곧바로 도착해 완료가 된다 — 영구 미완료 아님 (540ms)
+  ✓ B2 모든 영속 확정이 삭제 총량(dl)을 함께 싣는다
+  ✓ F15 이름이 같은 두 프로젝트가 각자의 ID 폴더에 버전을 남긴다(이름 키였다면 한 파일로 충돌)
+  ✓ F15 동명 프로젝트의 버전 내용이 서로 섞이지 않는다
+  ✓ F13 변경 이력이 두 provider 간 동기화(root/changeLog)
+  ✓ F13 보관 버전이 변경 이력(사유·대상 공정)을 담는다 — 복구가 감사기록을 지우지 않기 위한 전제
+  ✓ F13 보관 버전이 확정본(박제 공정 스냅샷)을 담는다
+  ✓ F13 지정 백업 경로(GET /snapshot)도 감사기록을 함께 내려준다
+  ✓ F15 버전 목록 API가 최신순 항목·보관 상한을 돌려준다
+  ✓ F15 버전 열람이 선택한 버전의 Project JSON 을 그대로 돌려준다
+  ✓ F15 버전 이름 형식 위반(경로 조작) 거부
+  ✓ F15 버전 목록도 프로젝트 인가 게이트 적용
+  ✓ S1 조회 전용(같은 본부 PM)도 버전 목록·열람은 가능 — CRDT 조회 입장과 같은 기준
+  ✓ S1/S2 조회 전용의 버전 쓰기는 403 (readOnly 연결과 같은 판정)
+  ✓ S1 조회 전용의 본문 적재 경로도 존재하지 않는다
+  ✓ 강제 버전 저장 1
+  ✓ 강제 버전 저장 2
+  ✓ 강제 버전 저장 3
+  ✓ 강제 버전 저장 4
+  ✓ 강제 버전 저장 5
+  ✓ F15 보관 상한 3개로 프루닝 (실제 3개)
+  ✓ S2 속도 제한 한도(6회/분) 안의 요청은 통과
+  ✓ S2 한도를 넘긴 버스트는 429 + Retry-After 로 거부 (실제 429)
+  ✓ R4 인가표(일반) GET 프로젝트 조회 → {"a":200,"b":200,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) GET 스냅샷 조회 → {"a":200,"b":200,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) PUT 레거시 전체 PUT → {"a":405,"b":405,"c":403,"d":403,"e":401,"dev":405}
+  ✓ R4 인가표(일반) GET 버전 목록 → {"a":200,"b":200,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) GET 버전 열람 → {"a":200,"b":200,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) POST 버전 쓰기 → {"a":200,"b":403,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) GET 레거시 복구본 읽기 → {"a":200,"b":200,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) DELETE 레거시 복구본 삭제(파괴적) → {"a":403,"b":403,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(일반) POST 본문 적재(폐지) → {"a":410,"b":410,"c":410,"d":410,"e":410,"dev":410}
+  ✓ R4 인가표(일반) GET 레거시 목록(세션 인증) → {"a":200,"b":200,"c":200,"d":200,"e":401,"dev":200}
+  ✓ R4 인가표(일반) DELETE 프로젝트 삭제 → {"a":403,"b":403,"c":403,"d":403,"e":401}
+  ✓ R4 인가표(체험존 sample) GET 프로젝트 조회 → {"a":200,"b":200,"c":200,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(체험존 sample) GET 버전 목록 → {"a":200,"b":200,"c":200,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(체험존 sample) POST 버전 쓰기(체험존이라도 배정 담당자만) → {"a":200,"b":403,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(체험존 sample) GET 레거시 복구본 읽기 → {"a":200,"b":200,"c":200,"d":403,"e":401,"dev":200}
+  ✓ R4 인가표(체험존 sample) DELETE 레거시 복구본 삭제(파괴적) → {"a":403,"b":403,"c":403,"d":403,"e":401,"dev":200}
+  ✓ R5-4 전제: 활성 상태에서는 스냅샷·티켓이 모두 통과한다 (200/200)
+  ✓ R5-4 개발자가 프로젝트를 비활성화한다 (200)
+  ✓ R5-4 새 입장은 거부된다(기존 동작) (403)
+  ✓ R5-4 비활성화 전에 받은 grant 로도 스냅샷을 읽을 수 없다 (실제 403)
+  ✓ R5-4 버전 쓰기가 **인가 단계**에서 막힌다 — 429(=통과)가 아니라 403 (실제 403)
+  ✓ R5-4 새 collab 티켓을 더 이상 발급받을 수 없다 (실제 403)
+  ✓ R5-4 비활성화가 이미 열려 있던 WebSocket 연결을 강제 절단한다 — 사유 access-revoked (실제 "access-revoked")
+  ✓ R5-4 개발자는 비활성 프로젝트도 관리·복구할 수 있다(과잉 차단 아님, 200)
+  ✓ R5-4 다시 활성화하면 같은 grant 로 접근이 복구된다 (200/200)
+  ✓ R5-1 전제: 누적 세션이 옛 한계(508)를 한참 넘는다 (clientID 9001개)
+  ✓ R5-1 상태벡터가 상한을 넘으면 서버가 그것을 빼고 집계 증명만 싣는다(강등)
+  ✓ R5-1 확정 payload 가 클라이언트 상한(49,152B) 안에 들어온다 (최대 88B)
+  ✓ R5-1 clientID 가 9,000개여도 확정이 버려지지 않고 '완료'에 도달한다
+  ✓ R4 개발자는 프로젝트를 실제로 삭제할 수 있다(대조군, 실제 404)
+  ✓ B1 버전 쓰기 403 인 신분(같은 본부 미배정 PM)은 복구 파일도 못 지우고 파일이 그대로 남는다 (versions=403, delete=403)
+  ✓ B1 체험존 일반 사용자도 복구 파일을 지울 수 없고 파일이 그대로 남는다 (실제 403)
+  ✓ B1 개발자는 정상적으로 복구 파일을 정리할 수 있다(대조군, 실제 200)
+  ✓ emptyA 버전 1건 생성(삭제 정리 검증용)
+  ✓ #14 revokeProjectAccess가 해당 사용자 활성 연결을 강제 절단
+  ✓ #20 프로젝트 삭제 시 라이브 ydoc(.bin) 정리
+  ✓ F15 프로젝트 삭제 시 버전 이력 폴더도 함께 정리
+  ✓ S2 최소 보관 간격이 연속 보관을 막고 남은 시간을 알려준다 (대기 59995ms, 두 번째 결과 throttled)
+  ✓ S2 스로틀은 프로젝트별로 독립 — 다른 프로젝트 보관은 막지 않는다
+  ✓ B3 보관 실패는 'error' 로, 간격 제한은 'throttled' 로 구분된다 (실제 error)
+  ✓ B3 사전 점검을 둘 다 통과한 뒤 직렬화되면 두 번째는 'throttled'(실패가 아님) — ok/throttled
+
+Sequence server listening on all interfaces:
+  Local:  http://127.0.0.1:50962/
+  LAN:    http://10.12.29.180:50962/
+
+다른 PC에서 LAN URL이 안 열리면 Windows Defender 방화벽에서 TCP 50962 포트를 허용하세요.
+
+  ✓ S2 사용자 버전 저장도 최소 간격을 지킨다 — 연속 요청은 429 (실제 200/429)
+  ✓ S2 스로틀 아래에서는 연타로 보관 상한을 소진할 수 없다 (2개)
+  ✓ B3 전제: 재기동 직후 matrixA 는 사전 점검을 통과한다
+  ✓ B3 사전 점검 통과 후의 스로틀은 429 + Retry-After (실제 429, Retry-After 600)
+  ✓ B3 진짜 실패는 여전히 500 으로 구분된다 (실제 500)
+  ✓ B3 동시 버스트는 200/429 로만 갈린다 — 500 없음 (200/429/429/429)
+  ✓ 서버 재시작 후 Y.Doc binary 복원
+  ✓ legacy 제거 후 재접속에도 seed 중복 없이 binary 그대로 복원
+
+COLLAB SMOKE PASS

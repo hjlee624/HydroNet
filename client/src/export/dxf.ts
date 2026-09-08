@@ -14,11 +14,11 @@
 // DXF is Y-up, so every Y is flipped (dxfY = contentHeight - svgY).
 // ─────────────────────────────────────────────────────────────────────────────
 
-import type { Project } from '../types/model'
-import { computeLayout, type LayoutModel, type LaidTask } from '../engine/layout'
+import { dayToDate, toISO } from '../engine/dates'
+import { computeLayout, type LaidTask, type LayoutFilter, type LayoutModel } from '../engine/layout'
 import { routeLinks } from '../engine/routing'
 import { resolveTextStyle } from '../styles/theme'
-import { dayToDate, toISO } from '../engine/dates'
+import type { Project } from '../types/model'
 
 // ── ACI (AutoCAD Color Index) candidates for nearest-colour matching ──
 // Includes muted mid-tones per hue family so the (desaturated) lane colours map
@@ -113,8 +113,10 @@ const LAYERS: Array<[string, number]> = [
   ['HN_TITLE', 7],
 ]
 
-export function projectToDxf(project: Project): string {
-  const model: LayoutModel = computeLayout(project)
+/** filter 를 주면 그 범위(현재 표시 범위)만, 생략하면 전체 도면을 DXF 로 만든다.
+ *  기존 호출부(인자 1개)는 동작이 그대로다 — 항상 전체 도면. */
+export function projectToDxf(project: Project, filter?: LayoutFilter): string {
+  const model: LayoutModel = computeLayout(project, filter)
   const routed = routeLinks(model, project.links)
   const H = model.contentHeight
   const fy = (y: number) => H - y // flip to Y-up

@@ -1,0 +1,12 @@
+{
+  "issues": 18,
+  "errors": [],
+  "checks": [
+    "HTML parse",
+    "anchor targets",
+    "local evidence links",
+    "priority filter",
+    "search",
+    "reset"
+  ]
+}

@@ -1,0 +1,5 @@
+
+> sequence-client@0.1.0 smoke:presence
+> tsx scripts/presence-smoke.ts
+
+presence smoke passed: sanitized transient awareness with zero Y.Doc writes

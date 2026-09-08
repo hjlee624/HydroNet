@@ -94,72 +94,61 @@ export async function deleteProject(id: string): Promise<void> {
   lsSaveIndex(lsList().filter((p) => p.id !== id))
 }
 
-// ── Named temp autosave (recovery after close/reopen) ───────────────────────
-// Best-effort and isolated from the main save's serverOk flag, so a server that
-// lacks the /api/autosave endpoint never disables the working by-id save.
+// ── 서버 버전 보관(프로젝트 ID 기준) — F15 ─────────────────────────────────
+// 옛 임시저장(/api/autosave)은 파일명을 '프로젝트 이름'으로 잡아 동명 프로젝트끼리
+// 서로를 덮어썼고 이력도 남지 않았다. 신규 경로는 ID 폴더 + 시각 버전이며,
+// 전역 serverOk 플래그(tryServer)를 건드리지 않는다 — 이 기능이 없는 구서버에
+// 붙어도 by-id 저장 경로가 죽지 않게.
 
-export interface AutosaveItem {
-  file: string
-  name: string
-  updatedAt: string
+/** 서버가 CRDT 영속 시점마다 남긴 버전 스냅샷 한 건. */
+export interface ProjectVersion {
+  /** 파일명이자 식별자 — 'YYYYMMDDTHHMMSSZ'. */
+  version: string
+  /** 보관 시각(ISO). */
+  savedAt: string
+  /** 스냅샷 JSON 바이트 크기. */
   size: number
 }
 
-export async function autosaveProject(project: Project): Promise<void> {
-  try {
-    await fetch('/api/autosave', {
-      method: 'POST',
-      credentials: 'include',
-      headers: { 'Content-Type': 'application/json', ...projectHeaders(project.id) },
-      body: JSON.stringify(canonicalProjectSnapshot(project)),
-    })
-  } catch {
-    /* offline / endpoint missing — the by-id save + localStorage already cover persistence */
-  }
-}
-
-export async function listAutosaves(): Promise<{ dir: string; items: AutosaveItem[] }> {
-  try {
-    const res = await fetch('/api/autosave', { credentials: 'include' })
-    if (res.ok) {
-      const data = await res.json()
-      if (data && Array.isArray(data.items)) return data as { dir: string; items: AutosaveItem[] }
-    }
-  } catch {
-    /* fall through to the by-id store */
-  }
-  // Fallback: recover from the by-id project store (older server without autosave).
-  const projects = await listProjects()
+export async function listProjectVersions(
+  projectId: string,
+): Promise<{ dir: string; keep: number; items: ProjectVersion[] }> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/versions`, {
+    credentials: 'include',
+    headers: projectHeaders(projectId),
+  })
+  if (!res.ok) throw new Error(`버전 목록을 불러오지 못했습니다 (${res.status})`)
+  const data = (await res.json()) as { dir?: string; keep?: number; items?: ProjectVersion[] }
   return {
-    dir: '(서버 임시저장 미지원 — 프로젝트 저장소에서 복구)',
-    items: projects.map((p) => ({ file: p.id, name: p.name, updatedAt: p.updatedAt, size: 0 })),
+    dir: typeof data.dir === 'string' ? data.dir : '',
+    keep: typeof data.keep === 'number' ? data.keep : 0,
+    items: Array.isArray(data.items) ? data.items : [],
   }
 }
 
-export async function loadAutosave(file: string): Promise<Project | null> {
-  try {
-    const entered = useAuth.getState().entered
-    const res = await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, {
-      credentials: 'include',
-      headers: projectHeaders(entered?.id),
-    })
-    if (res.ok) return (await res.json()) as Project
-  } catch {
-    /* fall through */
-  }
-  // Fallback: treat `file` as a by-id project key.
-  return loadProject(file)
+export async function loadProjectVersion(
+  projectId: string,
+  version: string,
+): Promise<Project | null> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/versions/${encodeURIComponent(version)}`,
+    { credentials: 'include', headers: projectHeaders(projectId) },
+  )
+  if (res.status === 404) return null
+  if (!res.ok) throw new Error(`버전을 불러오지 못했습니다 (${res.status})`)
+  return (await res.json()) as Project
 }
 
-export async function deleteAutosave(file: string): Promise<void> {
-  try {
-    const entered = useAuth.getState().entered
-    await fetch(`/api/autosave/file/${encodeURIComponent(file)}`, {
-      method: 'DELETE',
-      credentials: 'include',
-      headers: projectHeaders(entered?.id),
-    })
-  } catch {
-    /* best-effort */
-  }
+/** 지금 서버에 있는 라이브 CRDT 상태를 버전으로 한 건 남긴다(사용자 명시 조작). */
+export async function createProjectVersion(
+  projectId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}/versions`, {
+    method: 'POST',
+    credentials: 'include',
+    headers: projectHeaders(projectId),
+  })
+  if (res.ok) return { ok: true }
+  const data = (await res.json().catch(() => null)) as { error?: string } | null
+  return { ok: false, error: data?.error ?? `버전 저장에 실패했습니다 (${res.status})` }
 }

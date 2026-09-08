@@ -7,6 +7,14 @@
 //
 // packages 구조는 facilities.ts 의 Scheme/Pkg/Row/Step 과 동일:
 //  packages[0] = "주요 마일스톤"(steps 모두 ms:true + atMonth), 이후 = 공종 레인.
+//
+// ※ 2026-09 수기 보정: 착공 ≤ 첫 공정 시작, 준공 ≥ 최종 작업 종료 규약에 어긋난 13종의
+//   row.startMonth / 마일스톤 atMonth 를 교정했다(scripts/smoke.ts 마일스톤 위생 검사 —
+//   ±1일 슬랙 없이 엄격 비교). 교정 방향은 **마일스톤을 뒤로 미루는 쪽**으로 통일한다.
+//   실제 작업 행을 앞당겨 맞추면(옹벽·보강토에서 한 번 그랬다) 준공검사가 선행 공정보다
+//   먼저 시작되는 역순 공정이 되어 감리 검토에서 그대로 반려된다.
+//   공정의 공기(step.months)는 표준공기 색인(standardDurationIndex)과 맞물려 있어 손대지
+//   않았다. 워크플로로 이 파일을 재생성하면 이 보정이 조용히 되돌아가므로 다시 반영할 것.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface CivilStep {
@@ -356,7 +364,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 24,
+                atMonth: 25,
               },
             ],
           },
@@ -560,7 +568,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '준공',
         rows: [
           {
-            startMonth: 23,
+            startMonth: 24,
             sub: '준공처리',
             steps: [
               {
@@ -618,7 +626,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 30,
+                atMonth: 31,
               },
             ],
           },
@@ -832,7 +840,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '준공공사',
         rows: [
           {
-            startMonth: 27,
+            startMonth: 28,
             sub: '마무리',
             steps: [
               {
@@ -1511,7 +1519,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 28,
+                atMonth: 29,
               },
             ],
           },
@@ -1692,7 +1700,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '준공 및 검사',
         rows: [
           {
-            startMonth: 26.5,
+            startMonth: 27,
             steps: [
               {
                 name: '재하시험(하중시험)',
@@ -2338,13 +2346,13 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 name: '포장·설비 완료',
                 months: 0,
                 ms: true,
-                atMonth: 35,
+                atMonth: 36.5,
               },
               {
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 36,
+                atMonth: 37,
               },
             ],
           },
@@ -2571,7 +2579,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
             ],
           },
           {
-            startMonth: 34.5,
+            startMonth: 35.5,
             sub: '준공 마무리',
             steps: [
               {
@@ -2635,7 +2643,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 40,
+                atMonth: 41,
               },
             ],
           },
@@ -2951,7 +2959,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '가설·지장물',
         rows: [
           {
-            startMonth: 0.5,
+            startMonth: 1,
             sub: '가설공사',
             steps: [
               {
@@ -2969,7 +2977,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
             ],
           },
           {
-            startMonth: 0.5,
+            startMonth: 1,
             sub: '지장물 이설',
             steps: [
               {
@@ -4431,10 +4439,12 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 atMonth: 10,
               },
               {
+                // 최종 작업(가시설 철거·준공측량·검사)이 361일에 끝나므로 준공은 그 이후로
+                // 둔다. 12개월(360일)로는 준공이 검사보다 하루 앞서 찍혀 순서가 뒤집힌다.
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 12,
+                atMonth: 12.5,
               },
             ],
           },
@@ -4993,7 +5003,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '착공준비·인허가',
         rows: [
           {
-            startMonth: 0,
+            startMonth: 1,
             sub: '인허가·실시설계',
             steps: [
               {
@@ -5942,7 +5952,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '가설·교통처리',
         rows: [
           {
-            startMonth: 0,
+            startMonth: 1,
             sub: '공사준비·가설',
             steps: [
               {
@@ -6796,7 +6806,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '가설·측량',
         rows: [
           {
-            startMonth: 0,
+            startMonth: 1,
             sub: '측량·지반조사·가설공',
             steps: [
               {
@@ -8547,7 +8557,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 24,
+                atMonth: 25,
               },
             ],
           },
@@ -8557,7 +8567,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '가설공·측량·지반조사',
         rows: [
           {
-            startMonth: 0,
+            startMonth: 1,
             steps: [
               {
                 name: '가설사무소·진입도로·가설공',
@@ -8571,7 +8581,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
           },
           {
             sub: '지반조사',
-            startMonth: 0.5,
+            startMonth: 1,
             steps: [
               {
                 name: '시추(보링)·표준관입시험(SPT)',
@@ -8742,7 +8752,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '부대공·준공',
         rows: [
           {
-            startMonth: 23.5,
+            startMonth: 24,
             steps: [
               {
                 name: '배수공·법면보호·부대시설',
@@ -8796,10 +8806,13 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
                 atMonth: 10,
               },
               {
+                // 상부 마감공(성토·비탈면 정리 및 식생공)이 357일, 부대·준공 행이 372일에
+                // 끝난다. 준공은 그 뒤로 미룬다 — 작업을 앞당겨 맞추면 준공검사가 식생공보다
+                // 먼저 시작되는 역순 공정이 된다.
                 name: '준공',
                 months: 0,
                 ms: true,
-                atMonth: 12,
+                atMonth: 12.5,
               },
             ],
           },
@@ -8809,7 +8822,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '착수·인허가',
         rows: [
           {
-            startMonth: 0.5,
+            startMonth: 1,
             steps: [
               {
                 name: '실행설계·시공계획 승인',
@@ -8987,6 +9000,8 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '부대·준공',
         rows: [
           {
+            // 상부 마감공(식생공)이 11.9개월(357일)에 끝나므로 부대·준공은 그 뒤에 붙는다.
+            // 11.2로 앞당기면 준공검사·인수인계가 식생공보다 먼저 시작된다(역순 공정).
             startMonth: 11.6,
             steps: [
               {
@@ -9365,7 +9380,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '인허가·실시설계',
         rows: [
           {
-            startMonth: 0,
+            startMonth: 1,
             sub: '착공준비',
             steps: [
               {
@@ -9384,7 +9399,7 @@ export const CIVIL_FACILITIES: CivilFacility[] = [
         name: '가설·부지조성',
         rows: [
           {
-            startMonth: 0.5,
+            startMonth: 1,
             sub: '가설공사',
             steps: [
               {

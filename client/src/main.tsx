@@ -3,8 +3,11 @@ import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles/index.css'
 import { installGlobalErrorLogging, logInfo } from './state/logger'
+import { installViewportWatch } from './state/viewport'
 
 installGlobalErrorLogging()
+// 화면 폭 구독(F17) — 좁은 화면에서 좌·우 패널을 서랍으로 접는다. 앱 수명 내내 유지.
+installViewportWatch()
 logInfo('Sequence 클라이언트 시작')
 
 createRoot(document.getElementById('root')!).render(

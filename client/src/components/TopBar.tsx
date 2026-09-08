@@ -5,11 +5,15 @@ import { useEffect, useState } from 'react'
 import { useAuth } from '../state/authStore'
 import { openProjectFromFile } from '../state/fileIO'
 import { logWarn } from '../state/logger'
-import { useEditor } from '../state/store'
+import { backupProjectToFile, useEditor } from '../state/store'
 import { useView } from '../state/viewStore'
 import { BoqImportDialog } from './BoqImportDialog'
 import { HelpDialog } from './HelpDialog'
+import { RestoreDialog } from './RestoreDialog'
 import { ReviewDialog } from './ReviewDialog'
+import { SaveStatusChip } from './SaveStatusChip'
+import { ScheduleImportDialog } from './ScheduleImportDialog'
+import { SupportDialog } from './SupportDialog'
 import { TemplateDialog } from './TemplateDialog'
 
 interface TopBarProps {
@@ -21,7 +25,6 @@ interface TopBarProps {
 export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps) {
   const name = useEditor((s) => s.project.name)
   const readOnly = useEditor((s) => s.readOnly)
-  const dirty = useEditor((s) => s.dirty)
   const zoom = useEditor((s) => s.zoom)
   const commissioning = useEditor((s) => s.project.commissioningEnabled)
   const autoCascade = useEditor((s) => s.autoCascade)
@@ -45,6 +48,10 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
   const [newOpen, setNewOpen] = useState(false)
   const [reviewOpen, setReviewOpen] = useState(false)
   const [boqOpen, setBoqOpen] = useState(false)
+  const [schedOpen, setSchedOpen] = useState(false)
+  const [restoreOpen, setRestoreOpen] = useState(false)
+  // 문의 · 진단(F18). 좁은 화면에서도 남는다 — 막혔을 때의 유일한 출구이기 때문.
+  const [supportOpen, setSupportOpen] = useState(false)
 
   // 사용자가 고른 .json 파일을 열어 현재 사업으로 교체(요구: 원하는 경로에서 불러오기).
   async function onLoadFromFile() {
@@ -103,6 +110,9 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         aria-label="프로젝트 이름"
       />
 
+      {/* 휴대전화 1차 범위는 조회·검토·진척 입력이다(F17). 편집·취입·계산 같은 데스크톱
+          전용 컨트롤에는 data-narrow-hide="1" 을 달아 좁은 화면에서 CSS 로 감춘다 —
+          로직은 그대로이고, 넓은 화면에서는 아무것도 달라지지 않는다. */}
       <div className="topbar__actions">
         <button
           className="btn btn--sm btn--ghost"
@@ -114,6 +124,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         {canCreateNew && (
           <button
             className="btn btn--sm btn--ghost"
+            data-narrow-hide="1"
             title="템플릿을 골라 새 도면 시작"
             onClick={() => setNewOpen(true)}
           >
@@ -122,13 +133,14 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         )}
         <button
           className="btn btn--sm"
-          title="작업 파일(.json)을 원하는 경로에 저장 (Ctrl+S)"
-          onClick={() => void a().save()}
+          title="작업 파일(.json)을 원하는 경로에 백업 저장 (Ctrl+S) — 서버 동기화와는 별개입니다"
+          onClick={() => void backupProjectToFile()}
         >
           저장
         </button>
         <button
           className="btn btn--sm btn--ghost"
+          data-narrow-hide="1"
           title="원하는 경로의 작업 파일(.json) 불러오기"
           onClick={() => void onLoadFromFile()}
         >
@@ -136,10 +148,20 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </button>
         <button
           className="btn btn--sm btn--ghost"
+          data-narrow-hide="1"
           title="내역서·수량산출서(엑셀·CSV·HWPX·PDF)에서 물량을 읽어 공정에 연결"
           onClick={() => setBoqOpen(true)}
         >
           📥 내역서 취입
+        </button>
+        <button
+          type="button"
+          className="btn btn--sm btn--ghost"
+          data-narrow-hide="1"
+          title="사내 일정표(엑셀·CSV)에서 공정·기간·담당자·선후행을 읽어 취입 — 되돌리기 한 번으로 전체 취소"
+          onClick={() => setSchedOpen(true)}
+        >
+          📋 일정표 취입
         </button>
         <button
           className="btn btn--sm btn--ghost"
@@ -151,6 +173,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
         <button
           className="btn btn--icon btn--sm"
+          data-narrow-hide="1"
           title="실행 취소 (Ctrl+Z)"
           disabled={!canUndo}
           onClick={() => a().undo()}
@@ -159,6 +182,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </button>
         <button
           className="btn btn--icon btn--sm"
+          data-narrow-hide="1"
           title="다시 실행 (Ctrl+Y)"
           disabled={!canRedo}
           onClick={() => a().redo()}
@@ -176,7 +200,11 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       </div>
 
       <div className="topbar__actions">
-        <label className="toggle" title="선행 공정 변경 시 후행 공정 자동 이동">
+        <label
+          className="toggle"
+          data-narrow-hide="1"
+          title="선행 공정 변경 시 후행 공정 자동 이동"
+        >
           <input
             type="checkbox"
             checked={autoCascade}
@@ -187,6 +215,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         {pro && (
           <button
             className="btn btn--sm"
+            data-narrow-hide="1"
             title="연결을 위반하는 공정만 뒤로 정렬"
             onClick={() => a().cascadeNow()}
           >
@@ -196,6 +225,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         {pro && (
           <button
             className="btn btn--sm"
+            data-narrow-hide="1"
             title="모든 공정을 최조기 일정으로 재계산"
             onClick={() => a().rescheduleNow()}
           >
@@ -204,7 +234,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         )}
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
 
-        <label className="toggle" title="시운전 공정 포함/제외">
+        <label className="toggle" data-narrow-hide="1" title="시운전 공정 포함/제외">
           <input
             type="checkbox"
             checked={commissioning}
@@ -214,7 +244,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
         </label>
         <span style={{ width: 1, height: 22, background: 'var(--hairline)' }} />
 
-        <div className="zoomctl" title="배율 (전체 확대/축소)">
+        <div className="zoomctl" data-narrow-hide="1" title="배율 (전체 확대/축소)">
           <button
             className="btn btn--icon btn--sm"
             title="축소"
@@ -256,16 +286,7 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
           </button>
         </div>
 
-        <span
-          className={`save-state ${dirty ? 'dirty' : ''}`}
-          title={
-            dirty
-              ? '저장되지 않은 변경이 있습니다 — 저장 또는 Ctrl+S'
-              : '마지막 저장 이후 변경 없음'
-          }
-        >
-          {dirty ? '● 미저장' : '저장됨'}
-        </span>
+        <SaveStatusChip onOpenRestore={() => setRestoreOpen(true)} />
         <button
           className="btn btn--sm btn--dark"
           title="사용 방법 · 단축키"
@@ -275,7 +296,17 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
           ? 도움말
         </button>
         <button
+          type="button"
+          className="btn btn--sm btn--ghost"
+          title="문의 · 진단 정보 복사 — 담당자에게 붙여넣어 전달"
+          aria-label="문의"
+          onClick={() => setSupportOpen(true)}
+        >
+          🛟 문의
+        </button>
+        <button
           className="btn btn--sm"
+          data-narrow-hide="1"
           title="출력 전 전체 화면 미리보기 (Esc 종료)"
           onClick={onToggleFullscreen}
         >
@@ -290,6 +321,9 @@ export function TopBar({ onExport, onToggleFullscreen, fullscreen }: TopBarProps
       {newOpen && <TemplateDialog onClose={() => setNewOpen(false)} />}
       {reviewOpen && <ReviewDialog onClose={() => setReviewOpen(false)} />}
       {boqOpen && <BoqImportDialog onClose={() => setBoqOpen(false)} />}
+      {schedOpen && <ScheduleImportDialog onClose={() => setSchedOpen(false)} />}
+      {restoreOpen && <RestoreDialog onClose={() => setRestoreOpen(false)} />}
+      {supportOpen && <SupportDialog onClose={() => setSupportOpen(false)} />}
     </header>
   )
 }

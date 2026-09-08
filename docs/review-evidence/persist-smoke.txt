@@ -1,0 +1,5 @@
+
+> sequence-client@0.1.0 smoke:persist
+> tsx scripts/persist-smoke.ts
+
+persist smoke passed: 저장 표시 모델·내용 대조 확정·상태벡터 압축/집계 강등(세션 12,000개)·조회 전용 표시·파일 백업 정직성(프로젝트 전환 포함)·오프라인 동의 만료·배포 모드 해석·저장 파일 스키마 버전 정합 검증 완료

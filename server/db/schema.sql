@@ -50,6 +50,39 @@ CREATE TABLE IF NOT EXISTS project_members (
 );
 CREATE INDEX IF NOT EXISTS idx_members_user ON project_members(user_id);
 
+-- F07: 프로젝트 접근 요청 — 미배정 사용자가 담당자에게 배정을 요청하는 기록.
+-- 요청 자체는 **어떤 권한도 부여하지 않는다**. 승인(project_members 삽입)만이 입장을 연다.
+CREATE TABLE IF NOT EXISTS access_requests (
+  id              TEXT PRIMARY KEY,
+  project_id      TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  user_id         TEXT NOT NULL REFERENCES users(id)    ON DELETE CASCADE, -- 요청자
+  reason          TEXT NOT NULL DEFAULT '',                                -- 요청 사유
+  status          TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','approved','rejected','expired')),
+  requested_at    BIGINT NOT NULL,                                         -- 요청 시각(epoch ms)
+  expires_at      BIGINT NOT NULL,                                         -- 만료(요청+7일). 기한이 지나면 'expired' 로 확정 저장
+  decided_by      TEXT REFERENCES users(id) ON DELETE SET NULL,            -- 승인자/거절자
+  decided_at      BIGINT,
+  decision_reason TEXT NOT NULL DEFAULT ''                                 -- 거절 사유(거절 시 필수)
+);
+-- 기존 DB 마이그레이션: 만료를 저장 상태로 승격('expired' 허용). 만료가 표시용에 그치면
+-- 기한 지난 대기 행이 남아 재요청이 영구히 409 로 막힌다(부분 UNIQUE 인덱스에 걸려서).
+-- 부분 인덱스 술어엔 now() 를 못 쓰므로(비-immutable) 만료는 앱이 쓰기로 확정한다(pgRepo.js).
+DO $$ BEGIN
+  IF EXISTS (SELECT 1 FROM pg_constraint
+             WHERE conname = 'access_requests_status_check'
+               AND conrelid = 'access_requests'::regclass) THEN
+    ALTER TABLE access_requests DROP CONSTRAINT access_requests_status_check;
+  END IF;
+  ALTER TABLE access_requests ADD CONSTRAINT access_requests_status_check
+    CHECK (status IN ('pending','approved','rejected','expired'));
+END $$;
+
+-- 같은 프로젝트·사용자에 대한 '처리 대기' 요청은 하나만(거절/승인/만료 이력은 계속 쌓인다).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_access_req_open
+  ON access_requests(project_id, user_id) WHERE status = 'pending';
+CREATE INDEX IF NOT EXISTS idx_access_req_proj ON access_requests(project_id);
+CREATE INDEX IF NOT EXISTS idx_access_req_user ON access_requests(user_id);
+
 -- P3(ADR-001): CRDT Y.Doc 바이너리 영속(room = projectId = documentName)
 CREATE TABLE IF NOT EXISTS ydocs (
   name        TEXT PRIMARY KEY,

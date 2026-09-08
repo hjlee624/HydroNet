@@ -84,3 +84,6 @@ sample.dxf
 
 # UI 캡처 스냅샷(개인 작업용) — 저장소에 올리지 않음.
 /SHOTS/
+
+# 검토보고서 렌더 캡처(재현 명령이 없어 곧 낡는다) — 저장소에 두지 않는다.
+docs/review-evidence/report-preview.png

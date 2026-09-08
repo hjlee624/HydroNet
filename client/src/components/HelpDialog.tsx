@@ -1,12 +1,34 @@
 // Help / usage guide. A reference of the main features, mouse interactions and
 // keyboard shortcuts, shown in the shared animated Modal (Esc / × to close).
+//
+// 단축키 표와 보기 막대 힌트 문장은 state/keymap.ts 의 정의에서 **생성**한다 —
+// 실제 동작과 도움말이 어긋날 수 없다(예전에 'Z 줌'이 문서에만 남아 있던 문제 방지).
 
 import type { ReactNode } from 'react'
+import { SUPPORT_DOCS } from '../data/support'
+import { ALL_SHORTCUTS, GESTURES, KEYMAP, type ShortcutDoc } from '../state/keymap'
 import { Modal } from './Modal'
 
 function K({ children }: { children: ReactNode }) {
   return <kbd className="help-kbd">{children}</kbd>
 }
+
+/** 키 조합 한 벌을 <kbd>+<kbd> 형태로. */
+function Combo({ keys }: { keys: string[] }) {
+  return (
+    <>
+      {keys.map((key, i) => (
+        <span key={key}>
+          {i > 0 && '+'}
+          <K>{key}</K>
+        </span>
+      ))}
+    </>
+  )
+}
+
+/** 보기 막대 힌트에 노출되는 항목(ViewBar 와 같은 정의를 읽는다). */
+const HINTS: ShortcutDoc[] = [...KEYMAP, ...GESTURES].filter((d) => d.hint)
 
 export function HelpDialog({ onClose }: { onClose: () => void }) {
   return (
@@ -117,8 +139,14 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
               나옴)
             </li>
             <li>
-              <b>단축키 안내</b> — 보기 막대 오른쪽에 <K>Z</K> 확대·축소 / <K>H</K> 화면 이동
-              단축키를 표시(자세한 동작은 위 ‘캔버스 도구’ 참고)
+              <b>단축키 안내</b> — 보기 막대 오른쪽에{' '}
+              {HINTS.map((d, i) => (
+                <span key={d.label}>
+                  {i > 0 && ' / '}
+                  <Combo keys={d.keys} /> {d.label}
+                </span>
+              ))}
+              을(를) 표시(자세한 동작은 위 ‘캔버스 도구’ 참고)
             </li>
           </ul>
         </section>
@@ -245,51 +273,53 @@ export function HelpDialog({ onClose }: { onClose: () => void }) {
 
         <section className="help-sec">
           <h3>단축키</h3>
+          {/* 표 내용은 state/keymap.ts 에서 생성 — 손으로 적지 않는다. */}
           <table className="help-keys">
             <tbody>
-              <tr>
-                <td>
-                  <K>Ctrl</K>+<K>S</K>
-                </td>
-                <td>저장(파일로 — 경로 선택)</td>
-              </tr>
-              <tr>
-                <td>
-                  <K>Ctrl</K>+<K>Z</K> / <K>Ctrl</K>+<K>Y</K>
-                </td>
-                <td>실행 취소 / 다시 실행</td>
-              </tr>
-              <tr>
-                <td>
-                  <K>Ctrl</K>+<K>C</K> / <K>Ctrl</K>+<K>V</K>
-                </td>
-                <td>선택한 공종 복사 / 붙여넣기</td>
-              </tr>
-              <tr>
-                <td>
-                  <K>Delete</K> / <K>Backspace</K>
-                </td>
-                <td>선택한 공정·연결 삭제</td>
-              </tr>
-              <tr>
-                <td>
-                  <K>Z</K> / <K>H</K>
-                </td>
-                <td>줌 모드 / 이동 모드</td>
-              </tr>
-              <tr>
-                <td>
-                  <K>V</K> / <K>Esc</K>
-                </td>
-                <td>편집 모드 복귀 (Esc는 연결 드래그·줌/이동도 해제)</td>
-              </tr>
+              {ALL_SHORTCUTS.map((d) => (
+                <tr key={d.label}>
+                  <td>
+                    <Combo keys={d.keys} />
+                    {d.altKeys && (
+                      <>
+                        {' / '}
+                        <Combo keys={d.altKeys} />
+                      </>
+                    )}
+                  </td>
+                  <td>{d.label}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
+          <p className="note" style={{ marginTop: 10 }}>
+            <b>입력 칸에 커서가 있으면</b> 도면 단축키(실행 취소·다시 실행·삭제·<K>H</K>/<K>V</K>)는
+            동작하지 않습니다 — 입력 칸에서 누른 <K>Ctrl</K>+<K>Z</K>는 그 칸의 글자만 되돌립니다.
+            단 <K>Esc</K>(연결 드래그 취소)는 입력 칸에서도 동작합니다.{' '}
+            <b>대화상자가 열려 있으면</b> 도면 단축키 중 <K>Ctrl</K>+<K>S</K>(저장) 하나만 살아
+            있습니다 — 나머지는 모두 멈추고, <K>Esc</K>는 그 대화상자를 닫습니다.
+          </p>
           <p className="note" style={{ marginTop: 10 }}>
             저장은 <b>자동이 아니며</b> 상단 <b>저장</b>(또는 <K>Ctrl</K>+<K>S</K>)을 눌러 파일로
             저장합니다. 글꼴이 화면·출력에 그대로 나오려면 출력 PC에 KoPubWorld Dotum_Pro 글꼴
             설치를 권장합니다.
           </p>
+        </section>
+
+        {/* 막혔을 때의 출구(F18) — 문서 경로는 data/support.ts 한 곳에서만 정의한다. */}
+        <section className="help-sec">
+          <h3>막히면 — 문의 · 교육</h3>
+          <ul>
+            <li>
+              상단 <b>🛟 문의</b> → <b>📋 진단 정보 복사</b> 후 본부 담당자에게 <b>붙여넣어 전달</b>
+              합니다(자동 발송은 없습니다)
+            </li>
+            {SUPPORT_DOCS.map((d) => (
+              <li key={d.path}>
+                <b>{d.path}</b> — {d.what}
+              </li>
+            ))}
+          </ul>
         </section>
       </div>
     </Modal>

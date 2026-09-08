@@ -32,6 +32,21 @@ export function createPgRepo(connectionString) {
     }
   const memRow = (r) =>
     r && { projectId: r.project_id, userId: r.user_id, role: r.role, addedBy: r.added_by }
+  // F07 접근 요청 — snake_case row → camelCase(메모리 어댑터와 동일 모양). BIGINT 는 문자열로
+  // 오므로 Number 로 되돌린다(userRow 의 pending_at 처리와 같은 결).
+  const arRow = (r) =>
+    r && {
+      id: r.id,
+      projectId: r.project_id,
+      userId: r.user_id,
+      reason: r.reason ?? '',
+      status: r.status,
+      requestedAt: r.requested_at != null ? Number(r.requested_at) : null,
+      expiresAt: r.expires_at != null ? Number(r.expires_at) : null,
+      decidedBy: r.decided_by ?? null,
+      decidedAt: r.decided_at != null ? Number(r.decided_at) : null,
+      decisionReason: r.decision_reason ?? '',
+    }
 
   return {
     backend: 'pg',
@@ -209,6 +224,76 @@ export function createPgRepo(connectionString) {
     },
     async removeMember(projectId, userId) {
       await q('DELETE FROM project_members WHERE project_id=$1 AND user_id=$2', [projectId, userId])
+    },
+
+    // ── F07 접근 요청 ─────────────────────────────────────────────────────────
+    async createAccessRequest(r) {
+      // idx_access_req_open(부분 UNIQUE)에 걸리면 rows 가 비고 → conflict.
+      // 메모리 어댑터의 '대기 중 요청 존재 시 conflict throw' 와 동일한 계약.
+      // 만료는 저장 상태다 — 기한이 지난 대기 행을 같은 트랜잭션에서 'expired' 로 확정한 뒤
+      // 삽입해야 재요청이 열린다(부분 인덱스 술어엔 now() 같은 비-immutable 함수를 못 쓴다).
+      const client = await pool.connect()
+      try {
+        await client.query('BEGIN')
+        await client.query(
+          `UPDATE access_requests SET status='expired'
+             WHERE project_id=$1 AND user_id=$2 AND status='pending' AND expires_at <= $3`,
+          [r.projectId, r.userId, Date.now()],
+        )
+        const inserted = await client.query(
+          `INSERT INTO access_requests
+             (id,project_id,user_id,reason,status,requested_at,expires_at,decided_by,decided_at,decision_reason)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
+           ON CONFLICT DO NOTHING
+           RETURNING *`,
+          [
+            r.id,
+            r.projectId,
+            r.userId,
+            r.reason ?? '',
+            r.status ?? 'pending',
+            r.requestedAt,
+            r.expiresAt,
+            r.decidedBy ?? null,
+            r.decidedAt ?? null,
+            r.decisionReason ?? '',
+          ],
+        )
+        // 여전히 살아 있는 대기 행이 있다는 뜻 → 롤백(위 UPDATE 는 어차피 0건).
+        if (!inserted.rows[0])
+          throw Object.assign(new Error('access-request-exists'), { code: 'conflict' })
+        await client.query('COMMIT')
+        return arRow(inserted.rows[0])
+      } catch (error) {
+        await client.query('ROLLBACK').catch(() => {})
+        throw error
+      } finally {
+        client.release()
+      }
+    },
+    async listAccessRequests() {
+      return (await q('SELECT * FROM access_requests ORDER BY requested_at DESC')).rows.map(arRow)
+    },
+    async getAccessRequest(id) {
+      return arRow((await q('SELECT * FROM access_requests WHERE id=$1', [id])).rows[0]) ?? null
+    },
+    async resolveAccessRequest(id, patch) {
+      const r = await q(
+        `UPDATE access_requests SET
+           status=COALESCE($2,status),
+           decided_by=COALESCE($3,decided_by),
+           decided_at=COALESCE($4,decided_at),
+           decision_reason=COALESCE($5,decision_reason)
+         WHERE id=$1 RETURNING *`,
+        [
+          id,
+          patch.status ?? null,
+          patch.decidedBy ?? null,
+          patch.decidedAt ?? null,
+          patch.decisionReason ?? null,
+        ],
+      )
+      return arRow(r.rows[0]) ?? null
     },
     async fetchYDoc(name) {
       const row = (await q('SELECT data FROM ydocs WHERE name=$1', [name])).rows[0]

@@ -7,21 +7,26 @@
 //             · setProjectActive(id, active) · deleteProject(id)
 //   members:  getMembership(projectId, userId) · listMembershipsForUser(userId)
 //             · listMembers(projectId) · addMember(projectId, userId, role, by) · removeMember(projectId, userId)
+//   access:   createAccessRequest(r) · listAccessRequests() · getAccessRequest(id)
+//             · resolveAccessRequest(id, patch)          ← F07 프로젝트 접근 요청
 //   u  = { id, name, role, passwordHash?, active }
 //   p  = { id, name, accessCodeHash?, createdBy }
 //   m  = { projectId, userId, role('pm'|'user'), addedBy }
+//   ar = { id, projectId, userId, reason, status('pending'|'approved'|'rejected'|'expired'),
+//          requestedAt, expiresAt, decidedBy, decidedAt, decisionReason }
 import fs from 'node:fs'
 import path from 'node:path'
 
 /** 메모리 어댑터 — file(JSON)로 로드/영속(재시작 보존). 운영엔 pgRepo 사용. */
 export function createMemoryRepo(file) {
-  const state = { users: {}, projects: {}, members: [] }
+  const state = { users: {}, projects: {}, members: [], accessRequests: [] }
   if (file && fs.existsSync(file)) {
     try {
       Object.assign(state, JSON.parse(fs.readFileSync(file, 'utf8')))
       state.users ??= {}
       state.projects ??= {}
       state.members ??= []
+      state.accessRequests ??= [] // 구버전 저장 파일 호환(필드 없으면 빈 목록)
     } catch {
       /* 손상 시 빈 상태로 시작 */
     }
@@ -81,6 +86,8 @@ export function createMemoryRepo(file) {
       delete state.users[id]
       // 해당 사용자의 프로젝트 멤버십도 함께 제거(고아 멤버십 방지).
       state.members = state.members.filter((m) => m.userId !== id)
+      // F07: 접근 요청도 정리(pg 는 users FK ON DELETE CASCADE 와 동일 효과).
+      state.accessRequests = state.accessRequests.filter((r) => r.userId !== id)
       save()
     },
     async listProjects() {
@@ -134,6 +141,8 @@ export function createMemoryRepo(file) {
     async deleteProject(id) {
       delete state.projects[id]
       state.members = state.members.filter((m) => m.projectId !== id)
+      // F07: 접근 요청도 정리(pg 는 projects FK ON DELETE CASCADE 와 동일 효과).
+      state.accessRequests = state.accessRequests.filter((r) => r.projectId !== id)
       save()
     },
     async getMembership(projectId, userId) {
@@ -158,6 +167,70 @@ export function createMemoryRepo(file) {
         (m) => !(m.projectId === projectId && m.userId === userId),
       )
       save()
+    },
+
+    // ── F07 접근 요청 ─────────────────────────────────────────────────────────
+    // 저장만 한다. 권한 판정(roles.js)은 이 표를 보지 않는다 — 요청은 접근이 아니다.
+    async createAccessRequest(r) {
+      // 같은 프로젝트·사용자에 대한 '처리 대기'는 하나만(pg 어댑터와 동일 규칙).
+      // 단, 만료는 표시용이 아니라 저장 상태다 — 기한이 지난 대기 행을 먼저 'expired' 로
+      // 확정한 뒤 판정한다. 만료를 무시하면 재요청이 영구히 409 로 막혀(담당자 부재 등)
+      // 사용자가 그 프로젝트에 영영 도달하지 못한다.
+      const now = Date.now()
+      let swept = false
+      for (const x of state.accessRequests) {
+        if (
+          x.projectId === r.projectId &&
+          x.userId === r.userId &&
+          x.status === 'pending' &&
+          Number(x.expiresAt) <= now
+        ) {
+          x.status = 'expired'
+          swept = true
+        }
+      }
+      const open = state.accessRequests.find(
+        (x) =>
+          x.projectId === r.projectId &&
+          x.userId === r.userId &&
+          x.status === 'pending' &&
+          Number(x.expiresAt) > now,
+      )
+      if (open) {
+        if (swept) save()
+        throw Object.assign(new Error('access-request-exists'), { code: 'conflict' })
+      }
+      const row = {
+        id: r.id,
+        projectId: r.projectId,
+        userId: r.userId,
+        reason: r.reason ?? '',
+        status: r.status ?? 'pending',
+        requestedAt: r.requestedAt,
+        expiresAt: r.expiresAt,
+        decidedBy: r.decidedBy ?? null,
+        decidedAt: r.decidedAt ?? null,
+        decisionReason: r.decisionReason ?? '',
+      }
+      state.accessRequests.push(row)
+      save()
+      return clone(row)
+    },
+    async listAccessRequests() {
+      return state.accessRequests.map(clone)
+    },
+    async getAccessRequest(id) {
+      return clone(state.accessRequests.find((r) => r.id === id)) ?? null
+    },
+    async resolveAccessRequest(id, patch) {
+      const row = state.accessRequests.find((r) => r.id === id)
+      if (!row) return null
+      row.status = patch.status ?? row.status
+      row.decidedBy = patch.decidedBy ?? row.decidedBy ?? null
+      row.decidedAt = patch.decidedAt ?? row.decidedAt ?? null
+      row.decisionReason = patch.decisionReason ?? row.decisionReason ?? ''
+      save()
+      return clone(row)
     },
   }
 }

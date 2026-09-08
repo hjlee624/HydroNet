@@ -308,6 +308,235 @@ assert.deepEqual(
   'sheet switch does not mutate shared state',
 )
 
+// ── 공기 산정 전제(periodInputs) 동시 편집 — 필드별 독립 병합 ───────────────────────────
+// A가 준비기간 45, B가 법정공휴일수 60 을 **동시에** 넣는다. 예전처럼 중첩 객체 한 덩어리로
+// 저장하면 나중 쓰기가 객체 전체를 덮어써 한쪽 입력이 조용히 사라진다(③ 산정 총공기 박스가
+// '가정' 으로 되돌아가고 legalTotal 이 말없이 바뀜). 스칼라 키 5개로 펼친 뒤엔 둘 다 살아야 한다.
+{
+  const piBase = createSampleProject()
+  piBase.periodInputs = { tolerancePct: 10 }
+  const piLeft = new Y.Doc()
+  applyProjectToYDoc(piLeft, piBase)
+  const piRight = new Y.Doc()
+  Y.applyUpdate(piRight, Y.encodeStateAsUpdate(piLeft))
+
+  edit(piLeft, (project) => {
+    project.periodInputs = { ...project.periodInputs, prepDays: 45 }
+  })
+  edit(piRight, (project) => {
+    project.periodInputs = { ...project.periodInputs, holidayDays: 60 }
+  })
+  sync(piLeft, piRight)
+  for (const doc of [piLeft, piRight]) {
+    const pi = projectFromYDoc(doc).periodInputs
+    assert.equal(pi?.prepDays, 45, 'concurrent prepDays must survive the merge')
+    assert.equal(pi?.holidayDays, 60, 'concurrent holidayDays must survive the merge')
+    assert.equal(pi?.tolerancePct, 10, 'untouched tolerancePct must be preserved')
+  }
+  // 필드 삭제(입력 비움)는 그대로 반영돼야 한다 — 키가 남아 유령 값이 되면 안 된다.
+  edit(piLeft, (project) => {
+    project.periodInputs = { ...project.periodInputs, prepDays: undefined }
+  })
+  assert.equal(projectFromYDoc(piLeft).periodInputs?.prepDays, undefined)
+  assert.equal(projectFromYDoc(piLeft).periodInputs?.holidayDays, 60)
+
+  // 하위 호환 — 구버전 문서는 meta 에 중첩 periodInputs 객체를 갖고 있다. 그대로 읽히고,
+  // 다음 쓰기에서 스칼라 키로 이관돼야 한다(JSON 왕복 형태는 PeriodInputs 그대로).
+  const legacyDoc = new Y.Doc()
+  applyProjectToYDoc(legacyDoc, createSampleProject())
+  bootstrapProjectYTypes(legacyDoc).meta.set('periodInputs', {
+    prepDays: 20,
+    tolerancePct: 8,
+  })
+  assert.deepEqual(projectFromYDoc(legacyDoc).periodInputs, { prepDays: 20, tolerancePct: 8 })
+  edit(legacyDoc, (project) => {
+    project.periodInputs = { ...project.periodInputs, cleanupDays: 40 }
+  })
+  const migratedMeta = bootstrapProjectYTypes(legacyDoc).meta
+  assert.equal(migratedMeta.has('periodInputs'), false, 'legacy nested key must be migrated away')
+  assert.deepEqual(projectFromYDoc(legacyDoc).periodInputs, {
+    prepDays: 20,
+    cleanupDays: 40,
+    tolerancePct: 8,
+  })
+}
+
+// ── 신규 Task 필드(extId·owner·actualStart/Finish) 동시 편집 — 필드 단위 병합 ───────────
+// 지금까지 crdt-smoke 는 name/note 만 봤다. stripTask 가 파생필드 외 **모든** 키를 싣고
+// syncPlainMap 이 필드별로 diff 하므로, A가 담당자·B가 실적일자를 같은 공정에 넣어도 둘 다 살아야 한다.
+{
+  const fieldBase = createSampleProject()
+  const target = fieldBase.tasks[0]
+  const fieldLeft = new Y.Doc()
+  applyProjectToYDoc(fieldLeft, fieldBase)
+  const fieldRight = new Y.Doc()
+  Y.applyUpdate(fieldRight, Y.encodeStateAsUpdate(fieldLeft))
+
+  edit(fieldLeft, (project) => {
+    const t = taskById(project, target.id)
+    t.owner = '좌담당'
+    t.extId = 'EXT-77'
+  })
+  edit(fieldRight, (project) => {
+    const t = taskById(project, target.id)
+    t.actualStart = '2026-03-02'
+    t.actualFinish = '2026-03-20'
+  })
+  sync(fieldLeft, fieldRight)
+  for (const doc of [fieldLeft, fieldRight]) {
+    const t = taskById(projectFromYDoc(doc), target.id)
+    assert.equal(t.owner, '좌담당', 'concurrent owner survives')
+    assert.equal(t.extId, 'EXT-77', 'concurrent extId survives')
+    assert.equal(t.actualStart, '2026-03-02', 'concurrent actualStart survives')
+    assert.equal(t.actualFinish, '2026-03-20', 'concurrent actualFinish survives')
+  }
+  // 입력을 비우면 키가 실제로 지워져야 한다(유령 값 금지).
+  edit(fieldLeft, (project) => {
+    taskById(project, target.id).owner = undefined
+  })
+  assert.equal(taskById(projectFromYDoc(fieldLeft), target.id).owner, undefined)
+  assert.equal(taskById(projectFromYDoc(fieldLeft), target.id).actualFinish, '2026-03-20')
+}
+
+// ── 변경 이력·확정본(F13) — 레코드 단위 병합 + undo 불가침 ─────────────────────────────
+{
+  const histBase = createSampleProject()
+  histBase.changeLog = [
+    {
+      id: 'ch-seed',
+      at: '2026-01-01T00:00:00.000Z',
+      actorName: '기존',
+      kind: 'note',
+      taskIds: [],
+      summary: '착수',
+      reason: '초기 기록',
+      state: 'confirmed',
+    },
+  ]
+  const hLeft = new Y.Doc()
+  applyProjectToYDoc(hLeft, histBase)
+  const hRight = new Y.Doc()
+  Y.applyUpdate(hRight, Y.encodeStateAsUpdate(hLeft))
+
+  edit(hLeft, (project) => {
+    taskById(project, first.id).duration += 3
+    project.changeLog = [
+      ...(project.changeLog ?? []),
+      {
+        id: 'ch-A',
+        at: '2026-02-01T00:00:00.000Z',
+        actorName: 'A',
+        kind: 'duration',
+        taskIds: [first.id],
+        summary: '공기 +3일',
+        reason: '암반',
+        state: 'review',
+      },
+    ]
+  })
+  edit(hRight, (project) => {
+    taskById(project, second.id).owner = 'B담당'
+    project.changeLog = [
+      ...(project.changeLog ?? []),
+      {
+        id: 'ch-B',
+        at: '2026-02-02T00:00:00.000Z',
+        actorName: 'B',
+        kind: 'note',
+        taskIds: [second.id],
+        summary: '담당 지정',
+        reason: '인수인계',
+      },
+    ]
+  })
+  sync(hLeft, hRight)
+  for (const doc of [hLeft, hRight]) {
+    const log = projectFromYDoc(doc).changeLog ?? []
+    assert.equal(log.length, 3, 'both peers 이력이 모두 살아남는다(덮어쓰기 없음)')
+    assert.deepEqual(
+      log.map((e) => e.id),
+      ['ch-seed', 'ch-A', 'ch-B'],
+      '이력은 기록 시각 순으로 두 피어에서 동일하게 정렬된다',
+    )
+    assert.equal(log[1].reason, '암반')
+    assert.equal(log[2].reason, '인수인계')
+  }
+
+  // 확정본(baselineVersions)도 같은 방식으로 왕복하고, undo 는 이력·확정본을 건드리지 않는다.
+  const auditDoc = new Y.Doc()
+  Y.applyUpdate(auditDoc, Y.encodeStateAsUpdate(hLeft))
+  edit(auditDoc, (project) => {
+    project.baselineVersions = [
+      {
+        id: 'bv-1',
+        name: '착공 기준선',
+        authorName: 'A',
+        capturedAt: '2026-02-03T00:00:00.000Z',
+        asOf: '2026-02-03',
+        startDay: 0,
+        endDay: 100,
+        tasks: [{ id: first.id, start: 0, duration: 10 }],
+      },
+    ]
+  })
+  const auditTypes = bootstrapProjectYTypes(auditDoc)
+  const auditUndo = createProjectUndoManager(auditTypes)
+  auditUndo.stopCapturing()
+  const beforeName = taskById(projectFromYDoc(auditDoc), first.id).name
+  // 공정 편집 + 이력/확정본 추가를 **같은 LOCAL 트랜잭션**에 담는다. 이래야 되돌리기 스택
+  // 항목 안에 이력 쓰기가 실제로 들어가고, '이력은 undo 대상이 아니다' 라는 보장이 시험된다
+  // (따로 커밋하면 스택 항목에 이력 연산이 아예 없어 무엇을 추적하든 통과해버린다).
+  edit(auditDoc, (project) => {
+    taskById(project, first.id).name = 'audit-undo-target'
+    project.changeLog = [
+      ...(project.changeLog ?? []),
+      {
+        id: 'ch-audit',
+        at: '2026-02-04T00:00:00.000Z',
+        actorName: 'A',
+        kind: 'duration',
+        taskIds: [first.id],
+        summary: '이름 변경',
+        reason: '오탈자',
+      },
+    ]
+    project.baselineVersions = [
+      ...(project.baselineVersions ?? []),
+      {
+        id: 'bv-2',
+        name: '2차 확정본',
+        authorName: 'A',
+        capturedAt: '2026-02-04T00:00:00.000Z',
+        asOf: '2026-02-04',
+        startDay: 0,
+        endDay: 120,
+        tasks: [{ id: first.id, start: 0, duration: 12 }],
+      },
+    ]
+  })
+  auditUndo.stopCapturing()
+  auditUndo.undo()
+  const audited = projectFromYDoc(auditDoc)
+  assert.equal(
+    audited.tasks.find((t) => t.id === first.id)?.name,
+    beforeName,
+    'undo 는 편집만 되돌린다',
+  )
+  assert.equal(audited.changeLog?.length, 4, 'undo 후에도 변경 이력이 그대로 남는다(감사기록)')
+  assert.equal(audited.changeLog?.at(-1)?.id, 'ch-audit', '되돌린 편집의 이력도 살아남는다')
+  assert.equal(audited.baselineVersions?.length, 2, 'undo 후에도 확정본이 그대로 남는다')
+  assert.equal(audited.baselineVersions?.[0].tasks.length, 1, '확정본의 공정 스냅샷이 왕복된다')
+  auditUndo.destroy()
+
+  // 구버전 문서(두 컨테이너가 아예 없음)는 필드 부재로 읽힌다 — 구버전 호환.
+  const legacy = createSampleProject()
+  const legacyDoc = new Y.Doc()
+  applyProjectToYDoc(legacyDoc, legacy)
+  const legacyRead = projectFromYDoc(legacyDoc)
+  assert.equal(legacyRead.changeLog, undefined, '이력 없는 문서는 changeLog 키 자체가 없다')
+  assert.equal(legacyRead.baselineVersions, undefined, '확정본 없는 문서는 키 자체가 없다')
+}
+
 // Legacy shared activeSheetId values are ignored; only the local preferred id applies.
 const legacyPointerDoc = new Y.Doc()
 applyProjectToYDoc(legacyPointerDoc, multi)
@@ -316,5 +545,5 @@ assert.equal(projectFromYDoc(legacyPointerDoc).activeSheet?.id, 'sheet-a')
 assert.equal(projectFromYDoc(legacyPointerDoc, 'sheet-b').activeSheet?.id, 'sheet-b')
 
 console.log(
-  'CRDT SMOKE OK: convergence, authority, JSON, hydration gate, undo, gesture, local sheet',
+  'CRDT SMOKE OK: convergence, authority, JSON, hydration gate, undo, gesture, local sheet, periodInputs merge, task actuals merge, changeLog/baselineVersions audit',
 )

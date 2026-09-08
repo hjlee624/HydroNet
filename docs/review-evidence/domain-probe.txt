@@ -1,0 +1,13 @@
+{
+  "parallel": {
+    "calendarSpan": 10,
+    "summedWork": 10,
+    "criticalCount": 2
+  },
+  "wrongUnit": {
+    "inputUnit": "ton",
+    "rateUnit": "㎥",
+    "theoretical": null,
+    "verdict": "판정불가"
+  }
+}

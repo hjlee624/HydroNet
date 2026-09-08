@@ -12,8 +12,13 @@
     "smoke:adequacy": "tsx scripts/adequacy-smoke.ts",
     "smoke:boq": "tsx scripts/boq-smoke.ts",
     "smoke:crdt": "tsx scripts/crdt-smoke.ts",
+    "smoke:export": "tsx scripts/export-smoke.ts",
     "smoke:presence": "tsx scripts/presence-smoke.ts",
+    "smoke:schedule-import": "tsx scripts/schedule-import-smoke.ts",
+    "smoke:persist": "tsx scripts/persist-smoke.ts",
     "smoke:auth-phone": "tsx scripts/auth-phone-test.ts",
+    "smoke:perf": "tsx scripts/perf-smoke.ts",
+    "bundle:report": "tsx scripts/bundle-report.ts",
     "mount-test": "tsx scripts/mount-test.ts",
     "preview": "vite preview"
   },

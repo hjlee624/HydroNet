@@ -4843,3 +4843,952 @@ textarea.input {
     break-inside: avoid;
   }
 }
+
+/* ── 모달 키보드 접근성(F11) — 포커스 가두기·복귀와 짝을 이루는 시각 표시 ── */
+.modal:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+.modal .btn:focus-visible,
+.modal .select:focus-visible,
+.modal .seg button:focus-visible,
+.modal input:focus-visible,
+.modal textarea:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 1px;
+}
+
+/* ── 출력 미리보기·진단(F14) ── */
+.export-preview {
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: #fff;
+  overflow: hidden;
+  display: flex;
+}
+.export-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.export-diag {
+  width: 100%;
+  height: 120px;
+  margin-top: 6px;
+  font-size: 11px;
+  font-family: ui-monospace, Menlo, Consolas, monospace;
+}
+
+/* ── 저장·동기화 표시(F01) / 배포 모드 배지(F05) / 서버 버전 복구(F15) ────────
+   .save-state 기본 스타일은 위쪽 상단바 블록에 있고, 여기서는 새 변형만 덧붙인다. */
+.save-state--sync {
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 700;
+  cursor: pointer;
+  min-width: 0;
+  white-space: nowrap;
+}
+.save-state--sync.is-synced {
+  color: #1f7a4d;
+  background: rgba(31, 122, 77, 0.1);
+}
+.save-state--sync.is-pending {
+  color: var(--primary);
+  background: rgba(37, 99, 235, 0.1);
+}
+.save-state--sync.is-offline,
+.save-state--sync.is-error {
+  color: #b3261e;
+  background: rgba(179, 38, 30, 0.1);
+}
+.save-state--sync.is-localonly {
+  color: #3a4a63;
+  background: rgba(120, 140, 170, 0.16);
+}
+.save-state--file {
+  margin-left: 6px;
+  min-width: 0;
+  white-space: nowrap;
+}
+.save-pop__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--hairline);
+  font-size: 12.5px;
+}
+.save-pop__note {
+  margin: 10px 0 6px;
+  font-size: 12px;
+  color: var(--steel);
+}
+.save-pop__actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* 배포 모드 배지 — 로컬 작성본을 협업 프로젝트로 착각하지 않도록 상시 노출. */
+.deploy-badge {
+  position: fixed;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  z-index: 40;
+  padding: 4px 14px;
+  border-radius: 999px;
+  background: rgba(120, 140, 170, 0.16);
+  border: 1px solid rgba(90, 110, 140, 0.28);
+  color: #3a4a63;
+  font-size: 11.5px;
+  font-weight: 700;
+}
+.deploy-badge--warn {
+  background: rgba(179, 38, 30, 0.1);
+  border-color: rgba(179, 38, 30, 0.28);
+  color: #b3261e;
+}
+
+/* 서버 버전 목록·미리보기 — 멤버 패널(.member-list) 과 같은 결. */
+.ver-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.ver-note,
+.ver-empty {
+  font-size: 12px;
+  color: var(--steel);
+}
+.ver-error {
+  margin: 6px 0;
+  font-size: 12px;
+  color: #b3261e;
+}
+.ver-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow: auto;
+}
+.ver-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 2px;
+  border-bottom: 1px solid var(--hairline);
+}
+.ver-time {
+  flex: 1;
+  font-size: 12.5px;
+}
+.ver-size {
+  font-size: 11.5px;
+  color: var(--steel);
+}
+.ver-preview {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: rgba(120, 140, 170, 0.08);
+}
+.ver-preview__title {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.ver-preview__body {
+  font-size: 12.5px;
+  margin-bottom: 8px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   변경 영향 카드(F09) + 미해결 일정 문제 목록·잠정 산정 표시(F10)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* 문제 목록 팝오버는 상태바 바로 위(.app__center 기준)에 뜬다. */
+.app__center {
+  position: relative;
+}
+
+/* ── 상태바: 편집 의미론 토글 · 잠정 배지 · 문제 목록 버튼 ── */
+.statusbar__seg {
+  transform: scale(0.86);
+  transform-origin: left center;
+}
+.statusbar .warn--btn {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: var(--primary-deep);
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+.statusbar .stat.is-provisional strong {
+  color: var(--stone);
+}
+.badge--provisional {
+  margin-left: 6px;
+  padding: 0 6px;
+  border: 1px solid var(--primary);
+  border-radius: 9999px;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--primary-deep);
+}
+
+/* ── 문제 목록 팝오버 ── */
+.problems {
+  position: absolute;
+  right: 16px;
+  bottom: 38px;
+  z-index: 7;
+  width: 440px;
+  max-height: 46vh;
+  overflow: auto;
+  background: var(--canvas);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow-modal);
+  animation: hn-fade-in 0.16s ease both;
+}
+.problems__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+.problem-row {
+  padding: 8px 6px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.problem-row:nth-of-type(odd) {
+  background: var(--cream);
+}
+.problem-row__msg {
+  color: var(--charcoal);
+}
+.problem-row__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 6px 0 2px;
+}
+.problem-chip {
+  height: 24px;
+  padding: 0 9px;
+  cursor: pointer;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.problem-row__hint {
+  font-size: 11px;
+  color: var(--steel);
+}
+
+/* ── 변경 영향 카드(드래그 중 미리보기 / 커밋 직후 되돌리기) ── */
+.edit-impact {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  z-index: 6;
+  max-width: 330px;
+  background: var(--canvas);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  padding: 10px 12px;
+  box-shadow: var(--shadow-modal);
+  font-size: 12.5px;
+  line-height: 1.55;
+  color: var(--charcoal);
+  pointer-events: none;
+}
+.edit-impact--done {
+  background: var(--cream);
+  pointer-events: auto;
+  animation: hn-fade-in 0.18s ease both;
+}
+.edit-impact__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.edit-impact__mode {
+  padding: 0 7px;
+  border-radius: 9999px;
+  background: var(--cream-deeper);
+  font-size: 11px;
+  color: var(--steel);
+}
+.edit-impact__row {
+  margin-top: 2px;
+}
+.edit-impact__list {
+  margin: 3px 0 0;
+  padding-left: 16px;
+  font-size: 11.5px;
+  color: var(--steel);
+}
+.edit-impact__ok {
+  color: var(--steel);
+}
+.edit-impact__clamp {
+  color: var(--primary-deep);
+}
+.edit-impact__delta.pos {
+  color: #2e7d6b;
+}
+.edit-impact__delta.neg {
+  color: var(--primary-deep);
+}
+.edit-impact__note {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--steel);
+}
+.edit-impact__undo {
+  margin-top: 8px;
+  width: 100%;
+}
+
+/* 모달 안(인스펙터 확인창)에서는 카드가 흐름 안에 놓인다. */
+.modal .edit-impact__body {
+  font-size: 13px;
+}
+
+/* ── 변경이력·확정본 모듈(F13) ─────────────────────────────────────────────── */
+.seq-hist__st {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.seq-hist__st--draft {
+  background: #eef2f6;
+  color: #5b6b7a;
+}
+.seq-hist__st--review {
+  background: #fbf1dc;
+  color: #8a5a12;
+}
+.seq-hist__st--ok {
+  background: #e6f6ec;
+  color: #1f7a4a;
+}
+.seq-hist__by {
+  display: block;
+  margin-top: 2px;
+  font-size: 10.5px;
+  color: var(--steel);
+}
+.seq-hist__diff {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: #f9fbfc;
+}
+.seq-hist__h3 {
+  margin: 0 0 8px;
+  font-size: 13.5px;
+  font-weight: 700;
+}
+.seq-hist__late {
+  color: #c0271a;
+  font-weight: 700;
+}
+
+/* ── 보고서: 주간 공정회의(F16) ────────────────────────────────────────────── */
+.seq-rep__wk-lead {
+  margin: 0 0 10px;
+  font-size: 13px;
+}
+.seq-rep__wk-note {
+  display: block;
+  margin-top: 4px;
+  font-size: 11.5px;
+  color: var(--steel);
+}
+.seq-rep__wk-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.seq-rep__wk-card {
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  padding: 8px 10px;
+  background: #fff;
+}
+.seq-rep__wk-h3 {
+  margin: 0 0 6px;
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.seq-rep__wk-empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--steel);
+}
+/* 인쇄 시 주간 회의 표가 카드 경계에서 잘리지 않게 한다(확정본 재출력·회의 자료 배포). */
+@media print {
+  .seq-rep__wk-card,
+  .seq-hist__diff {
+    break-inside: avoid;
+  }
+}
+
+/* ── 좁은 화면(F17) — 3단 패널을 서랍으로, 데스크톱 전용 컨트롤 숨김 ─────────── */
+/* 규칙은 모두 파일 끝(위 @media print 뒤)에만 둔다. 기존 규칙·출력(@media print)·
+   전체화면(:fullscreen) 계약은 한 줄도 재정의하지 않는다. */
+.drawerbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  background: var(--canvas);
+  border-bottom: 1px solid var(--hairline-soft);
+}
+.drawer__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: rgba(27, 23, 18, 0.28);
+}
+/* 서랍은 도면 '위에' 겹쳐 뜬다 — 본문 폭을 나눠 갖지 않으므로 차트가 좁아지지 않는다. */
+.drawer {
+  position: fixed;
+  top: 0;
+  bottom: 0;
+  z-index: 71;
+  display: flex;
+  /* 폭은 안에 든 패널의 인라인 width(≤320px)가 정한다 — !important 로 덮어쓰지 않는다. */
+  max-width: 88vw;
+  background: var(--canvas);
+  box-shadow: var(--shadow-modal);
+}
+.drawer--left {
+  left: 0;
+  border-right: 1px solid var(--hairline);
+}
+.drawer--right {
+  right: 0;
+  border-left: 1px solid var(--hairline);
+}
+.drawer__x {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  z-index: 1;
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  color: var(--steel);
+  cursor: pointer;
+}
+.mrail__note {
+  margin: 8px 0 0;
+  padding: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--stone);
+}
+/* 보기 막대의 단축키 힌트 묶음 — 평소엔 레이아웃에 관여하지 않는 투명 래퍼. */
+.viewbar__hintwrap {
+  display: contents;
+}
+
+@media (max-width: 1100px) {
+  /* 모듈 레일은 아이콘만 — 도면에 폭을 넘긴다. */
+  .mrail {
+    width: 56px;
+    padding: 10px 6px 20px;
+  }
+  .mrail__label,
+  .mrail__glabel {
+    display: none;
+  }
+  .mrail__item {
+    justify-content: center;
+    padding: 8px 4px;
+  }
+  .topbar {
+    height: auto;
+    min-height: 56px;
+    flex-wrap: wrap;
+    padding: 6px 10px;
+    row-gap: 6px;
+  }
+  .topbar__project {
+    min-width: 120px;
+  }
+}
+
+@media (max-width: 760px) {
+  /* 휴대전화 1차 범위 = 조회·검토·진척 입력. 편집·취입·계산 컨트롤은 감춘다
+     (TopBar/ViewBar 의 data-narrow-hide="1" — 로직은 그대로 살아 있다).
+     선택자를 두 단계로 둬 .btn/.toggle/.zoomctl/.viewbar__hintwrap 보다 우선한다
+     — !important 없이 이기기 위한 것이다. */
+  .topbar [data-narrow-hide="1"],
+  .viewbar [data-narrow-hide="1"] {
+    display: none;
+  }
+  .brand__sub {
+    display: none;
+  }
+  .statusbar {
+    flex-wrap: wrap;
+    row-gap: 2px;
+  }
+}
+
+/* ── 문의 · 진단(SupportDialog, F18) ───────────────────────────────────────── */
+.support__table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12.5px;
+}
+.support__table th,
+.support__table td {
+  border-bottom: 1px solid var(--hairline);
+  padding: 5px 6px;
+  text-align: left;
+}
+.support__diag {
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  font-size: 11.5px;
+  background: var(--cream-soft);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  padding: 8px;
+}
+.support__ok {
+  margin-left: 8px;
+  font-size: 12px;
+  color: var(--primary-deep);
+}
+
+/* ── F06 첫 실행 온보딩(의도 선택 · 5단계 안내) ───────────────────────────── */
+/* 공용 .modal-backdrop 을 쓰지 않는 자체 오버레이 — 이유는 FirstRunDialog.tsx 주석 참조. */
+.onb-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 78;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(28, 26, 24, 0.42);
+  backdrop-filter: blur(2px);
+}
+.onb-dialog {
+  width: min(720px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--canvas);
+  border: 1px solid var(--hairline);
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(28, 26, 24, 0.24);
+  padding: 22px 24px 18px;
+}
+.onb-dialog__title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.onb-dialog__sub {
+  margin: 6px 0 16px;
+  font-size: 13px;
+  color: var(--stone);
+}
+.onb-dialog__note {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--stone);
+}
+.onb-dialog__foot {
+  margin-top: 14px;
+  display: flex;
+  justify-content: flex-end;
+  border-top: 1px solid var(--hairline-soft);
+  padding-top: 12px;
+}
+.onb-dialog__skip {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--stone);
+  text-decoration: underline;
+  cursor: pointer;
+}
+.onb-dialog__skip:hover {
+  color: var(--ink);
+}
+.onb-intent {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  gap: 12px;
+}
+.onb-intent__opt {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 16px 14px;
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: 12px;
+  background: var(--canvas);
+  font: inherit;
+  color: var(--ink);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 0.16s ease,
+    background 0.16s ease,
+    transform 0.16s ease;
+}
+.onb-intent__opt:hover {
+  border-color: var(--primary);
+  background: var(--cream-soft);
+  transform: translateY(-1px);
+}
+.onb-intent__icon {
+  font-size: 24px;
+  line-height: 1;
+}
+.onb-intent__label {
+  font-size: 15px;
+  font-weight: 800;
+}
+.onb-intent__desc {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--stone);
+}
+
+/* 5단계 체크리스트 — 화면 오른쪽 아래 고정. 단계는 실제 상태 변화로만 체크된다. */
+.onb-guide {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  width: 300px;
+  max-height: 70vh;
+  overflow: auto;
+  background: var(--canvas);
+  border: 1px solid var(--hairline-strong);
+  border-radius: 14px;
+  box-shadow: 0 12px 32px rgba(28, 26, 24, 0.18);
+  padding: 12px 12px 10px;
+}
+.onb-guide__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.onb-guide__title {
+  font-size: 13.5px;
+  font-weight: 800;
+  color: var(--ink);
+}
+.onb-guide__count {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary-deep);
+}
+.onb-guide__x {
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--stone);
+  cursor: pointer;
+  line-height: 1;
+}
+.onb-guide__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.onb-guide__item {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 7px 8px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 10px;
+}
+.onb-guide__item.is-done {
+  background: var(--cream-soft);
+  border-color: var(--primary);
+}
+.onb-guide__mark {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--hairline-strong);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+  color: var(--stone);
+}
+.onb-guide__item.is-done .onb-guide__mark {
+  border-color: var(--primary);
+  color: var(--primary-deep);
+}
+.onb-guide__body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.onb-guide__label {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--ink);
+}
+.onb-guide__hint {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--stone);
+}
+.onb-guide__try {
+  flex: none;
+  align-self: center;
+  padding: 3px 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  background: var(--canvas);
+  font: inherit;
+  font-size: 11px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.onb-guide__try:hover {
+  background: var(--cream);
+  border-color: var(--primary);
+}
+.onb-guide__done {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--primary-deep);
+}
+.onb-guide__foot {
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--hairline-soft);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.onb-guide__btn {
+  padding: 4px 8px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  background: var(--canvas);
+  font: inherit;
+  font-size: 11.5px;
+  color: var(--ink);
+  cursor: pointer;
+}
+.onb-guide__btn:hover {
+  background: var(--cream-soft);
+}
+.onb-guide__btn--quiet {
+  border-color: transparent;
+  color: var(--stone);
+}
+
+/* ── F07 접근 요청(입장 불가 안내 · 담당자 · 승인/거절) ───────────────────── */
+.proj-card__badge--req {
+  background: rgba(94, 156, 160, 0.2);
+  color: var(--primary-deep);
+}
+.proj-card__badge--req-no {
+  background: rgba(192, 57, 43, 0.12);
+  color: var(--danger, #c0392b);
+}
+.access-req {
+  margin: 4px 0 10px;
+}
+.access-req__label {
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--stone);
+  margin-bottom: 6px;
+}
+.access-req__contacts {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.access-req__contact {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--hairline-soft);
+  border-radius: 10px;
+  font-size: 13px;
+  color: var(--ink);
+}
+.access-req__contact em {
+  font-style: normal;
+  font-size: 12px;
+  color: var(--stone);
+}
+.access-req__status {
+  margin: 0 0 10px;
+  padding: 9px 11px;
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+  background: var(--cream-soft);
+  font-size: 12.5px;
+  color: var(--ink);
+}
+.access-req__status p {
+  margin: 4px 0 0;
+  color: var(--stone);
+}
+.access-req__status--rejected,
+.access-req__status--expired {
+  border-color: rgba(192, 57, 43, 0.35);
+}
+.access-req__reason {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--canvas);
+  resize: vertical;
+}
+.access-req__reject {
+  flex: 1;
+  min-width: 120px;
+  padding: 5px 8px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--ink);
+  background: var(--canvas);
+}
+.admin-pending--access {
+  border-color: var(--primary);
+}
+
+/* ── F08 프로젝트 목록 검색 · 필터 · 즐겨찾기 ─────────────────────────────── */
+.proj-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 6px 0 12px;
+}
+.proj-search {
+  flex: 1;
+  min-width: 200px;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  border: 1.5px solid var(--hairline-strong);
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--canvas);
+  transition: border-color 0.15s ease;
+}
+.proj-search:focus {
+  outline: none;
+  border-color: var(--primary);
+}
+.proj-filter__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.proj-filter__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 6px 11px;
+  border: 1px solid var(--hairline-strong);
+  border-radius: 999px;
+  background: var(--canvas);
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--ink);
+  cursor: pointer;
+  transition:
+    background 0.16s ease,
+    border-color 0.16s ease;
+}
+.proj-filter__chip:hover {
+  background: var(--cream-soft);
+}
+.proj-filter__chip.is-on {
+  border-color: var(--primary);
+  background: var(--cream);
+  font-weight: 700;
+}
+.proj-filter__chip em {
+  font-style: normal;
+  font-size: 11px;
+  color: var(--stone);
+}
+.proj-filter__chip.is-on em {
+  color: var(--primary-deep);
+}
+.proj-card__badge--recent {
+  background: rgba(94, 156, 160, 0.12);
+  color: var(--steel);
+}
+/* 즐겨찾기 별은 hover 없이도 보여야 한다 — 도구 묶음의 기본 opacity:0 을 이 카드에서만 해제. */
+.proj-card__tools:has(.proj-card__tool.is-fav) {
+  opacity: 1;
+}
+.proj-card__tool.is-fav {
+  color: #d9a441;
+  border-color: #d9a441;
+}

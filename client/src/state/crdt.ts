@@ -1,12 +1,15 @@
-import { IndexeddbPersistence } from 'y-indexeddb'
+import { IndexeddbPersistence, storeState } from 'y-indexeddb'
 import * as Y from 'yjs'
 import type {
   Baseline,
   BaselineTask,
+  BaselineVersion,
   Branding,
   Category,
+  ChangeEntry,
   Link,
   ModuleRecord,
+  PeriodInputs,
   Project,
   RainySeason,
   Sheet,
@@ -44,6 +47,11 @@ export interface ProjectYTypes {
   modules: Y.Map<RecordMap>
   /** 기준선 스냅샷: 스칼라 필드 + 'tasks' Y.Array. */
   baseline: Y.Map<unknown>
+  /** 변경 이력(F13): entryId → 필드 Y.Map. **레코드 단위**라 두 사람이 서로 다른 이력을
+   *  동시에 남겨도 병합된다(배열 통값 저장이면 나중 쓰기가 상대 이력을 지운다). */
+  changeLog: RecordMap
+  /** 확정본(기준선 버전) 목록(F13): versionId → 필드 Y.Map. 저장 후 불변(append-only). */
+  baselineVersions: RecordMap
 }
 
 export interface ProjectCrdtRuntime {
@@ -122,6 +130,8 @@ export function bootstrapProjectYTypes(doc: Y.Doc): ProjectYTypes {
   const sheets = doc.getMap<Y.Map<unknown>>('root/sheets')
   const modules = doc.getMap<RecordMap>('root/modules')
   const baseline = doc.getMap<unknown>('root/baseline')
+  const changeLog = doc.getMap<Y.Map<unknown>>('root/changeLog')
+  const baselineVersions = doc.getMap<Y.Map<unknown>>('root/baselineVersions')
   let result!: ProjectYTypes
   doc.transact(() => {
     // Stable scalar references avoid the Yjs nested-type replacement trap when
@@ -140,6 +150,8 @@ export function bootstrapProjectYTypes(doc: Y.Doc): ProjectYTypes {
       sheets: 'root/sheets',
       modules: 'root/modules',
       baseline: 'root/baseline',
+      changeLog: 'root/changeLog',
+      baselineVersions: 'root/baselineVersions',
     }
     for (const [key, ref] of Object.entries(refs)) if (root.get(key) !== ref) root.set(key, ref)
     result = {
@@ -156,6 +168,8 @@ export function bootstrapProjectYTypes(doc: Y.Doc): ProjectYTypes {
       sheets,
       modules,
       baseline,
+      changeLog,
+      baselineVersions,
     }
   }, SEED_ORIGIN)
   return result
@@ -395,6 +409,52 @@ function syncBaseline(target: Y.Map<unknown>, baseline: Baseline | undefined): v
   )
 }
 
+/**
+ * 공기 산정 전제(PeriodInputs) ↔ root/meta 스칼라 키 매핑.
+ * 필드마다 독립된 meta 키를 쓰는 이유는 **동시 편집 병합** 때문이다 — 중첩 객체 한 덩어리로
+ * 넣으면 A의 '준비기간 45'와 B의 '법정공휴일 60'이 동시에 들어올 때 나중 쓰기가 객체 전체를
+ * 덮어써 상대 입력이 조용히 사라진다.
+ */
+const PERIOD_INPUT_KEYS = {
+  prepDays: 'piPrepDays',
+  cleanupDays: 'piCleanupDays',
+  holidayDays: 'piHolidayDays',
+  weatherDays: 'piWeatherDays',
+  tolerancePct: 'piTolerancePct',
+} as const satisfies Record<keyof PeriodInputs, string>
+
+/** PeriodInputs → meta 스칼라 키. 미입력 필드는 undefined 로 실어 syncPlainMap 이 키를 지우게 한다. */
+function periodInputsToMeta(inputs: PeriodInputs | undefined): JsonRecord {
+  const out: JsonRecord = {}
+  for (const [field, metaKey] of Object.entries(PERIOD_INPUT_KEYS)) {
+    const value = inputs?.[field as keyof PeriodInputs]
+    out[metaKey] = typeof value === 'number' && Number.isFinite(value) ? value : undefined
+  }
+  return out
+}
+
+/**
+ * meta 스칼라 키 → PeriodInputs. 스칼라 키가 하나도 없으면 **구버전 문서의 중첩
+ * meta.periodInputs 객체**를 폴백으로 읽는다(하위 호환 — 다음 쓰기에서 스칼라로 이관된다).
+ * 값이 하나도 없으면 undefined 를 돌려줘 project.periodInputs 자체를 만들지 않는다.
+ */
+function periodInputsFromMeta(meta: JsonRecord): PeriodInputs | undefined {
+  const flat: PeriodInputs = {}
+  let found = false
+  for (const [field, metaKey] of Object.entries(PERIOD_INPUT_KEYS)) {
+    const value = meta[metaKey]
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      flat[field as keyof PeriodInputs] = value
+      found = true
+    }
+  }
+  if (found) return flat
+  const legacy = meta.periodInputs
+  return legacy && typeof legacy === 'object' && !Array.isArray(legacy)
+    ? (legacy as PeriodInputs)
+    : undefined
+}
+
 /** Applies a field/record diff; unchanged records and fields produce no Yjs operation. */
 export function applyProjectToYDoc(
   doc: Y.Doc,
@@ -413,6 +473,13 @@ export function applyProjectToYDoc(
         facility: canonical.facility,
         startDate: canonical.startDate,
         commissioningEnabled: canonical.commissioningEnabled,
+        // 공기 산정 전제(준비·정리·공휴일·기상·허용편차) — meta 의 **스칼라 키 5개로 펼쳐**
+        // 저장한다. 중첩 객체 하나로 넣으면 syncPlainMap 이 객체 전체를 한 값으로 비교·교체해
+        // 마지막 쓰기가 이깁니다(A가 준비기간, B가 공휴일수를 동시에 고치면 한쪽이 조용히
+        // undefined 로 되돌아감). 키를 나누면 필드별로 독립 병합된다.
+        // 구버전 문서의 중첩 periodInputs 는 읽기측(projectFromYDoc)이 폴백으로 흡수하고,
+        // 이 쓰기에서 키가 사라지며 자연 이관된다(JSON 왕복 형태는 그대로 PeriodInputs).
+        ...periodInputsToMeta(canonical.periodInputs),
         createdAt: canonical.meta.createdAt,
         updatedAt: canonical.meta.updatedAt,
         schemaVersion: canonical.meta.schemaVersion,
@@ -449,6 +516,10 @@ export function applyProjectToYDoc(
     // 건설사업관리 모듈·기준선 — 사업 단위(시트 무관). canonical은 project 전체 스프레드라 포함됨.
     syncModuleCollections(types.modules, canonical.modules)
     syncBaseline(types.baseline, canonical.baseline)
+    // 변경 이력·확정본 — 레코드 단위 diff. taskIds/tasks 는 배열이지만 각 레코드가 저장 후
+    // 불변(append-only)이라 통값 저장으로 충분하고, **서로 다른 이력끼리는 id가 달라 병합**된다.
+    syncRecordCollection(types.changeLog, canonical.changeLog ?? [], stripUndefined)
+    syncRecordCollection(types.baselineVersions, canonical.baselineVersions ?? [], stripUndefined)
   }, origin)
   return types
 }
@@ -562,6 +633,14 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
     : undefined
   const modules = readModules(types.modules)
   const baseline = readBaseline(types.baseline)
+  // 변경 이력은 기록 시각(at) 오름차순으로 정규화한다 — 두 피어가 동시에 append 하면
+  // $position 이 같은 값을 받을 수 있어 순서가 문서마다 흔들릴 수 있기 때문.
+  const changeLog = orderedRecords<ChangeEntry>(types.changeLog)
+    .map((e) => ({ ...e, taskIds: Array.isArray(e.taskIds) ? e.taskIds : [] }))
+    .sort((a, b) => a.at.localeCompare(b.at) || a.id.localeCompare(b.id))
+  const baselineVersions = orderedRecords<BaselineVersion>(types.baselineVersions)
+    .map((v) => ({ ...v, tasks: Array.isArray(v.tasks) ? v.tasks : [] }))
+    .sort((a, b) => a.capturedAt.localeCompare(b.capturedAt) || a.id.localeCompare(b.id))
 
   const project = {
     id: String(meta.id ?? ''),
@@ -570,6 +649,11 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
     ...(typeof meta.facility === 'string' ? { facility: meta.facility } : {}),
     startDate: String(meta.startDate ?? ''),
     commissioningEnabled: meta.commissioningEnabled !== false,
+    // 공기 산정 전제 — meta 스칼라 키 5개를 모아 되돌린다(구버전 중첩 객체는 폴백).
+    ...(() => {
+      const pi = periodInputsFromMeta(meta)
+      return pi ? { periodInputs: pi } : {}
+    })(),
     meta: {
       createdAt: String(meta.createdAt ?? ''),
       updatedAt: String(meta.updatedAt ?? ''),
@@ -590,6 +674,8 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
     rainySeasons: activeSheet?.rainySeasons ?? orderedRecords<RainySeason>(types.rainySeasons),
     ...(Object.keys(modules).length ? { modules } : {}),
     ...(baseline ? { baseline } : {}),
+    ...(changeLog.length ? { changeLog } : {}),
+    ...(baselineVersions.length ? { baselineVersions } : {}),
     ...(activeSheet
       ? {
           activeSheet: { id: activeSheet.id, role: activeSheet.role, name: activeSheet.name },
@@ -614,6 +700,72 @@ export function attachIndexeddbPersistence(
   return persistence
 }
 
+/**
+ * 이 업데이트가 '이 브라우저에서 만든 변경'인가.
+ * provider(원격 수신)·IndexedDB(하이드레이션)가 적용한 업데이트는 origin 이 그 인스턴스라
+ * 여기 걸리지 않는다. 판정이 애매하면 로컬로 보지 않는 쪽이 아니라 **보는 쪽**이 안전하다
+ * (미확정으로 표시될 뿐, 완료를 거짓으로 말하지 않는다).
+ */
+function isLocalUpdateOrigin(origin: unknown): boolean {
+  return (
+    origin == null ||
+    origin === LOCAL_ORIGIN ||
+    origin === SCHEDULE_ORIGIN ||
+    origin === UNTRACKED_ORIGIN ||
+    origin === SEED_ORIGIN ||
+    origin instanceof Y.UndoManager
+  )
+}
+
+export interface LocalPersistenceHandlers {
+  /** 이 브라우저에서 문서를 고쳤다(= 아직 어디에도 확정되지 않은 변경이 생겼다). */
+  onLocalChange?: () => void
+  /** IndexedDB 쓰기 트랜잭션이 실제로 끝났다. 가짜 시각을 만들지 않기 위한 유일한 근거. */
+  onLocalFlushed?: () => void
+}
+
+/**
+ * 로컬 편집과 IndexedDB flush 확정을 관찰한다(F01 표시 모델 입력).
+ * 편집이 idleMs 동안 멎으면 storeState 로 강제 flush 하고, 트랜잭션 완료 시에만 onLocalFlushed 를 부른다.
+ * persistence 가 없는 환경(테스트·file:// 등)에서는 편집 관찰만 하고 flush 는 하지 않는다.
+ */
+export function observeLocalPersistence(
+  runtime: ProjectCrdtRuntime,
+  handlers: LocalPersistenceHandlers,
+  idleMs = 1500,
+): () => void {
+  const persistence = runtime.persistence
+  let timer: ReturnType<typeof setTimeout> | null = null
+  let stopped = false
+
+  const flush = () => {
+    timer = null
+    if (stopped || !persistence) return
+    void storeState(persistence, true)
+      .then(() => {
+        if (!stopped) handlers.onLocalFlushed?.()
+      })
+      .catch(() => {
+        /* 로컬 기록 실패는 표시를 갱신하지 않는다 — '확정'을 지어내지 않기 위함 */
+      })
+  }
+
+  const onUpdate = (_update: Uint8Array, origin: unknown) => {
+    if (stopped || !isLocalUpdateOrigin(origin)) return
+    handlers.onLocalChange?.()
+    if (!persistence) return
+    if (timer) clearTimeout(timer)
+    timer = setTimeout(flush, idleMs)
+  }
+
+  runtime.doc.on('update', onUpdate)
+  return () => {
+    stopped = true
+    if (timer) clearTimeout(timer)
+    runtime.doc.off('update', onUpdate)
+  }
+}
+
 export function createProjectUndoManager(types: ProjectYTypes): Y.UndoManager {
   return new Y.UndoManager(
     [
@@ -627,6 +779,9 @@ export function createProjectUndoManager(types: ProjectYTypes): Y.UndoManager {
       types.links,
       types.rainySeasons,
       types.sheets,
+      // modules·baseline 은 의도적으로 제외(사업 단위 기록은 도면 되돌리기 대상이 아니다).
+      // changeLog·baselineVersions 도 같은 이유로 **절대 넣지 않는다** — 되돌리기가 감사기록
+      // (누가·왜 바꿨는지)과 확정본을 지워버리면 이력의 신뢰가 무너진다.
     ],
     {
       trackedOrigins: new Set([LOCAL_ORIGIN]),

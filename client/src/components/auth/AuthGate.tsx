@@ -3,12 +3,20 @@
 import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { DIVISIONS, divisionIcon, divisionLabel } from '../../data/divisions'
 import {
+  type AccessRequest,
   formatLoginPhoneInput,
   loginPhoneDigits,
+  type ProjectContact,
   type ProjectMember,
   type ProjectSummary,
   useAuth,
 } from '../../state/authStore'
+import {
+  filterProjects,
+  PROJECT_TABS,
+  type ProjectTab,
+  useProjectPrefs,
+} from '../../state/projectPrefsStore'
 import { useView } from '../../state/viewStore'
 import { PASSWORD_RULE_TEXT, validatePassword } from '../../utils/password'
 import { AdminPanel } from './AdminPanel'
@@ -43,12 +51,36 @@ export function AuthGate({ children }: { children: ReactNode }) {
   const entered = useAuth((s) => s.entered)
   const mustChange = useAuth((s) => s.mustChangePassword)
   const init = useAuth((s) => s.init)
+  const deployMode = useAuth((s) => s.deployMode)
+  const serverUnreachable = useAuth((s) => s.serverUnreachable)
 
   useEffect(() => {
     init()
   }, [init])
 
-  if (mode === 'local') return <>{children}</> // 오프라인/단일 HTML — 로그인 없이 편집
+  // F05: 서버 대상 배포인데 서버가 응답하지 않음 — 조용히 무권한 로컬 편집으로 떨어지지 않는다.
+  if (serverUnreachable)
+    return (
+      <>
+        <AuthBackground />
+        <ServerUnreachableScreen />
+      </>
+    )
+  if (mode === 'local')
+    return (
+      <>
+        {deployMode === 'standalone' ? (
+          <div className="deploy-badge" role="status">
+            💾 오프라인 단독 실행본 — 이 PC에만 저장됩니다
+          </div>
+        ) : (
+          <div className="deploy-badge deploy-badge--warn" role="status">
+            ⚠ 서버 미연결 — 로컬 모드(이 PC에만 저장, 협업 아님)
+          </div>
+        )}
+        {children}
+      </>
+    )
   // 구 정책 비밀번호 → 새 정책으로 강제 변경(프로젝트 진입 전 차단).
   if (user && mustChange)
     return (
@@ -133,6 +165,43 @@ function AuthBar() {
         로그아웃
       </button>
       {pwOpen && <ChangePasswordModal onClose={() => setPwOpen(false)} />}
+    </div>
+  )
+}
+
+// 서버 대상 배포인데 /api/health 가 3회 모두 무응답일 때의 안내 화면(F05).
+// 조용한 로컬 강등 대신 '무슨 일이 났는지'를 말하고 사용자에게 선택을 넘긴다.
+function ServerUnreachableScreen() {
+  const retryInit = useAuth((s) => s.retryInit)
+  const continueOffline = useAuth((s) => s.continueOffline)
+  const attempts = useAuth((s) => s.probeAttempts)
+  const checking = useAuth((s) => s.mode) === 'checking'
+  const host = typeof window !== 'undefined' ? window.location.host : ''
+  return (
+    <div className="auth-screen">
+      <div className="auth-card">
+        <div className="auth-title">서버에 연결할 수 없습니다</div>
+        <p className="auth-sub">
+          사내 서버<b>{host ? ` (${host})` : ''}</b>가 응답하지 않습니다. 네트워크·VPN·서버 기동
+          상태를 확인하세요. (시도 {attempts}회)
+        </p>
+        <p className="auth-note auth-note--warn">
+          지금 그대로 편집하면 <b>협업 프로젝트가 아니라 이 PC의 로컬 작성본</b>이 됩니다. 서버로
+          자동 동기화되지 않으니, 서버 복구 후 파일(.json)로 옮겨야 합니다. 이전에 저장해 둔 작업
+          파일은 오프라인으로 계속한 뒤 상단바의 <b>불러오기</b>로 열 수 있습니다.
+        </p>
+        <button
+          className="auth-primary"
+          type="button"
+          disabled={checking}
+          onClick={() => void retryInit()}
+        >
+          {checking ? '연결 확인 중…' : '다시 시도'}
+        </button>
+        <button className="auth-link" type="button" onClick={continueOffline}>
+          오프라인으로 계속 — 이 PC에만 저장
+        </button>
+      </div>
     </div>
   )
 }
@@ -579,6 +648,28 @@ function ProjectSelectScreen() {
   const [pwOpen, setPwOpen] = useState(false)
   const memberProj = projects.find((p) => p.id === memberProjectId)
 
+  // ── F08 개인 업무 홈: 검색 · 탭 · 즐겨찾기 · 최근 ──
+  // 입력은 언제나 서버가 권한으로 걸러 내려준 `projects` 하나뿐이다. filterProjects 는 그 배열에서
+  // 고르기만 하므로(부분집합 보장), 어떤 탭·검색어를 써도 권한 범위는 넓어지지 않는다.
+  const recent = useProjectPrefs((s) => s.recent)
+  const favourites = useProjectPrefs((s) => s.favourites)
+  const toggleFavourite = useProjectPrefs((s) => s.toggleFavourite)
+  const [q, setQ] = useState('')
+  const [tab, setTab] = useState<ProjectTab>(isDeveloper ? 'all' : 'mine')
+  const filtered = filterProjects(projects, tab, q, recent, favourites)
+  const searching = q.trim().length > 0 || tab !== 'all'
+
+  // ── F07 접근 요청 ──
+  const myAccessRequests = useAuth((s) => s.myAccessRequests)
+  const incomingAccessRequests = useAuth((s) => s.incomingAccessRequests)
+  const [accessProjectId, setAccessProjectId] = useState<string | null>(null)
+  const accessProj = projects.find((p) => p.id === accessProjectId)
+  // 프로젝트별 '가장 최근 내 요청' — 카드 배지와 요청 화면이 같은 사실을 본다.
+  const latestRequestFor = (projectId: string): AccessRequest | undefined =>
+    myAccessRequests
+      .filter((r) => r.projectId === projectId)
+      .sort((a, b) => b.requestedAt - a.requestedAt)[0]
+
   // 개발자: 왼쪽 본부 목록에서 고른 본부만 프로젝트 표시(초기 미선택 → 안내만).
   const [selectedDiv, setSelectedDiv] = useState<string | null>(null)
   const countByDiv = new Map<string, number>()
@@ -586,90 +677,157 @@ function ProjectSelectScreen() {
     const k = p.division ?? ''
     countByDiv.set(k, (countByDiv.get(k) ?? 0) + 1)
   }
-  const shownProjects =
-    selectedDiv == null ? [] : projects.filter((p) => (p.division ?? '') === selectedDiv)
+  // 검색어·탭이 걸려 있으면 본부 nav 를 우회해 전체(=개발자 권한 범위)에서 찾는다.
+  const shownProjects = searching
+    ? filtered
+    : selectedDiv == null
+      ? []
+      : projects.filter((p) => (p.division ?? '') === selectedDiv)
 
-  // 프로젝트 카드 한 장 — 개발자(본부 필터) 그리드와 일반 그리드가 공용으로 쓴다.
-  const renderCard = (p: ProjectSummary, i: number) => (
-    <div
-      key={p.id}
-      className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
-    >
-      <button
-        className="proj-card__main"
-        type="button"
-        disabled={p.canEnter === false}
-        title={p.canEnter === false ? '할당된 프로젝트가 아닙니다 (입장 불가)' : undefined}
-        onClick={() => {
-          if (p.canEnter !== false) select(p)
-        }}
-      >
-        <span className="proj-card__icon" aria-hidden="true">
-          {projectIcon(p.name, i)}
-        </span>
-        <span className="proj-card__name">{p.name || p.id}</span>
-        {p.division && (
-          <span className="proj-card__div">
-            <DivisionSymbol division={p.division} size={16} />
-            {divisionLabel(p.division)}
-          </span>
-        )}
-        <span className="proj-card__foot">
-          {p.active === false && <span className="proj-card__inactive-badge">비활성</span>}
-          {p.sample ? (
-            <span className="proj-card__badge proj-card__badge--sample">체험존</span>
-          ) : p.canEnter === false ? (
-            <span className="proj-card__badge proj-card__badge--muted">미할당</span>
-          ) : p.canEdit === false ? (
-            <span className="proj-card__badge proj-card__badge--view">조회 전용</span>
-          ) : (
-            <span className="proj-card__badge proj-card__badge--edit">편집 가능</span>
-          )}
-          {p.role === 'user' && p.hasCode && p.canEnter !== false && (
-            <span className="proj-card__lock" title="접속코드 필요">
-              🔒
-            </span>
-          )}
-        </span>
-      </button>
-      {/* 카드 도구 — 멤버(개발자·PM), 활성토글·삭제(개발자 전용). */}
-      <div className="proj-card__tools">
-        {canCreate && (
+  // 검색바 + 탭 칩. 건수는 현재 검색어를 반영한다(빈 탭을 눌러 헤매지 않도록).
+  const toolbar = (
+    <div className="proj-filter">
+      <input
+        className="proj-search"
+        type="search"
+        value={q}
+        onChange={(e) => setQ(e.target.value)}
+        placeholder="프로젝트 이름 검색"
+        aria-label="프로젝트 이름 검색"
+      />
+      <div className="proj-filter__chips">
+        {PROJECT_TABS.map((t) => (
           <button
-            className="proj-card__tool"
+            key={t.id}
             type="button"
-            title="참여 인원 보기·관리"
-            aria-label={`${p.name} 멤버 관리`}
-            onClick={() => setMemberProjectId(p.id)}
+            className={`proj-filter__chip${tab === t.id ? ' is-on' : ''}`}
+            aria-pressed={tab === t.id}
+            onClick={() => setTab(t.id)}
           >
-            👥
+            {t.label}
+            <em>{filterProjects(projects, t.id, q, recent, favourites).length}</em>
           </button>
-        )}
-        {isDeveloper && (
-          <button
-            className="proj-card__tool"
-            type="button"
-            title={p.active === false ? '활성화' : '비활성화'}
-            aria-label={p.active === false ? '프로젝트 활성화' : '프로젝트 비활성화'}
-            onClick={() => void onToggleActive(p)}
-          >
-            {p.active === false ? '▶' : '⏸'}
-          </button>
-        )}
-        {isDeveloper && (
-          <button
-            className="proj-card__tool proj-card__tool--danger"
-            type="button"
-            title="프로젝트 삭제"
-            aria-label={`${p.name} 삭제`}
-            onClick={() => void onDeleteProject(p)}
-          >
-            🗑
-          </button>
-        )}
+        ))}
       </div>
     </div>
   )
+
+  // 프로젝트 카드 한 장 — 개발자(본부 필터) 그리드와 일반 그리드가 공용으로 쓴다.
+  const renderCard = (p: ProjectSummary, i: number) => {
+    const fav = favourites.includes(p.id)
+    const isRecent = recent.includes(p.id)
+    const myReq = latestRequestFor(p.id)
+    const blocked = p.canEnter === false
+    return (
+      <div
+        key={p.id}
+        className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
+      >
+        <button
+          className="proj-card__main"
+          type="button"
+          title={
+            blocked
+              ? '할당된 프로젝트가 아닙니다 — 담당자에게 접근을 요청할 수 있습니다'
+              : undefined
+          }
+          onClick={() => {
+            // 미배정이어도 비활성 버튼으로 막지 않는다 — 담당자와 요청 방법을 안내한다(F07).
+            if (blocked) setAccessProjectId(p.id)
+            else select(p)
+          }}
+        >
+          <span className="proj-card__icon" aria-hidden="true">
+            {projectIcon(p.name, i)}
+          </span>
+          <span className="proj-card__name">{p.name || p.id}</span>
+          {p.division && (
+            <span className="proj-card__div">
+              <DivisionSymbol division={p.division} size={16} />
+              {divisionLabel(p.division)}
+            </span>
+          )}
+          <span className="proj-card__foot">
+            {p.active === false && <span className="proj-card__inactive-badge">비활성</span>}
+            {p.sample ? (
+              <span className="proj-card__badge proj-card__badge--sample">체험존</span>
+            ) : blocked ? (
+              <span className="proj-card__badge proj-card__badge--muted">미할당</span>
+            ) : p.canEdit === false ? (
+              <span className="proj-card__badge proj-card__badge--view">조회 전용</span>
+            ) : (
+              <span className="proj-card__badge proj-card__badge--edit">편집 가능</span>
+            )}
+            {/* 내 접근 요청 상태(F07) — 요청했다는 사실과 그 결과가 카드에서 바로 보인다. */}
+            {blocked && myReq?.status === 'pending' && (
+              <span className="proj-card__badge proj-card__badge--req">승인 대기</span>
+            )}
+            {blocked && myReq?.status === 'rejected' && (
+              <span className="proj-card__badge proj-card__badge--req-no">거절됨</span>
+            )}
+            {blocked && myReq?.status === 'expired' && (
+              <span className="proj-card__badge proj-card__badge--req-no">요청 만료</span>
+            )}
+            {isRecent && !blocked && (
+              <span className="proj-card__badge proj-card__badge--recent">🕒 최근</span>
+            )}
+            {p.role === 'user' && p.hasCode && !blocked && (
+              <span className="proj-card__lock" title="접속코드 필요">
+                🔒
+              </span>
+            )}
+          </span>
+        </button>
+        {/* 카드 도구 — 즐겨찾기(전원), 멤버(개발자·PM), 활성토글·삭제(개발자 전용). */}
+        <div className="proj-card__tools">
+          {/* 즐겨찾기는 개인 설정이라 권한과 무관하게 누구나 쓴다(목록 데이터는 건드리지 않는다). */}
+          <button
+            className={`proj-card__tool${fav ? ' is-fav' : ''}`}
+            type="button"
+            title={fav ? '즐겨찾기 해제' : '즐겨찾기'}
+            aria-label={`${p.name || p.id} ${fav ? '즐겨찾기 해제' : '즐겨찾기'}`}
+            aria-pressed={fav}
+            onClick={() => toggleFavourite(p.id)}
+          >
+            {fav ? '★' : '☆'}
+          </button>
+          {canCreate && (
+            <button
+              className="proj-card__tool"
+              type="button"
+              title="참여 인원 보기·관리"
+              aria-label={`${p.name} 멤버 관리`}
+              onClick={() => setMemberProjectId(p.id)}
+            >
+              👥
+            </button>
+          )}
+          {isDeveloper && (
+            <button
+              className="proj-card__tool"
+              type="button"
+              title={p.active === false ? '활성화' : '비활성화'}
+              aria-label={p.active === false ? '프로젝트 활성화' : '프로젝트 비활성화'}
+              onClick={() => void onToggleActive(p)}
+            >
+              {p.active === false ? '▶' : '⏸'}
+            </button>
+          )}
+          {isDeveloper && (
+            <button
+              className="proj-card__tool proj-card__tool--danger"
+              type="button"
+              title="프로젝트 삭제"
+              aria-label={`${p.name} 삭제`}
+              onClick={() => void onDeleteProject(p)}
+            >
+              🗑
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="auth-screen">
@@ -689,8 +847,14 @@ function ProjectSelectScreen() {
               {` · 프로젝트 ${projects.length}`}
               {isDeveloper && pendingApprovals.length > 0
                 ? ` · 승인 대기 ${pendingApprovals.length}`
+                : ''}
+              {canCreate && incomingAccessRequests.length > 0
+                ? ` · 접근 요청 ${incomingAccessRequests.length}`
                 : ''}{' '}
-              — {isDeveloper ? '왼쪽에서 본부를 선택하세요.' : '입장할 프로젝트를 선택하세요.'}
+              —{' '}
+              {isDeveloper
+                ? '왼쪽에서 본부를 선택하거나 위에서 검색하세요.'
+                : '입장할 프로젝트를 선택하세요.'}
             </div>
           </div>
           <div className="proj-dash__actions">
@@ -702,6 +866,8 @@ function ProjectSelectScreen() {
             </button>
           </div>
         </header>
+
+        {toolbar}
 
         {error && <div className="auth-error">{error}</div>}
 
@@ -760,15 +926,20 @@ function ProjectSelectScreen() {
             </nav>
             {/* 우: 선택한 본부의 프로젝트 */}
             <div className="proj-dash__main">
-              {selectedDiv == null ? (
+              {!searching && selectedDiv == null ? (
                 <div className="proj-dash__hint">
-                  왼쪽에서 본부를 선택하면 해당 본부의 프로젝트가 표시됩니다.
+                  왼쪽에서 본부를 선택하면 해당 본부의 프로젝트가 표시됩니다. 위 검색창·필터를 쓰면
+                  전체 본부에서 바로 찾습니다.
                 </div>
               ) : (
                 <>
                   <div className="proj-dash__mainhead">
                     <span className="proj-dash__maintitle">
-                      {selectedDiv === '' ? '본부 미지정' : divisionLabel(selectedDiv)}
+                      {searching
+                        ? '검색 결과'
+                        : selectedDiv === ''
+                          ? '본부 미지정'
+                          : divisionLabel(selectedDiv ?? '')}
                       <span className="proj-dash__maincount"> · {shownProjects.length}</span>
                     </span>
                     <button
@@ -780,7 +951,11 @@ function ProjectSelectScreen() {
                     </button>
                   </div>
                   {shownProjects.length === 0 ? (
-                    <div className="auth-empty">이 본부에 등록된 프로젝트가 없습니다.</div>
+                    <div className="auth-empty">
+                      {searching
+                        ? '조건에 맞는 프로젝트가 없습니다.'
+                        : '이 본부에 등록된 프로젝트가 없습니다.'}
+                    </div>
                   ) : (
                     <div className="proj-grid">{shownProjects.map((p, i) => renderCard(p, i))}</div>
                   )}
@@ -790,9 +965,13 @@ function ProjectSelectScreen() {
           </div>
         ) : projects.length === 0 && !canCreate ? (
           <div className="auth-empty">접근 가능한 프로젝트가 없습니다. 관리자에게 문의하세요.</div>
+        ) : filtered.length === 0 && !canCreate ? (
+          <div className="auth-empty">
+            조건에 맞는 프로젝트가 없습니다. ‘전체’ 탭을 눌러 본부의 모든 프로젝트를 보세요.
+          </div>
         ) : (
           <div className="proj-grid">
-            {projects.map((p, i) => renderCard(p, i))}
+            {filtered.map((p, i) => renderCard(p, i))}
             {canCreate && (
               <button
                 className="proj-card proj-card--action"
@@ -828,8 +1007,194 @@ function ProjectSelectScreen() {
           </div>
         </div>
       )}
+      {accessProj && (
+        <AccessRequestModal
+          project={accessProj}
+          request={latestRequestFor(accessProj.id)}
+          onClose={() => setAccessProjectId(null)}
+        />
+      )}
       {adminOpen && <AdminPanel onClose={() => setAdminOpen(false)} />}
       {pwOpen && <ChangePasswordModal onClose={() => setPwOpen(false)} />}
+    </div>
+  )
+}
+
+/** 요청/처리 시각 표기 — 승인 대기·초기화 요청 목록과 같은 ko-KR 표기. */
+function formatMoment(ms?: number | null): string {
+  if (!ms) return '—'
+  try {
+    return new Date(ms).toLocaleString('ko-KR')
+  } catch {
+    return '—'
+  }
+}
+
+// 입장 불가 카드를 눌렀을 때(F07) — 담당자가 누구인지 알려주고, 접근을 요청하게 한다.
+// 이 화면에서 하는 어떤 행동도 입장 권한을 만들지 않는다. 승인은 담당 PM·개발자만 한다.
+function AccessRequestModal({
+  project,
+  request,
+  onClose,
+}: {
+  project: ProjectSummary
+  request?: AccessRequest
+  onClose: () => void
+}) {
+  const fetchProjectContacts = useAuth((s) => s.fetchProjectContacts)
+  const requestProjectAccess = useAuth((s) => s.requestProjectAccess)
+  const [contacts, setContacts] = useState<ProjectContact[] | null>(null)
+  const [reason, setReason] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [err, setErr] = useState<string | null>(null)
+  const [sent, setSent] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    void fetchProjectContacts(project.id).then((list) => {
+      if (alive) setContacts(list)
+    })
+    return () => {
+      alive = false
+    }
+  }, [project.id, fetchProjectContacts])
+
+  // 배경 클릭 대신 Esc 로 닫는다 — 배경 div 에 onClick 을 달면 키보드로 도달할 수 없는
+  // 상호작용이 되어(a11y) 접근성 진단이 늘어난다. 닫기는 Esc · ✕ · [닫기] 세 경로.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  // 대기 중이면 새 요청을 받지 않는다(서버도 409 로 막는다). 거절·만료는 다시 요청할 수 있다.
+  const pending = request?.status === 'pending'
+  const canSubmit = !pending && !sent && !busy
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault()
+    if (!canSubmit) return
+    setBusy(true)
+    setErr(null)
+    const r = await requestProjectAccess(project.id, reason.trim())
+    setBusy(false)
+    if (!r.ok) setErr(r.error ?? '요청 실패')
+    else setSent(true)
+  }
+
+  return (
+    <div className="admin-overlay">
+      <form className="proj-create proj-create--modal" onSubmit={(e) => void submit(e)}>
+        <div className="member-panel__header">
+          <span className="member-panel__title">
+            🔒 {project.name || project.id} — 입장 권한 없음
+          </span>
+          <button className="member-panel__close" type="button" onClick={onClose} aria-label="닫기">
+            ✕
+          </button>
+        </div>
+
+        <div className="access-req">
+          <div className="access-req__label">담당자</div>
+          {contacts === null ? (
+            <div className="member-panel__loading">불러오는 중…</div>
+          ) : contacts.length === 0 ? (
+            <div className="auth-note auth-note--warn">
+              이 프로젝트의 담당 관리자가 아직 지정되지 않았습니다 — 개발자에게 문의하세요.
+            </div>
+          ) : (
+            <ul className="access-req__contacts">
+              {contacts.map((c) => (
+                <li key={`${c.name}-${c.division ?? ''}`} className="access-req__contact">
+                  <DivisionSymbol division={c.division} size={18} />
+                  <b>{c.name || '(이름 미등록)'}</b>
+                  <em>
+                    {divisionLabel(c.division ?? undefined)} · {ROLE_LABEL[c.role] ?? c.role}
+                  </em>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {request && (
+          <div className={`access-req__status access-req__status--${request.status}`}>
+            {request.status === 'pending' && (
+              <>
+                <b>승인 대기 중입니다.</b>
+                <p>
+                  요청 {formatMoment(request.requestedAt)} · 기한 {formatMoment(request.expiresAt)}
+                  <br />
+                  승인 전까지는 입장할 수 없습니다.
+                </p>
+              </>
+            )}
+            {request.status === 'rejected' && (
+              <>
+                <b>요청이 거절되었습니다.</b>
+                <p>
+                  {request.decidedByName ? `${request.decidedByName} · ` : ''}
+                  {formatMoment(request.decidedAt)}
+                  <br />
+                  사유: {request.decisionReason || '(미기재)'}
+                </p>
+              </>
+            )}
+            {request.status === 'expired' && (
+              <>
+                <b>요청 기한이 지났습니다.</b>
+                <p>기한 {formatMoment(request.expiresAt)} · 다시 요청할 수 있습니다.</p>
+              </>
+            )}
+            {request.status === 'approved' && (
+              <>
+                <b>승인되었습니다.</b>
+                <p>목록을 새로 고치면 입장할 수 있습니다.</p>
+              </>
+            )}
+          </div>
+        )}
+
+        {sent ? (
+          <div className="register-done">
+            <b>접근 요청을 보냈습니다.</b>
+            <p>담당자가 승인하면 입장할 수 있습니다. 승인 전까지 입장은 계속 차단됩니다.</p>
+            <div className="proj-create__actions">
+              <button className="auth-primary" type="button" onClick={onClose}>
+                확인
+              </button>
+            </div>
+          </div>
+        ) : (
+          <>
+            <label className="auth-field">
+              <span>
+                요청 사유 <em>· 선택(최대 300자)</em>
+              </span>
+              <textarea
+                className="access-req__reason"
+                rows={3}
+                maxLength={300}
+                value={reason}
+                onChange={(e) => setReason(e.target.value.slice(0, 300))}
+                placeholder="예: 3공구 공정표 작성 담당입니다."
+                disabled={pending}
+              />
+            </label>
+            {err && <div className="auth-error">{err}</div>}
+            <div className="proj-create__actions">
+              <button className="auth-primary" type="submit" disabled={!canSubmit}>
+                {busy ? '요청 중…' : pending ? '이미 요청함' : '접근 요청'}
+              </button>
+              <button className="auth-link" type="button" onClick={onClose}>
+                닫기
+              </button>
+            </div>
+          </>
+        )}
+      </form>
     </div>
   )
 }
@@ -1013,6 +1378,9 @@ function MemberPanel({
 
       {actionError && <div className="member-panel__error">{actionError}</div>}
 
+      {/* F07: 이 프로젝트로 들어온 접근 요청 — 승인/거절이 여기서 끝난다(담당자 문의 불필요). */}
+      {canManage && <AccessRequestQueue projectId={projectId} />}
+
       {loading ? (
         <div className="member-panel__loading">불러오는 중…</div>
       ) : (
@@ -1126,6 +1494,105 @@ function MemberPanel({
             ＋ 멤버 추가
           </button>
         ))}
+    </div>
+  )
+}
+
+// 이 프로젝트로 들어온 접근 요청 처리(F07) — 관리자 도구의 '승인 대기' 마크업과 같은 결.
+// 승인은 멤버십을 만들어 실제로 입장을 열고, 거절은 사유를 반드시 남긴다.
+function AccessRequestQueue({ projectId }: { projectId: string }) {
+  const incoming = useAuth((s) => s.incomingAccessRequests)
+  const fetchAccessRequests = useAuth((s) => s.fetchAccessRequests)
+  const decideAccessRequest = useAuth((s) => s.decideAccessRequest)
+  const [rejectingId, setRejectingId] = useState<string | null>(null)
+  const [rejectReason, setRejectReason] = useState('')
+  const [busyId, setBusyId] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+
+  useEffect(() => {
+    void fetchAccessRequests()
+  }, [fetchAccessRequests])
+
+  const list = incoming.filter((r) => r.projectId === projectId)
+  if (list.length === 0) return null
+
+  const decide = async (id: string, approve: boolean, reason?: string) => {
+    setBusyId(id)
+    setErr(null)
+    const r = await decideAccessRequest(id, approve, reason)
+    setBusyId(null)
+    if (!r.ok) setErr(r.error ?? '처리 실패')
+    else {
+      setRejectingId(null)
+      setRejectReason('')
+    }
+  }
+
+  return (
+    <div className="admin-pending admin-pending--access">
+      <div className="admin-pending__title">🙋 접근 요청 ({list.length})</div>
+      {err && <div className="member-panel__error">{err}</div>}
+      <ul className="admin-pending__list">
+        {list.map((r) => (
+          <li key={r.id} className="admin-pending__item">
+            <span className="admin-pending__name">{r.userName || r.userId}</span>
+            <span className="admin-pending__meta">
+              {divisionLabel(r.division ?? undefined) || '본부 미지정'} · 🕒{' '}
+              {formatMoment(r.requestedAt)} · 기한 {formatMoment(r.expiresAt)}
+              {r.reason && <> · “{r.reason}”</>}
+              {r.status === 'expired' && <> · 기한 지남</>}
+            </span>
+            {rejectingId === r.id ? (
+              <>
+                <input
+                  className="access-req__reject"
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value.slice(0, 300))}
+                  placeholder="거절 사유(필수)"
+                  aria-label="거절 사유"
+                />
+                <button
+                  className="admin-btn"
+                  type="button"
+                  disabled={!rejectReason.trim() || busyId === r.id}
+                  onClick={() => void decide(r.id, false, rejectReason.trim())}
+                >
+                  거절 확정
+                </button>
+                <button
+                  className="admin-btn"
+                  type="button"
+                  onClick={() => {
+                    setRejectingId(null)
+                    setRejectReason('')
+                  }}
+                >
+                  취소
+                </button>
+              </>
+            ) : (
+              <>
+                <button
+                  className="admin-btn admin-btn--primary"
+                  type="button"
+                  disabled={busyId === r.id || r.status === 'expired'}
+                  onClick={() => void decide(r.id, true)}
+                >
+                  승인
+                </button>
+                <button
+                  className="admin-btn"
+                  type="button"
+                  disabled={busyId === r.id || r.status === 'expired'}
+                  onClick={() => setRejectingId(r.id)}
+                >
+                  거절
+                </button>
+              </>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

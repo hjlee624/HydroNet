@@ -15,6 +15,7 @@ export type ModuleId =
   | 'permit'
   | 'commissioning'
   | 'risk'
+  | 'history'
   | 'report'
 
 export type ModuleStatus = 'ready' | 'soon'
@@ -82,14 +83,10 @@ export const MODULES: ModuleDef[] = [
     label: '진척·실적',
     icon: '📈',
     group: '공정',
-    status: 'soon',
-    blurb: '계획 대비 실적·지연',
-    plan: [
-      '공정별 % 진척 입력',
-      '베이스라인 스냅샷',
-      '계획선 vs 실적 표시',
-      '지연 공정 하이라이트',
-    ],
+    // 공정별 %·담당자·실적일자 입력과 계획 대비 집계가 실제로 동작한다(표기 정직성 수정).
+    status: 'ready',
+    blurb: '계획 대비 실적·담당자·실적일자',
+    plan: [],
   },
   {
     id: 'cost',
@@ -275,6 +272,15 @@ export const MODULES: ModuleDef[] = [
       { key: 'due', label: '기한', type: 'date' },
       { key: 'status', label: '상태', type: 'select', options: ['열림', '진행', '종료'] },
     ],
+  },
+  {
+    id: 'history',
+    label: '변경이력·확정본',
+    icon: '🗂',
+    group: '관리',
+    status: 'ready',
+    blurb: '변경 사유·검토 상태·기준선 버전',
+    plan: [],
   },
   {
     id: 'report',

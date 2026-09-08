@@ -1,7 +1,12 @@
 // Slim view-control bar above the chart: subset filters (declutter a busy chart),
-// bar colour scheme, and a canvas-tool shortcut hint (Z 줌 / H 화면 이동).
+// bar colour scheme, and a canvas-tool shortcut hint (Ctrl+휠 확대·축소 / H 화면 이동).
+// 힌트 문구는 state/keymap.ts 의 hint 항목에서 생성한다 — 도움말·실제 동작과 항상 일치.
 
-import { useEditor, filterActive } from '../state/store'
+import { ALL_SHORTCUTS } from '../state/keymap'
+import { filterActive, useEditor } from '../state/store'
+
+const HINTS = ALL_SHORTCUTS.filter((d) => d.hint)
+const HINT_TITLE = ALL_SHORTCUTS.map((d) => `${d.keys.join('+')}: ${d.label}`).join(' / ')
 
 export function ViewBar() {
   const filter = useEditor((s) => s.filter)
@@ -57,17 +62,25 @@ export function ViewBar() {
         </button>
       </div>
 
-      <span className="viewbar__sep" />
-
-      {/* Canvas-tool shortcut hint (replaces the old 간단/전문가 toggle). */}
-      <span className="viewbar__label">단축키</span>
-      <span
-        className="viewbar__hint"
-        title="Ctrl+휠: 차트 확대·축소(커서 기준) / H: 드래그로 화면 이동 / V·Esc: 편집 복귀 / 빈 곳 드래그: 막대 다중선택"
-      >
-        <kbd className="viewbar__kbd">Ctrl</kbd>+휠 확대·축소
-        <span className="viewbar__hint-sep">·</span>
-        <kbd className="viewbar__kbd">H</kbd> 화면 이동
+      {/* 단축키 힌트는 키보드가 있는 화면에서만 뜻이 있다 — 좁은 화면(F17)에서는
+          data-narrow-hide 로 통째로 감춰 도면 폭을 남긴다(넓은 화면은 그대로). */}
+      <span className="viewbar__hintwrap" data-narrow-hide="1">
+        <span className="viewbar__sep" />
+        <span className="viewbar__label">단축키</span>
+        <span className="viewbar__hint" title={HINT_TITLE}>
+          {HINTS.map((d, i) => (
+            <span key={d.label}>
+              {i > 0 && <span className="viewbar__hint-sep">·</span>}
+              {d.keys.map((key, ki) => (
+                <span key={key}>
+                  {ki > 0 && '+'}
+                  <kbd className="viewbar__kbd">{key}</kbd>
+                </span>
+              ))}{' '}
+              {d.short ?? d.label}
+            </span>
+          ))}
+        </span>
       </span>
     </div>
   )

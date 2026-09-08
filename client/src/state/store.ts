@@ -9,19 +9,26 @@
 import { nanoid } from 'nanoid'
 import { create } from 'zustand'
 import { createSampleProject } from '../data/sampleProject'
+import { normWorkName } from '../engine/adequacy'
 import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
-import { fitToPaperView } from '../engine/layout'
-import { paperMm } from '../engine/paper'
+import { fitToPaperScopedView, paperMm } from '../engine/paper'
 import {
   applyCascade,
   computeSchedule,
+  type EditImpact,
+  type EditMode,
   linkConstrainedStart,
   linkLagFromPositions,
   reschedule,
+  type ScheduleProblem,
 } from '../engine/scheduling'
 import { DEFAULT_PALETTE } from '../styles/theme'
 import type {
+  Baseline,
+  BaselineVersion,
   Category,
+  ChangeEntry,
+  ChangeState,
   ID,
   Link,
   LinkType,
@@ -34,7 +41,7 @@ import type {
   TextStyle,
   ViewSettings,
 } from '../types/model'
-import { PALETTE_MAX } from '../types/model'
+import { PALETTE_MAX, SCHEMA_VERSION } from '../types/model'
 import {
   activateProjectCrdtRuntime,
   applyProjectToYDoc,
@@ -50,6 +57,7 @@ import {
 } from './crdt'
 import { saveProjectToFile } from './fileIO'
 import { logInfo, logWarn } from './logger'
+import { usePersistence } from './persistence'
 import type { ReviewDelta } from './reviewImport'
 
 interface LinkingState {
@@ -181,10 +189,22 @@ export interface EditorState {
   /** Simple / pro UI (progressive disclosure). */
   uiMode: UiMode
   autoCascade: boolean
+  /** 일정 편집 의미론 — 'free'(위치 자유 편집·기본, 지금까지의 동작) / 'keepLinks'(선후행 제약 유지). */
+  editMode: EditMode
+  /** 마지막 편집의 영향 요약(드래그·기간 변경 직후 카드 + 되돌리기). null = 없음. */
+  lastEditImpact: EditImpact | null
   /** 조회 전용(입장했으나 편집 권한 없음). true면 모든 변경(commit)이 차단된다. */
   readOnly: boolean
   dirty: boolean
   warnings: string[]
+  /** 미해결 일정 문제 목록(순환 등) — 클릭해 해당 공정·연결로 이동한다. */
+  problems: ScheduleProblem[]
+  /** 미해결 문제가 있어 계산 결과가 '잠정'인 상태. problems.length > 0 과 동치. */
+  provisional: boolean
+  /** 상태바의 문제 목록 팝오버 열림 여부. */
+  problemsOpen: boolean
+  /** 문제 목록에서 '이동'을 눌렀을 때 차트를 그 막대로 스크롤시키는 1회성 요청. */
+  focusTaskId: ID | null
   /** Last reschedule/cascade diff; non-null drives the 재계산 popup. */
   recalcReport: RecalcReport | null
   past: Project[]
@@ -226,6 +246,30 @@ export interface EditorState {
   importBoqQuantities: (
     items: Array<{ taskId: ID; quantity?: number; unit?: string; workCode?: string }>,
   ) => { applied: number }
+  /** 사내 일정표(엑셀·CSV) 취입(F12) — 공종 생성·공정 upsert·선후행 연결을 **단일 커밋**
+   *  (undo 1엔트리)으로 반영한다. 같은 번호(extId)/공정 id 는 새로 만들지 않고 갱신한다.
+   *  reschedule 은 호출하지 않는다(외부 일정표의 날짜가 정본). 조회 전용은 무반영. */
+  importScheduleRows: (plan: {
+    categories: string[]
+    tasks: Array<{
+      taskId?: ID
+      extId?: string
+      categoryName: string
+      name: string
+      start: number
+      duration: number
+      owner?: string
+    }>
+    links: Array<{ fromKey: string; toKey: string; type: LinkType; lag: number }>
+    /** 이력에 남길 파일명(없으면 '일정표'). */
+    sourceName?: string
+  }) => {
+    created: number
+    updated: number
+    linked: number
+    /** 공종을 찾지 못해 **반영하지 않은** 행 설명(사람이 읽는 문구). 조용한 재배치 금지. */
+    unresolved: string[]
+  }
   /** 여러 공정 색상을 한 번에 지정(다중 선택 색 변경). ids가 1개면 그 하나만. */
   setTasksColor: (ids: ID[], color: string, opts?: { history?: boolean }) => void
   /** 세부공종(WBS 2단계) 일괄 이름변경 — 한 공종 안에서 subName===oldSub 인 공정들의 subName을
@@ -283,11 +327,36 @@ export interface EditorState {
   setView: (patch: Partial<ViewSettings>) => void
   /** Adjust the view density so the chart fills the current paper with no
    *  export margin (matches content aspect ratio to the sheet). */
-  fitToPaper: () => void
-  setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate'>>) => void
+  fitToPaper: (filter?: ViewFilter) => void
+  /** 사업 메타(이름·착수일·공기 산정 전제) 병합 수정. periodInputs 는 통째로 교체되므로
+   *  호출부에서 기존 값을 펼쳐 넘긴다({ ...project.periodInputs, prepDays: v }). */
+  setProjectMeta: (patch: Partial<Pick<Project, 'name' | 'startDate' | 'periodInputs'>>) => void
   // ── 건설사업관리 모듈 (사업 단위 · CRDT root/modules·root/baseline) ──
   /** 공정 실적 진척률(0–100) 설정 — 진척·실적 모듈. */
   setTaskProgress: (id: ID, progress: number) => void
+  /** 진척 실적 부가정보(담당자·실적 착수/완료일) — 일정(CPM)에 영향 없음(cascade 없음).
+   *  빈 문자열은 undefined 로 정규화해 CRDT 에서 키가 지워지게 한다(유령 값 방지). */
+  setTaskActuals: (
+    id: ID,
+    patch: Partial<Pick<Task, 'owner' | 'actualStart' | 'actualFinish'>>,
+  ) => void
+  // ── 변경 이력·확정본 (F13 · CRDT root/changeLog·root/baselineVersions · undo 대상 아님) ──
+  /** 이력 작성자를 설정(로그인 사용자). store 가 authStore 를 import 하면 순환이라 주입식이다. */
+  setChangeActor: (actor: { id?: string; name: string }) => void
+  /** 변경 이력 1건 추가 — **제출·주요 변경 단위**로만 부른다(키 입력마다 부르지 말 것).
+   *  history:false + UNTRACKED_ORIGIN 이라 되돌리기가 감사기록을 지우지 않는다. 새 id 반환. */
+  appendChange: (entry: {
+    kind: ChangeEntry['kind']
+    taskIds?: ID[]
+    summary: string
+    reason: string
+    state?: ChangeState
+    versionId?: ID
+  }) => ID
+  /** 검토요청 → 확정 상태 전이(결재자·시각 기록). */
+  setChangeState: (id: ID, state: ChangeState) => void
+  /** 현재 일정을 **이름 있는 확정본**으로 박제하고 비교 기준선(project.baseline)도 갱신. 새 id 반환. */
+  saveBaselineVersion: (name: string, note?: string) => ID
   /** 기록형 모듈에 빈 행 추가 → 새 레코드 id 반환. */
   addModuleRecord: (moduleId: string, values?: Record<string, string>) => ID
   /** 기록형 모듈 레코드의 필드 병합 수정. */
@@ -327,7 +396,17 @@ export interface EditorState {
   cascadeNow: () => void
   rescheduleNow: () => void
   setAutoCascade: (v: boolean) => void
+  /** 편집 의미론 전환(위치 자유 편집 ↔ 선후행 제약 유지). localStorage 에 기억된다. */
+  setEditMode: (m: EditMode) => void
+  /** 마지막 편집 영향 카드 설정/해제. */
+  setLastEditImpact: (i: EditImpact | null) => void
   closeRecalcReport: () => void
+  /** 문제 목록 팝오버 토글(값을 주면 그 값으로 고정). */
+  toggleProblems: (v?: boolean) => void
+  /** 문제 목록에서 공정 선택 + 차트 스크롤 요청. */
+  focusTask: (id: ID) => void
+  /** 스크롤 요청 소비 후 해제(ChartCanvas). */
+  clearFocusTask: () => void
 
   // selection / view
   selectTask: (id: ID | null) => void
@@ -360,7 +439,8 @@ export interface EditorState {
   endGesture: () => void
   undo: () => void
   redo: () => void
-  save: () => Promise<void>
+  /** 파일로 저장. **실제로 파일이 써졌을 때만 true** — 사용자가 취소하면 false. */
+  save: () => Promise<boolean>
 }
 
 // ── helpers ──
@@ -452,6 +532,39 @@ function migrateProject(project: Project): Project {
   return tasks === input ? project : { ...project, tasks }
 }
 
+/**
+ * 감사기록 합집합(id 기준) — **삭제 없는 병합**. 이미 방에 있는 레코드가 언제나 이깁니다
+ * (복구본의 오래된 사본이 '검토요청 → 확정' 같은 결재 상태를 되돌리지 못하게).
+ * 새 레코드만 뒤에 붙인 뒤 정렬은 CRDT 읽기(projectFromYDoc)와 같은 규칙을 쓴다.
+ */
+function mergeAuditRecords<T extends { id: string }>(
+  existing: T[] | undefined,
+  incoming: T[] | undefined,
+  sortKey: (record: T) => string,
+): T[] | undefined {
+  const merged = [...(existing ?? [])]
+  const seen = new Set(merged.map((record) => record.id))
+  for (const record of incoming ?? []) {
+    if (seen.has(record.id)) continue
+    seen.add(record.id)
+    merged.push(record)
+  }
+  if (!merged.length) return undefined
+  // 상한(BASELINE_VERSION_LIMIT)은 여기서 적용하지 않는다 — 복구가 이력을 '정리'하는 순간
+  // 그것도 곧 데이터 소실이다. 상한은 새 확정본을 만드는 자리(saveBaselineVersion)에만 있다.
+  return merged.sort((a, b) => sortKey(a).localeCompare(sortKey(b)) || a.id.localeCompare(b.id))
+}
+
+const mergeChangeLog = (
+  existing: ChangeEntry[] | undefined,
+  incoming: ChangeEntry[] | undefined,
+): ChangeEntry[] | undefined => mergeAuditRecords(existing, incoming, (e) => e.at ?? '')
+
+const mergeBaselineVersions = (
+  existing: BaselineVersion[] | undefined,
+  incoming: BaselineVersion[] | undefined,
+): BaselineVersion[] | undefined => mergeAuditRecords(existing, incoming, (v) => v.capturedAt ?? '')
+
 function normalize(project: Project): Project {
   const palette =
     Array.isArray(project.palette) && project.palette.length
@@ -460,6 +573,10 @@ function normalize(project: Project): Project {
   return {
     ...project,
     kind: project.kind ?? 'construction',
+    // 스키마 버전은 **파일이 실제로 담고 있는 내용**을 따라간다. v2 파일을 열어 v4 전용 필드
+    // (extId·owner·실적일자·changeLog·baselineVersions)를 얹고 다시 저장하면 그 파일은 v4 다 —
+    // 선언만 v2 로 남으면 나중에 버전으로 분기하는 코드가 있는 필드를 없다고 판단하게 된다.
+    meta: { ...(project.meta ?? { createdAt: '', updatedAt: '' }), schemaVersion: SCHEMA_VERSION },
     tasks: project.tasks ?? [],
     branding: { logos: normalizeLogos(project.branding?.logos) },
     rainySeasons: (project.rainySeasons ?? []).map((r) => ({
@@ -497,7 +614,14 @@ function normalize(project: Project): Project {
   }
 }
 
-function withSchedule(project: Project): { project: Project; warnings: string[] } {
+/** 파생 일정 결과 — 화면(project) + 사람이 읽는 경고 + 클릭 가능한 문제 목록. */
+interface ScheduledView {
+  project: Project
+  warnings: string[]
+  problems: ScheduleProblem[]
+}
+
+function withSchedule(project: Project): ScheduledView {
   const result = computeSchedule(project.tasks, project.links)
   const byId = new Map(result.tasks.map((t) => [t.id, t]))
   const tasks = project.tasks.map((t) => {
@@ -508,7 +632,7 @@ function withSchedule(project: Project): { project: Project; warnings: string[] 
     const critical = t.forceCritical === undefined ? c.critical : t.forceCritical
     return { ...t, es: c.es, ef: c.ef, ls: c.ls, lf: c.lf, totalFloat: c.totalFloat, critical }
   })
-  return { project: { ...project, tasks }, warnings: result.warnings }
+  return { project: { ...project, tasks }, warnings: result.warnings, problems: result.problems }
 }
 
 /** Diff the task starts before/after a schedule mutation into a popup report. */
@@ -554,6 +678,22 @@ function relinkIncoming(p: Project, toId: ID): void {
     const from = p.tasks.find((t) => t.id === l.from)
     if (from) l.lag = linkLagFromPositions(from, to, l.type)
   }
+}
+
+/** 'keepLinks'(선후행 제약 유지) — lag 는 절대 건드리지 않고, 들어오는 링크가 허용하는
+ *  최조기 시작 이전으로는 내려가지 못하게 막대를 붙잡는다(수동 여유는 그대로 보존). */
+function clampToIncoming(p: Project, toId: ID): void {
+  const t = p.tasks.find((x) => x.id === toId)
+  if (!t) return
+  const min = linkConstrainedStart(p.tasks, p.links, toId)
+  if (min != null && t.start < min) t.start = min
+}
+
+/** 편집 의미론 분기 — 자유 편집은 위치→지연 역산, 제약 유지는 지연 불변 + 위치 clamp.
+ *  editMode 기본값('free')에서는 예전 동작과 완전히 동일하다. */
+function applyEditSemantics(p: Project, toId: ID, mode: EditMode): void {
+  if (mode === 'keepLinks') clampToIncoming(p, toId)
+  else relinkIncoming(p, toId)
 }
 
 const FRACTION_EPSILON = 1e-9
@@ -699,6 +839,34 @@ function reorderCategoriesFractionally(project: Project, ids: ID[], beforeId: ID
  */
 type HydrationAuthority = 'seed' | 'replace'
 
+/**
+ * 변경 이력(F13)의 작성자. authStore 를 store 에서 import 하면 순환이 되므로, 로그인 상태를
+ * 아는 화면(App)이 setChangeActor 로 **주입**한다. 주입 전(로컬 단독 모드)은 '나'.
+ */
+let changeActor: { id?: string; name: string } = { name: '나' }
+
+/** 확정본(기준선 버전) 보관 상한. 넘치면 오래된 것부터 버린다(문서 무한 증가 방지). */
+const BASELINE_VERSION_LIMIT = 20
+
+/** 스케줄된 렌더 프로젝트에서 es/ef 를 읽어 기준선 스냅샷을 만든다(captureBaseline·확정본 공용). */
+function buildBaselineSnapshot(scheduled: Project): Baseline {
+  const starts = scheduled.tasks.map((t) => t.es ?? t.start)
+  const ends = scheduled.tasks.map((t) => t.ef ?? t.start + t.duration)
+  const now = new Date()
+  return {
+    capturedAt: now.toISOString(),
+    asOf: now.toISOString().slice(0, 10),
+    ...(scheduled.activeSheet?.id ? { sheetId: scheduled.activeSheet.id } : {}),
+    startDay: starts.length ? Math.min(...starts) : 0,
+    endDay: ends.length ? Math.max(...ends) : 0,
+    tasks: scheduled.tasks.map((t) => ({
+      id: t.id,
+      start: t.es ?? t.start,
+      duration: t.duration,
+    })),
+  }
+}
+
 export const useEditor = create<EditorState>()((set, get) => {
   const legacySeed = loadLegacyAutosave()
   const initialNormalized = normalize(migrateProject(legacySeed ?? createSampleProject()))
@@ -716,7 +884,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     cascade: boolean
   }> = []
 
-  const deriveProject = (authoritative: Project): { project: Project; warnings: string[] } => {
+  const deriveProject = (authoritative: Project): ScheduledView => {
     let derived = authoritative
     if (scheduleDerivation === 'cascade') {
       derived = { ...derived, tasks: applyCascade(derived.tasks, derived.links).tasks }
@@ -726,9 +894,21 @@ export const useEditor = create<EditorState>()((set, get) => {
     return withSchedule(derived)
   }
 
-  const readRuntimeProject = (): { project: Project; warnings: string[] } => {
+  const readRuntimeProject = (): ScheduledView => {
     authoritativeShadow = normalize(projectFromYDoc(runtime.doc, activeSheetId))
     return deriveProject(authoritativeShadow)
+  }
+
+  /** 파생 결과(project/warnings/problems)를 한 번에 반영 — '잠정' 여부도 같은 자리에서 계산해
+   *  화면(상태바 배지·문제 목록)과 계산 결과가 절대 어긋나지 않게 한다. */
+  const setScheduled = (s: ScheduledView, extra: Partial<EditorState> = {}): void => {
+    set({
+      project: s.project,
+      warnings: s.warnings,
+      problems: s.problems,
+      provisional: s.problems.length > 0,
+      ...extra,
+    })
   }
 
   const syncDerivedView = (dirty = true): void => {
@@ -739,7 +919,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         logWarn(warning)
       })
     }
-    set({ project: scheduled.project, warnings: scheduled.warnings, dirty })
+    setScheduled(scheduled, { dirty })
   }
 
   function finishRuntimeHydration(
@@ -875,6 +1055,21 @@ export const useEditor = create<EditorState>()((set, get) => {
     authority: HydrationAuthority = 'seed',
   ): void => {
     const normalized = normalize(migrateProject(project))
+    // 감사기록 보호 — importProjectContent 와 **같은 규칙**을 이 경로에도 적용한다.
+    // 파일 열기(setProject)는 파일 자신의 project.id 를 그대로 쓰므로, 같은 id 의
+    // IndexedDB 문서(sequence:crdt:<id>)가 다시 붙는다. 그 문서에 남아 있던 변경 이력·확정본이
+    // '이력이 없던 시절의 백업 파일'로 덮이면 applyProjectToYDoc 의 레코드 diff 가 통째로
+    // 지운다(undo 대상이 아니라 되돌릴 수도 없다). 그래서 **같은 문서를 다시 여는 경우에만**
+    // 합집합으로 만든다 — 새 도면(newProject)·샘플(loadSample)은 id 가 달라 여기 걸리지 않으며,
+    // 그쪽은 애초에 다른 문서라 이월할 이력도 없다.
+    const prior = authoritativeShadow
+    if (authority === 'replace' && prior && prior.id === normalized.id) {
+      normalized.changeLog = mergeChangeLog(prior.changeLog, normalized.changeLog)
+      normalized.baselineVersions = mergeBaselineVersions(
+        prior.baselineVersions,
+        normalized.baselineVersions,
+      )
+    }
     const previous = runtime
     observing = false
     unobserveRoot()
@@ -892,14 +1087,13 @@ export const useEditor = create<EditorState>()((set, get) => {
     previous.destroy()
     observing = true
     const scheduled = runtimeReady ? readRuntimeProject() : deriveProject(normalized)
-    set({
-      project: scheduled.project,
-      warnings: scheduled.warnings,
+    setScheduled(scheduled, {
       past: [],
       future: [],
       canUndo: false,
       canRedo: false,
       dirty,
+      lastEditImpact: null,
     })
     armRuntimeReady(runtime, dirty, authority)
   }
@@ -929,16 +1123,12 @@ export const useEditor = create<EditorState>()((set, get) => {
     else pendingWrites.push({ mutate, origin, updatedAt, cascade: cascade && state.autoCascade })
 
     if (runtimeReady) syncDerivedView(true)
-    else {
-      const scheduled = deriveProject(authoritativeShadow)
-      set({ project: scheduled.project, warnings: scheduled.warnings, dirty: true })
-    }
+    else setScheduled(deriveProject(authoritativeShadow), { dirty: true })
   }
 
   // 재시작 시 마지막 작업 복원 — localStorage 캐시가 있으면 그걸, 없으면 샘플로 시작.
-  const initial = runtimeReady
-    ? readRuntimeProject().project
-    : deriveProject(initialNormalized).project
+  const initialScheduled = runtimeReady ? readRuntimeProject() : deriveProject(initialNormalized)
+  const initial = initialScheduled.project
   const initialDirty = false
   armRuntimeReady(runtime, initialDirty)
 
@@ -961,9 +1151,19 @@ export const useEditor = create<EditorState>()((set, get) => {
     // localStorage에 남아 기능이 숨겨진 채 갇히지 않도록 'pro'로 고정한다.
     uiMode: 'pro' as UiMode,
     autoCascade: true,
+    // 기본은 지금까지의 동작(위치 자유 편집) — 기존 사용자에게 변화 없음.
+    editMode: (lsGet('sequence:editMode', 'free') === 'keepLinks'
+      ? 'keepLinks'
+      : 'free') as EditMode,
+    lastEditImpact: null,
     readOnly: false,
     dirty: initialDirty,
-    warnings: [],
+    // 시작부터 순환이 있는 도면(불러온 파일)도 첫 화면에서 '잠정'으로 보이게 한다.
+    warnings: initialScheduled.warnings,
+    problems: initialScheduled.problems,
+    provisional: initialScheduled.problems.length > 0,
+    problemsOpen: false,
+    focusTaskId: null,
     recalcReport: null,
     past: [],
     future: [],
@@ -975,8 +1175,17 @@ export const useEditor = create<EditorState>()((set, get) => {
       // Keep the current room id so the CollaborationBridge does not treat this as a
       // different project and revert us. The loaded content becomes the room's truth
       // and — with an active provider — syncs to every teammate.
-      const currentId = get().project.id
-      const incoming = normalize(migrateProject({ ...clone(p), id: currentId }))
+      const current = get().project
+      const incoming = normalize(migrateProject({ ...clone(p), id: current.id }))
+      // 감사기록은 **덮어쓰기 대상이 아니다**. applyProjectToYDoc 의 레코드 diff 는 들어온 목록에
+      // 없는 id 를 지우므로, 이력이 빠진 버전/파일을 그대로 실으면 방의 변경 이력·확정본이 통째로
+      // 사라진다(undo 추적 대상이 아니라 되돌릴 수도 없다). 그래서 여기서 **합집합**으로 만든다 —
+      // 스키마 미러링만으로는 서버·내보내기 중 한 곳만 빠뜨려도 같은 사고가 다시 난다.
+      incoming.changeLog = mergeChangeLog(current.changeLog, incoming.changeLog)
+      incoming.baselineVersions = mergeBaselineVersions(
+        current.baselineVersions,
+        incoming.baselineVersions,
+      )
       activeSheetId = incoming.activeSheet?.id
       runtime.undoManager.stopCapturing()
       gestureActive = false
@@ -998,8 +1207,7 @@ export const useEditor = create<EditorState>()((set, get) => {
           updatedAt: incoming.meta.updatedAt,
           cascade: false,
         })
-        const scheduled = deriveProject(incoming)
-        set({ project: scheduled.project, warnings: scheduled.warnings, dirty: true })
+        setScheduled(deriveProject(incoming), { dirty: true })
       }
       set({
         selectedTaskId: null,
@@ -1053,14 +1261,12 @@ export const useEditor = create<EditorState>()((set, get) => {
       if (!target) return
       activeSheetId = id
       runtime.undoManager.clear()
-      const scheduled = readRuntimeProject()
-      set({
-        project: scheduled.project,
-        warnings: scheduled.warnings,
+      setScheduled(readRuntimeProject(), {
         selectedTaskId: null,
         selectedTaskIds: [],
         selectedLinkId: null,
         selectedTextRole: null,
+        lastEditImpact: null,
       })
       logInfo(`공정표 전환: ${target.name}`)
     },
@@ -1104,14 +1310,16 @@ export const useEditor = create<EditorState>()((set, get) => {
     },
     updateTask: (id, patch, opts) => {
       const affectsSchedule = 'start' in patch || 'duration' in patch
+      const mode = get().editMode
       // Live-ish edits (free-text subName, color-picker drag) pass history:false to
       // avoid flooding the undo stack with one entry per keystroke / drag step.
       commit(
         (p) => {
           const t = p.tasks.find((x) => x.id === id)
           if (t) Object.assign(t, patch)
-          // 위치(시작·기간)를 바꾸면 incoming 링크 지연을 새 위치에 맞춰 역산(위치↔지연 상호작용).
-          if (affectsSchedule) relinkIncoming(p, id)
+          // 위치(시작·기간)를 바꾸면 편집 의미론에 따라 지연을 역산하거나(자유 편집),
+          // 지연을 그대로 두고 위치만 제약 안으로 붙잡는다(제약 유지).
+          if (affectsSchedule) applyEditSemantics(p, id, mode)
         },
         { cascade: affectsSchedule, history: opts?.history ?? true },
       )
@@ -1119,6 +1327,7 @@ export const useEditor = create<EditorState>()((set, get) => {
     applyReviewDeltas: (deltas) => {
       const skipped: Array<{ taskId: string; reason: string }> = []
       let applied = 0
+      const mode = get().editMode
       // 조회 전용은 파싱·감사보다 먼저 차단(부작용 0).
       if (get().readOnly) {
         for (const d of deltas) skipped.push({ taskId: d.taskId, reason: '조회 전용 — 반영 불가' })
@@ -1126,6 +1335,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       }
       // 단일 commit = undo 1엔트리. mutate 의 p 는 최신 authoritativeShadow(=CRDT 진실)이라
       // 여기서의 from 대조가 곧 반영 시점 CAS(프리뷰 이후 원격/타 검토자 변경 소실 방어).
+      const appliedIds: ID[] = []
+      const reasons: string[] = []
       commit(
         (p) => {
           const changed: ID[] = []
@@ -1146,13 +1357,26 @@ export const useEditor = create<EditorState>()((set, get) => {
               t.durationLabel = undefined
             t.duration = to
             changed.push(t.id)
+            appliedIds.push(t.id)
+            // 검토서의 '사유'는 지금까지 파서만 알고 store 가 버렸다 — 변경 이력에 그대로 싣는다.
+            if (d.reason?.trim()) reasons.push(`${t.name}: ${d.reason.trim()}`)
             applied++
           }
-          // 반영된 공정들의 incoming 링크 지연을 새 위치에 맞춰 역산 — 전 델타 적용 후 배치 1회.
-          for (const id of changed) relinkIncoming(p, id)
+          // 반영된 공정들의 incoming 링크를 편집 의미론대로 정리 — 전 델타 적용 후 배치 1회.
+          // 제약 유지 모드에서는 AI 검토 반영도 lag 를 몰래 고쳐 쓰지 않는다.
+          for (const id of changed) applyEditSemantics(p, id, mode)
         },
         { cascade: true, history: true },
       )
+      // 이력은 **별도 커밋(history:false)** 이라 위 반영의 'undo 1엔트리' 보장이 그대로 유지된다.
+      if (applied > 0) {
+        get().appendChange({
+          kind: 'review',
+          taskIds: appliedIds,
+          summary: `AI 검토 반영 ${applied}건`,
+          reason: reasons.join(' / ') || 'AI 검토 반영',
+        })
+      }
       return { applied, skipped }
     },
     importBoqQuantities: (items) => {
@@ -1183,6 +1407,112 @@ export const useEditor = create<EditorState>()((set, get) => {
       )
       return { applied }
     },
+    importScheduleRows: (plan) => {
+      if (get().readOnly) return { created: 0, updated: 0, linked: 0, unresolved: [] }
+      let created = 0
+      let updated = 0
+      let linked = 0
+      const touched: ID[] = []
+      /** 공종을 끝내 찾지 못해 **반영하지 않은** 행. 조용히 다른 공종으로 옮기지 않는다. */
+      const unresolved: string[] = []
+      // 단일 commit = undo 1엔트리. 공종 생성·공정 upsert·연결까지 전부 이 안에서 끝내야
+      // '취입을 한 번에 취소' 가 성립한다(중간에 나눠 쓰면 되돌리기가 반쪽만 된다).
+      commit(
+        (p) => {
+          // ① 없는 공종 만들기. 대조는 buildSchedulePlan 과 **같은 규칙**(normWorkName)으로 한다 —
+          //    원문 그대로 비교하면 '토공  공사'(공백 2칸)와 '토공 공사'가 다른 이름이 되어,
+          //    계획은 "이미 있는 공종"이라 생성을 건너뛰고 여기선 못 찾는 어긋남이 생긴다.
+          const catIdByName = new Map(p.categories.map((c) => [normWorkName(c.name), c.id]))
+          for (const name of plan.categories) {
+            if (catIdByName.has(normWorkName(name))) continue
+            const id = `c-${nanoid(8)}`
+            p.categories.push({
+              id,
+              name,
+              color: DEFAULT_PALETTE[p.categories.length % DEFAULT_PALETTE.length],
+              collapsed: false,
+              order: p.categories.length,
+            })
+            catIdByName.set(normWorkName(name), id)
+          }
+          // ② 공정 upsert. taskId 가 있으면 갱신(중복 생성 금지), 없으면 신규.
+          const keyToTaskId = new Map<string, ID>()
+          for (const item of plan.tasks) {
+            // 공종을 못 찾으면 **첫 공종으로 밀어넣지 않는다**. 조용한 재배치는 공기 적정성
+            //(요율이 공종별)·도면·주간보고까지 함께 틀리게 만들고 아무도 눈치채지 못한다.
+            const categoryId = catIdByName.get(normWorkName(item.categoryName))
+            if (!categoryId) {
+              unresolved.push(`${item.name}(공종 '${item.categoryName}')`)
+              continue
+            }
+            const owner = item.owner?.trim() ? item.owner.trim() : undefined
+            const existing = item.taskId ? p.tasks.find((t) => t.id === item.taskId) : undefined
+            if (existing) {
+              existing.name = item.name
+              existing.start = item.start
+              existing.duration = item.duration
+              existing.owner = owner
+              if (item.extId) existing.extId = item.extId
+              // 기간 0 = 마일스톤(외부 일정표의 기간이 정본).
+              existing.isMilestone = item.duration === 0
+              touched.push(existing.id)
+              updated++
+              if (item.extId) keyToTaskId.set(item.extId, existing.id)
+              keyToTaskId.set(existing.id, existing.id)
+            } else {
+              const id = `t-${nanoid(8)}`
+              p.tasks.push({
+                id,
+                categoryId,
+                name: item.name,
+                start: item.start,
+                duration: item.duration,
+                isMilestone: item.duration === 0,
+                ...(item.extId ? { extId: item.extId } : {}),
+                ...(owner ? { owner } : {}),
+              })
+              touched.push(id)
+              created++
+              if (item.extId) keyToTaskId.set(item.extId, id)
+              keyToTaskId.set(id, id)
+            }
+          }
+          // ③ 선후행. relinkIncoming 은 부르지 않는다 — 외부 일정표의 지연(lag)이 정본이고,
+          //    위치에서 역산하면 파일이 지정한 연결 의미가 조용히 바뀐다.
+          const existingPair = new Set(p.links.map((l) => `${l.from} ${l.to} ${l.type}`))
+          for (const link of plan.links) {
+            const from = keyToTaskId.get(link.fromKey)
+            const to = keyToTaskId.get(link.toKey)
+            if (!from || !to || from === to) continue
+            const pair = `${from} ${to} ${link.type}`
+            if (existingPair.has(pair)) continue
+            existingPair.add(pair)
+            p.links.push({ id: `l-${nanoid(8)}`, from, to, type: link.type, lag: link.lag })
+            linked++
+          }
+        },
+        { cascade: false, history: true },
+      )
+      if (unresolved.length > 0) {
+        // 화면에도 남긴다 — 반환값만 늘리면 '반영됨'만 보이고 빠진 행은 아무도 모른다.
+        logWarn(
+          `일정표 취입: 공종을 찾지 못해 반영하지 않은 행 ${unresolved.length}건 — ${unresolved.slice(0, 5).join(', ')}`,
+        )
+      }
+      if (created + updated > 0) {
+        // 이력은 **별도 커밋(history:false)** — 위 취입 커밋의 'undo 1엔트리' 보장을 깨지 않고,
+        // 되돌려도 '누가 언제 무엇을 취입했는가' 는 남는다.
+        get().appendChange({
+          kind: 'import',
+          taskIds: touched,
+          summary: `${plan.sourceName ?? '일정표'} 취입 — 신규 ${created} · 갱신 ${updated} · 연결 ${linked}${
+            unresolved.length ? ` · 미반영 ${unresolved.length}` : ''
+          }`,
+          reason: '사내 일정표(엑셀·CSV) 취입',
+        })
+      }
+      return { created, updated, linked, unresolved }
+    },
     setTasksColor: (ids, color, opts) => {
       const set = new Set(ids)
       commit(
@@ -1204,41 +1534,44 @@ export const useEditor = create<EditorState>()((set, get) => {
       })
     },
     setTaskStartLive: (id, startDay) => {
-      // No history push (gesture already snapshotted); cascade respected. 옮긴 막대의
-      // incoming 링크 지연을 새 위치로 역산해 위치↔지연이 항상 일치하게 한다.
+      // No history push (gesture already snapshotted); cascade respected. 자유 편집이면
+      // incoming 지연을 새 위치로 역산하고, 제약 유지면 지연은 그대로 두고 위치를 붙잡는다.
+      const mode = get().editMode
       commit(
         (p) => {
           const t = p.tasks.find((x) => x.id === id)
           // 시작일은 프로젝트 시작(day 0) 이전(음수)도 허용 — 공사기간 좌우 자유 이동.
           if (t) t.start = Math.round(startDay)
-          relinkIncoming(p, id)
+          applyEditSemantics(p, id, mode)
         },
         { history: false, cascade: true },
       )
     },
     setTasksStartLive: (moves) => {
       // 다중 선택 공정을 한 제스처로 동시 수평 이동(cascade 1회). gesture 스냅샷은 호출 측.
+      const mode = get().editMode
       commit(
         (p) => {
           for (const m of moves) {
             const t = p.tasks.find((x) => x.id === m.id)
             if (t) t.start = Math.round(m.start) // day 0 이전(음수) 허용 — 자유 이동
           }
-          // 모든 start 반영 후 지연 역산 — 같은 선택 안의 선후행은 갭 보존(lag 불변).
-          for (const m of moves) relinkIncoming(p, m.id)
+          // 모든 start 반영 후 정리 — 같은 선택 안의 선후행은 갭 보존(lag 불변).
+          for (const m of moves) applyEditSemantics(p, m.id, mode)
         },
         { history: false, cascade: true },
       )
     },
     setTaskSpanLive: (id, startDay, duration) => {
       // Live edge-resize of a bar (start + duration). Gesture already snapshotted.
+      const mode = get().editMode
       commit(
         (p) => {
           const t = p.tasks.find((x) => x.id === id)
           if (t && !t.isMilestone) {
             t.start = Math.round(startDay) // day 0 이전(음수) 허용 — 자유 이동
             t.duration = Math.max(1, Math.round(duration))
-            relinkIncoming(p, id)
+            applyEditSemantics(p, id, mode)
           }
         },
         { history: false, cascade: true },
@@ -1468,10 +1801,12 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { history: false },
       ),
-    fitToPaper: () => {
+    // filter 를 주면 **그 필터가 남기는 도면**(= '현재 표시 범위'로 출력될 도면)에 맞춘다.
+    // 주지 않으면 예전 그대로 전체 도면 기준.
+    fitToPaper: (filter) => {
       const p = get().project
       const { w, h } = paperMm(p.paper.size, p.paper.orientation)
-      const patch = fitToPaperView(p, w, h)
+      const patch = fitToPaperScopedView(p, filter, w, h)
       if (
         patch.pxPerDay === undefined &&
         patch.rowHeight === undefined &&
@@ -1486,7 +1821,9 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { history: false },
       )
-      logInfo('현재 용지 규격에 맞춰 여백 없이 채우고 글자 크기를 조정했습니다.')
+      // '여백 없이 채웠다'고 단정하지 않는다 — 실제 여백은 호출한 화면이 출력 사전 점검으로
+      // 다시 계산해 말한다(ExportDialog). 여기서는 무엇을 바꿨는지만 남긴다.
+      logInfo('용지 비율에 맞춰 배율(시간축·행 높이·글자 크기)을 조정했습니다.')
     },
     // history:false — 이름/시작일은 자유텍스트 입력(키 입력마다 undo 누적 방지, subName/색
     // 편집과 동일 정책). startDate는 day-offset 기준이라 CPM에 영향 없음.
@@ -1507,6 +1844,95 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { history: false },
       ),
+    setTaskActuals: (id, patch) =>
+      commit(
+        (p) => {
+          const t = p.tasks.find((x) => x.id === id)
+          if (!t) return
+          // 빈 문자열은 undefined 로 — syncPlainMap 이 키를 지워 '입력을 비웠다'가 그대로 전달된다.
+          for (const key of ['owner', 'actualStart', 'actualFinish'] as const) {
+            if (!(key in patch)) continue
+            const value = patch[key]
+            t[key] = value?.trim() ? value.trim() : undefined
+          }
+        },
+        { history: false },
+      ),
+    setChangeActor: (actor) => {
+      changeActor = { id: actor.id, name: actor.name.trim() || '알 수 없음' }
+    },
+    appendChange: (entry) => {
+      if (get().readOnly) return ''
+      const id = `ch-${nanoid(8)}`
+      const record: ChangeEntry = {
+        id,
+        at: new Date().toISOString(),
+        ...(changeActor.id ? { actorId: changeActor.id } : {}),
+        actorName: changeActor.name,
+        kind: entry.kind,
+        taskIds: entry.taskIds ?? [],
+        summary: entry.summary,
+        reason: entry.reason,
+        state: entry.state ?? 'draft',
+        ...(entry.versionId ? { versionId: entry.versionId } : {}),
+      }
+      commit(
+        (p) => {
+          p.changeLog = [...(p.changeLog ?? []), record]
+        },
+        // UNTRACKED_ORIGIN 을 명시한다 — 드래그 제스처 중이어도 이력이 undo 스택에 섞이지 않는다.
+        { history: false, origin: UNTRACKED_ORIGIN },
+      )
+      return id
+    },
+    setChangeState: (id, state) =>
+      commit(
+        (p) => {
+          const entry = p.changeLog?.find((e) => e.id === id)
+          if (!entry) return
+          entry.state = state
+          entry.decidedBy = changeActor.name
+          entry.decidedAt = new Date().toISOString()
+        },
+        { history: false, origin: UNTRACKED_ORIGIN },
+      ),
+    saveBaselineVersion: (name, note) => {
+      if (get().readOnly) return ''
+      const id = `bv-${nanoid(8)}`
+      const label = name.trim() || `확정본 ${new Date().toISOString().slice(0, 10)}`
+      const version: BaselineVersion = {
+        ...buildBaselineSnapshot(get().project),
+        id,
+        name: label,
+        authorName: changeActor.name,
+        ...(note?.trim() ? { note: note.trim() } : {}),
+      }
+      commit(
+        (p) => {
+          // 확정본은 append-only. 상한을 둬 문서가 무한정 커지지 않게 하고, 넘치면 **오래된 것부터** 버린다.
+          const next = [...(p.baselineVersions ?? []), version]
+          p.baselineVersions = next.slice(Math.max(0, next.length - BASELINE_VERSION_LIMIT))
+          // 기존 표류 KPI(projectKpis.baseline)가 계속 동작하도록 비교 기준선도 최신 확정본으로.
+          p.baseline = {
+            capturedAt: version.capturedAt,
+            asOf: version.asOf,
+            ...(version.sheetId ? { sheetId: version.sheetId } : {}),
+            startDay: version.startDay,
+            endDay: version.endDay,
+            tasks: version.tasks,
+          }
+        },
+        { history: false, origin: UNTRACKED_ORIGIN },
+      )
+      get().appendChange({
+        kind: 'baseline',
+        summary: `확정본 저장 — ${label} (추적 공정 ${version.tasks.length})`,
+        reason: note?.trim() || '기준선 확정',
+        state: 'confirmed',
+        versionId: id,
+      })
+      return id
+    },
     addModuleRecord: (moduleId, values = {}) => {
       const id = `mr-${nanoid(8)}`
       commit(
@@ -1536,22 +1962,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       ),
     captureBaseline: () => {
       // 스케줄된 렌더 프로젝트에서 es/ef를 읽어 박제(가시 공정 envelope + 전체 tasks).
-      const scheduled = get().project
-      const starts = scheduled.tasks.map((t) => t.es ?? t.start)
-      const ends = scheduled.tasks.map((t) => t.ef ?? t.start + t.duration)
-      const now = new Date()
-      const snapshot = {
-        capturedAt: now.toISOString(),
-        asOf: now.toISOString().slice(0, 10),
-        sheetId: scheduled.activeSheet?.id,
-        startDay: starts.length ? Math.min(...starts) : 0,
-        endDay: ends.length ? Math.max(...ends) : 0,
-        tasks: scheduled.tasks.map((t) => ({
-          id: t.id,
-          start: t.es ?? t.start,
-          duration: t.duration,
-        })),
-      }
+      const snapshot = buildBaselineSnapshot(get().project)
       commit(
         (p) => {
           p.baseline = snapshot
@@ -1713,25 +2124,38 @@ export const useEditor = create<EditorState>()((set, get) => {
     cascadeNow: () => {
       const before = new Map(get().project.tasks.map((t) => [t.id, t.start]))
       scheduleDerivation = 'cascade'
-      const scheduled = deriveProject(authoritativeShadow)
-      set({ project: scheduled.project, warnings: scheduled.warnings })
+      setScheduled(deriveProject(authoritativeShadow))
       set({ recalcReport: buildRecalcReport('cascade', before, get().project) })
       logInfo('연쇄 일정 정렬을 적용했습니다.')
     },
     rescheduleNow: () => {
       const before = new Map(get().project.tasks.map((t) => [t.id, t.start]))
       scheduleDerivation = 'reschedule'
-      const scheduled = deriveProject(authoritativeShadow)
-      set({ project: scheduled.project, warnings: scheduled.warnings })
+      setScheduled(deriveProject(authoritativeShadow))
       set({ recalcReport: buildRecalcReport('reschedule', before, get().project) })
       logInfo('전체 일정을 최조기(最早期)로 재계산했습니다.')
     },
     setAutoCascade: (v) => {
       if (!v && scheduleDerivation === 'cascade') scheduleDerivation = null
-      const scheduled = deriveProject(authoritativeShadow)
-      set({ autoCascade: v, project: scheduled.project, warnings: scheduled.warnings })
+      setScheduled(deriveProject(authoritativeShadow), { autoCascade: v })
     },
+    setEditMode: (m) => {
+      lsSet('sequence:editMode', m)
+      set({ editMode: m })
+    },
+    setLastEditImpact: (i) => set({ lastEditImpact: i }),
     closeRecalcReport: () => set({ recalcReport: null }),
+    toggleProblems: (v) => set((s) => ({ problemsOpen: v ?? !s.problemsOpen })),
+    focusTask: (id) =>
+      set({
+        selectedTaskId: id,
+        selectedTaskIds: [id],
+        selectedLinkId: null,
+        selectedTextRole: null,
+        inspectorTab: 'task' as InspectorTab,
+        focusTaskId: id,
+      }),
+    clearFocusTask: () => set({ focusTaskId: null }),
 
     selectTask: (id) =>
       set({
@@ -1864,7 +2288,12 @@ export const useEditor = create<EditorState>()((set, get) => {
       lsSet('sequence:uiMode', m)
       set({ uiMode: m })
     },
-    setReadOnly: (v) => set({ readOnly: v }),
+    setReadOnly: (v) => {
+      set({ readOnly: v })
+      // 저장 상태 칩도 같은 사실을 봐야 한다 — 조회 전용 연결은 서버가 업데이트를 받지
+      // 않으므로 provider 의 미전송 카운터가 영영 0으로 돌아오지 않는다(칩이 '전송 대기…'로 굳음).
+      usePersistence.getState().setReadOnly(v)
+    },
 
     beginGesture: () => {
       runtime.undoManager.stopCapturing()
@@ -1886,6 +2315,8 @@ export const useEditor = create<EditorState>()((set, get) => {
       runtime.undoManager.undo()
       restoreSelection(stackItem?.meta.get(selectionBeforeKey) as SelectionSnapshot | undefined)
       syncDerivedView(true)
+      // 되돌린 편집의 영향 카드는 더 이상 사실이 아니다 — 즉시 내린다.
+      set({ lastEditImpact: null })
     },
     redo: () => {
       if (!runtimeReady) return
@@ -1895,6 +2326,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       runtime.undoManager.redo()
       restoreSelection(stackItem?.meta.get(selectionAfterKey) as SelectionSnapshot | undefined)
       syncDerivedView(true)
+      set({ lastEditImpact: null })
     },
 
     // 사용자가 명시적으로 "저장"을 누르거나 Ctrl+S 했을 때만 동작 — 사용자가 고른
@@ -1904,9 +2336,25 @@ export const useEditor = create<EditorState>()((set, get) => {
         const snapshot = runtimeReady ? projectFromYDoc(runtime.doc, activeSheetId) : get().project
         const ok = await saveProjectToFile(snapshot)
         if (ok) set({ dirty: false }) // 사용자가 취소하면 dirty 유지
+        return ok
       } catch (e) {
         logWarn('저장 실패', e)
+        return false
       }
     },
   }
 })
+
+/**
+ * 파일 백업(.json)의 **유일한** 진입점 — 상단바 [저장] 버튼·Ctrl+S·저장 칩이 모두 여기를 지난다.
+ *
+ * 예전에는 각 호출부가 `await save(); if (!dirty) markFileBackup()` 로 '저장됨'을 **추론**했다.
+ * dirty=false 는 '보류 중인 변경이 없다'일 뿐 '파일이 써졌다'가 아니어서, 편집 없이 저장을 눌러
+ * OS 대화상자를 취소해도 칩에 없는 파일의 백업 시각이 찍혔다. 반대로 Ctrl+S 는 save() 만 불러
+ * 성공해도 '파일 백업 없음'으로 남았다. 이제 save() 의 실제 결과(파일 기록 여부)만 근거로 삼는다.
+ */
+export async function backupProjectToFile(): Promise<boolean> {
+  const ok = await useEditor.getState().save()
+  if (ok) usePersistence.getState().markFileBackup()
+  return ok
+}
