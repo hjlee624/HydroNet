@@ -242,8 +242,9 @@ export type ProjectKind = 'feasibility' | 'basic-design' | 'detailed-design' | '
  *  둘 다 가질 수 있다(설계 단계=둘 다, 시공=마일스톤만). */
 export type SheetRole = 'plan' | 'milestone'
 
-/** 한 사업 안의 공정표 문서. 표시 설정(startDate/view/paper)은 사업 단위로 공유하고
- *  공정 데이터(공종/공정/연결/우기)만 시트별로 갖는다. 활성 시트는 Project 최상위
+/** 한 사업 안의 공정표 문서. 대부분의 표시 설정(startDate/view/paper)은 사업 단위로 공유하되,
+ *  타임라인 표시 기간은 예정공정표와 마일스톤이 서로 영향을 주지 않도록 시트별로 갖는다.
+ *  공정 데이터(공종/공정/연결/우기)도 시트별로 갖는다. 활성 시트는 Project 최상위
  *  categories/tasks/links/rainySeasons에 펼쳐져 있고, 여기엔 비활성 시트만 담는다. */
 export interface Sheet {
   id: ID
@@ -253,6 +254,9 @@ export interface Sheet {
   tasks: Task[]
   links: Link[]
   rainySeasons: RainySeason[]
+  /** 이 시트에만 적용되는 타임라인 표시 시작/종료 월. */
+  displayStart?: string
+  displayEnd?: string
 }
 
 /** 건설사업관리 기록형 모듈(예산·공사비·자원·품질·안전·문서·인허가·시운전·리스크)의 한 행.

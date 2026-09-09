@@ -310,6 +310,8 @@ function allSheets(project: Project): Sheet[] {
       tasks: canonicalTasks(project.tasks),
       links: cloneJson(project.links),
       rainySeasons: cloneJson(project.rainySeasons),
+      displayStart: project.view.displayStart,
+      displayEnd: project.view.displayEnd,
     })
   }
   for (const sheet of project.sheets ?? []) {
@@ -330,7 +332,13 @@ function syncSheetCollection(target: RecordMap, sheets: Sheet[]): void {
     }
     syncPlainMap(
       shared,
-      { id: sheet.id, role: sheet.role, name: sheet.name },
+      {
+        id: sheet.id,
+        role: sheet.role,
+        name: sheet.name,
+        displayStart: sheet.displayStart,
+        displayEnd: sheet.displayEnd,
+      },
       new Set(['categories', 'tasks', 'links', 'rainySeasons', POSITION_KEY]),
     )
     syncRecordCollection(
@@ -554,6 +562,8 @@ function readSheet(record: Y.Map<unknown>): Sheet | null {
   const tasks = record.get('tasks')
   const links = record.get('links')
   const rainySeasons = record.get('rainySeasons')
+  const displayStart = record.get('displayStart')
+  const displayEnd = record.get('displayEnd')
   return {
     id,
     role,
@@ -564,6 +574,8 @@ function readSheet(record: Y.Map<unknown>): Sheet | null {
     rainySeasons: isYMap(rainySeasons)
       ? orderedRecords<RainySeason>(rainySeasons as RecordMap)
       : [],
+    ...(typeof displayStart === 'string' ? { displayStart } : {}),
+    ...(typeof displayEnd === 'string' ? { displayEnd } : {}),
   }
 }
 
@@ -663,6 +675,11 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
     view: {
       ...viewJson,
       ...(isYArray(mirrorHidden) ? { mirrorHidden: mirrorHidden.toArray() } : {}),
+      // 다중 시트의 타임라인 기간은 각 시트가 정본이다. 값이 없는 시트는 자동 범위를 쓰며,
+      // 다른 시트가 마지막으로 저장한 전역(구버전) 값을 물려받지 않는다.
+      ...(activeSheet
+        ? { displayStart: activeSheet.displayStart, displayEnd: activeSheet.displayEnd }
+        : {}),
     },
     branding: {
       logos: isYArray(logos) ? logos.toArray() : [],

@@ -308,6 +308,31 @@ assert.deepEqual(
   'sheet switch does not mutate shared state',
 )
 
+// 예정공정표와 시공 마일스톤의 타임라인 표시 기간은 시트별로 독립적이어야 한다.
+// 한 시트의 displayStart/End가 공유 view에 남더라도 다른 시트가 이를 상속하면 안 된다.
+{
+  const periodDoc = new Y.Doc()
+  const plan = clone(multi)
+  plan.view.displayStart = '2026-01-01'
+  plan.view.displayEnd = '2026-12-01'
+  applyProjectToYDoc(periodDoc, plan)
+
+  const milestone = projectFromYDoc(periodDoc, 'sheet-b')
+  assert.equal(milestone.view.displayStart, undefined, '마일스톤은 예정공정표 시작 월을 상속하지 않는다')
+  assert.equal(milestone.view.displayEnd, undefined, '마일스톤은 예정공정표 종료 월을 상속하지 않는다')
+
+  milestone.view.displayStart = '2027-03-01'
+  milestone.view.displayEnd = '2028-02-01'
+  applyProjectToYDoc(periodDoc, milestone)
+
+  const rereadPlan = projectFromYDoc(periodDoc, 'sheet-a')
+  const rereadMilestone = projectFromYDoc(periodDoc, 'sheet-b')
+  assert.equal(rereadPlan.view.displayStart, '2026-01-01')
+  assert.equal(rereadPlan.view.displayEnd, '2026-12-01')
+  assert.equal(rereadMilestone.view.displayStart, '2027-03-01')
+  assert.equal(rereadMilestone.view.displayEnd, '2028-02-01')
+}
+
 // ── 공기 산정 전제(periodInputs) 동시 편집 — 필드별 독립 병합 ───────────────────────────
 // A가 준비기간 45, B가 법정공휴일수 60 을 **동시에** 넣는다. 예전처럼 중첩 객체 한 덩어리로
 // 저장하면 나중 쓰기가 객체 전체를 덮어써 한쪽 입력이 조용히 사라진다(③ 산정 총공기 박스가
