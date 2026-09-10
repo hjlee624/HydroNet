@@ -11,6 +11,7 @@ import type { CSSProperties, MouseEvent as RMouseEvent, PointerEvent as RPointer
 import { memo } from 'react'
 import type { AdequacyResult } from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
+import { arrangeLabelCenters } from '../engine/labelLayout'
 import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
 import { createProcessColorMap } from '../engine/taskColor'
@@ -213,6 +214,50 @@ function ChartSvgBase({
         onTextClick(role)
       },
     }
+  }
+
+  const renderedBars = model.tasks.filter(
+    (lt) => !lt.isMilestone && !childParentIds.has(lt.task.id),
+  )
+  const taskNameStyle = resolveTextStyle(
+    'taskName',
+    project.view.textStyles,
+    project.view.fontScale ?? 1,
+  )
+  const screenTaskNameSize = readableScreenTextSize(
+    'taskName',
+    taskNameStyle.fontSize,
+    screenScale,
+  )
+  const screenTaskLabelX = new Map<string, number>()
+  const exportTaskLabelX = new Map<string, number>()
+  const barsByRow = new Map<string, LaidTask[]>()
+  for (const lt of renderedBars) {
+    const key = `${lt.categoryId}#${lt.subRow}`
+    const row = barsByRow.get(key)
+    if (row) row.push(lt)
+    else barsByRow.set(key, [lt])
+  }
+  for (const row of barsByRow.values()) {
+    const labels = row.map((lt) => ({
+      id: lt.task.id,
+      text: lt.task.name,
+      anchorX: (lt.startX + lt.endX) / 2,
+    }))
+    for (const [id, x] of arrangeLabelCenters(
+      labels,
+      screenTaskNameSize,
+      labelWidth + 4 / screenScale,
+      contentWidth - 4 / screenScale,
+    ))
+      screenTaskLabelX.set(id, x)
+    for (const [id, x] of arrangeLabelCenters(
+      labels,
+      taskNameStyle.fontSize,
+      labelWidth + 4,
+      contentWidth - 4,
+    ))
+      exportTaskLabelX.set(id, x)
   }
 
   return (
@@ -782,6 +827,10 @@ function ChartSvgBase({
           const hitY = lt.cy - hitHeight / 2
           const hitWidth = Math.max(lt.w, 14 / screenScale)
           const hitX = taskMidX - hitWidth / 2
+          const nameGap = Math.max(4 / screenScale, screenTaskNameSize * 0.22)
+          const exportNameGap = Math.max(4, taskNameStyle.fontSize * 0.22)
+          const nameX = screenTaskLabelX.get(t.id) ?? taskMidX
+          const exportNameX = exportTaskLabelX.get(t.id) ?? taskMidX
           return (
             <g
               key={t.id}
@@ -803,12 +852,15 @@ function ChartSvgBase({
               }}
               style={mirror ? { opacity: 0.6 } : undefined}
             >
-              {/* 공정명은 항상 막대 위 **중앙**에 표기(요구). 막대 선택을 방해하지 않도록 클릭
-                  통과(pointer-events none) — 칸이 좁아도 막대가 잘 잡힌다. 텍스트 편집은 인스펙터/사이드바. */}
+              {/* 공정명은 막대 위에 두고 같은 행의 가까운 이름은 좌우로 분산한다. 막대 선택을
+                  방해하지 않도록 클릭 통과(pointer-events none) — 텍스트 편집은 인스펙터/사이드바. */}
               <text
-                x={taskMidX}
-                y={visibleY - 4}
-                data-export-y={lt.y - 3.5}
+                x={nameX}
+                y={visibleY - nameGap}
+                data-task-label={t.id}
+                data-label-anchor-x={taskMidX}
+                data-export-x={exportNameX}
+                data-export-y={lt.y - exportNameGap}
                 textAnchor="middle"
                 {...roleAttrs('taskName')}
                 {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}

@@ -205,7 +205,27 @@ async function main() {
     labelColumn?.getAttribute('clip-path') === 'url(#hn-label-column-clip)',
     '좌측 WBS 라벨은 라벨 열 경계에서 잘려 시간축으로 침범하지 않는다',
   )
-  const screenTaskText = chartSvg?.querySelector('[data-text-role="taskName"]')
+  const screenTaskText = chartSvg?.querySelector('[data-task-label]')
+  const screenTaskBar = screenTaskText?.parentElement?.querySelector('.chart-bar')
+  const screenTaskFontSize = Number(screenTaskText?.getAttribute('font-size') ?? 0)
+  const screenTaskBaseline = Number(screenTaskText?.getAttribute('y') ?? 0)
+  const screenTaskBarTop = Number(screenTaskBar?.getAttribute('y') ?? 0)
+  check(
+    screenTaskBaseline <= screenTaskBarTop - Math.max(4 / 0.03, screenTaskFontSize * 0.22),
+    '큰 공정명도 글자 하단 여백을 확보해 막대 위에 배치된다',
+  )
+  const { arrangeLabelCenters, estimateLabelWidth } = await import('../src/engine/labelLayout')
+  const collisionFont = 12
+  const collisionLabels = [
+    { id: 'left', text: '공사용도로(2)', anchorX: 100 },
+    { id: 'right', text: '공사용도로(1)', anchorX: 112 },
+  ]
+  const collisionLayout = arrangeLabelCenters(collisionLabels, collisionFont, 0, 400)
+  const leftRight =
+    (collisionLayout.get('left') ?? 0) + estimateLabelWidth(collisionLabels[0].text, collisionFont) / 2
+  const rightLeft =
+    (collisionLayout.get('right') ?? 0) - estimateLabelWidth(collisionLabels[1].text, collisionFont) / 2
+  check(leftRight < rightLeft, '같은 행에서 가까운 공정명은 좌우로 벌려 서로 겹치지 않는다')
   const exportBaseSize = screenTaskText?.getAttribute('data-export-font-size')
   const exportSvg = chartSvg
     ? buildExportSvgString(
@@ -217,7 +237,7 @@ async function main() {
         {},
       )
     : ''
-  const exportedTaskTag = exportSvg.match(/<text[^>]*data-text-role="taskName"[^>]*>/)?.[0]
+  const exportedTaskTag = exportSvg.match(/<text[^>]*data-task-label="[^"]+"[^>]*>/)?.[0]
   const exportedTaskSize = exportedTaskTag?.match(/font-size="([^"]+)"/)?.[1]
   check(
     !!exportBaseSize && exportedTaskSize === exportBaseSize,

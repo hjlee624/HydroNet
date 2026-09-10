@@ -191,8 +191,8 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     Math.ceil(
       2 *
         Math.max(
-          11.5 + 0.8 * fs('taskName'),
-          11 + 0.8 * fs('milestoneName'),
+          11.5 + fs('taskName'),
+          11 + fs('milestoneName'),
           12 + fs('taskDuration'),
         ),
     ),
