@@ -166,6 +166,16 @@ async function main() {
   const barScreenWidth = Number(threePctBar?.getAttribute('width') ?? 0) * 0.03
   check(barScreenWidth >= 5, `3% 전체 맞춤에서도 짧은 막대가 최소 5px 폭으로 보인다 (${barScreenWidth.toFixed(1)}px)`)
   const chartSvg = document.getElementById('sequence-chart') as unknown as SVGSVGElement | null
+  check(
+    !chartSvg?.textContent?.includes('공종 / 마일스톤') &&
+      !chartSvg?.textContent?.match(/착수\s+\d{4}-\d{2}/),
+    '좌측 상단의 공종/마일스톤·착수 헤더 문구를 표시하지 않는다',
+  )
+  const labelColumn = chartSvg?.querySelector('[data-label-column-content="1"]')
+  check(
+    labelColumn?.getAttribute('clip-path') === 'url(#hn-label-column-clip)',
+    '좌측 WBS 라벨은 라벨 열 경계에서 잘려 시간축으로 침범하지 않는다',
+  )
   const screenTaskText = chartSvg?.querySelector('[data-text-role="taskName"]')
   const exportBaseSize = screenTaskText?.getAttribute('data-export-font-size')
   const exportSvg = chartSvg

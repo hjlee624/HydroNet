@@ -63,9 +63,8 @@ export interface Task {
   /** Duration in days. Milestones use 0. */
   duration: number
   isMilestone: boolean
-  /** @deprecated 레거시 sub-row 힌트. 이제 **공정·마일스톤은 이름이 서로 겹치지 않도록 row와 무관하게
-   *  한 줄에 하나씩** 내려 배치된다(layout.ts) — 순서는 화살표(FS)로 잇는다. 세부공정은 parentId로 상위
-   *  공정 줄에 붙는다. 저장 파일 호환을 위해 필드는 남겨두지만 레이아웃은 이 값을 사용하지 않는다. */
+  /** 레인/상위 공정 블록 안의 세로 행 위치. 일반 공정은 WBS 순서로 배치하고, 세부공정은 같은
+   *  parentId 그룹 안에서 이 값을 사용해 같은 줄에 합치거나 위·아래 줄로 나눌 수 있다. */
   row?: number
   color?: string
   labelPosition?: LabelPosition
@@ -73,9 +72,8 @@ export interface Task {
   /** Optional 세부공종 (sub-work) grouping label. **레거시** — 이제 세부공정은 parentId로
    *  상위 공정에 연결한다. 저장 파일 호환을 위해 남겨두며, 로드 시 normalize가 parentId로 이관한다. */
   subName?: string
-  /** 세부공정의 **상위 공정 task id**. 이 값이 있으면 이 task는 그 상위 공정의 세부공정이다 —
-   *  이름/순서가 바뀌어도 상위 공정에 안정적으로 고정된다. 상위 공정(자식이 있는 공정)은 차트에서
-   *  자기 막대를 숨기고, 세부공정들이 상위 공정 한 줄에 이어 붙는다. */
+  /** 세부공정의 **상위 공정 task id**. 이름/순서가 바뀌어도 상위 공정 블록에 안정적으로 고정된다.
+   *  상위 공정(자식이 있는 공정)은 차트에서 자기 막대를 숨기며, 세부공정은 블록 안에서 여러 줄을 쓸 수 있다. */
   parentId?: ID
   /** 막대 아래 공기(기간) 표시 텍스트의 사용자 지정 override. 비어있으면 `${duration}일`로
    *  자동 계산. 더블클릭 편집 시 순수 숫자는 duration 자체를 바꾸고, 그 외 문자열은 이 라벨로

@@ -22,7 +22,7 @@ import {
 } from '../src/engine/scheduling'
 import { exportPreflight } from '../src/export/preflight'
 import { buildReviewRequestMd } from '../src/export/reviewRequest'
-import { useEditor } from '../src/state/store'
+import { moveTaskFractionally, useEditor } from '../src/state/store'
 import type { Link, Project, Task } from '../src/types/model'
 
 let failures = 0
@@ -664,6 +664,45 @@ console.log('')
   check(
     inject('subName').labelWidth > on.labelWidth,
     '긴 세부공종명이 라벨열을 넓힌다(WBS는 좌측 표기)',
+  )
+
+  const cat = dd.categories[0].id
+  const grouped: Project = {
+    ...dd,
+    categories: dd.categories.slice(0, 2),
+    tasks: [
+      { id: 'parent', categoryId: cat, name: '상위 공정', start: 0, duration: 120, isMilestone: false },
+      { id: 'child-a', categoryId: cat, parentId: 'parent', name: '세부 A', start: 0, duration: 30, isMilestone: false, row: 0 },
+      { id: 'child-b', categoryId: cat, parentId: 'parent', name: '세부 B', start: 40, duration: 30, isMilestone: false, row: 0 },
+    ],
+    links: [],
+  }
+  const together = computeLayout(grouped)
+  const splitProject: Project = {
+    ...grouped,
+    tasks: grouped.tasks.map((t) => (t.id === 'child-b' ? { ...t, row: 1 } : { ...t })),
+  }
+  const split = computeLayout(splitProject)
+  const togetherA = must(together.tasks.find((lt) => lt.task.id === 'child-a'), '같은 줄 세부 A')
+  const togetherB = must(together.tasks.find((lt) => lt.task.id === 'child-b'), '같은 줄 세부 B')
+  const splitA = must(split.tasks.find((lt) => lt.task.id === 'child-a'), '분리 줄 세부 A')
+  const splitB = must(split.tasks.find((lt) => lt.task.id === 'child-b'), '분리 줄 세부 B')
+  check(togetherA.cy === togetherB.cy, '같은 row의 세부공정은 상위 공정 블록 한 줄에 배치된다')
+  check(
+    splitB.cy - splitA.cy === split.rowHeight,
+    '세부공정 row를 바꾸면 같은 상위 공정 블록 안에서 위·아래 줄로 이동한다',
+  )
+  check(
+    split.categories[0].height === together.categories[0].height + split.rowHeight,
+    '세부공정이 새 줄을 쓰면 상위 공정 블록만 한 행만큼 확장된다',
+  )
+  const moved = structuredClone(grouped)
+  const otherCategory = dd.categories[1].id
+  moveTaskFractionally(moved, 'child-b', otherCategory, null, 'below')
+  const movedChild = must(moved.tasks.find((t) => t.id === 'child-b'), '이동한 세부 B')
+  check(
+    movedChild.parentId === 'parent' && movedChild.categoryId === cat && movedChild.row === 1,
+    '세부공정 세로 이동은 다른 공종에 놓아도 상위 공정 소속을 유지하고 그룹 안 새 줄을 만든다',
   )
 }
 

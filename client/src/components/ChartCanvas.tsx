@@ -216,14 +216,18 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
     return { x: (clientX - rect.left) / zoom, y: (clientY - rect.top) / zoom }
   }
 
-  // Map a content-Y (while dragging task `taskId`) to a row drop target: which lane,
-  // which existing row to MERGE onto (so the bar joins a one-line package), or a new
-  // row ABOVE/BELOW an anchor row. `anchorId` references a concrete task so the
-  // target survives the include/exclude shift when the dragged task is removed.
+  // Map a content-Y (while dragging task `taskId`) to a row drop target. 일반 공정은
+  // 공종 안에서 이동하고, 세부공정은 같은 parentId 블록의 행만 대상으로 삼는다.
+  // `anchorId` references a concrete task so the target survives the include/exclude shift.
   function computeRowTarget(taskId: string, contentY: number) {
     const cats = model.categories
     if (!cats.length) return null
-    let cat = cats.find((c) => contentY >= c.y && contentY < c.y + c.height)
+    const moving = model.tasks.find((lt) => lt.task.id === taskId)
+    const parentId = moving?.task.parentId
+    const parent = parentId ? model.tasks.find((lt) => lt.task.id === parentId) : undefined
+    let cat = parent
+      ? cats.find((c) => c.id === parent.categoryId)
+      : cats.find((c) => contentY >= c.y && contentY < c.y + c.height)
     if (!cat) cat = contentY < cats[0].y ? cats[0] : cats[cats.length - 1]
     const rh = model.rowHeight
     // Existing rows in this lane EXCLUDING the dragged task, each with a representative
@@ -231,6 +235,7 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
     const byRow = new Map<number, { anchorId: string; cy: number }>()
     for (const lt of model.tasks) {
       if (lt.categoryId !== cat.id || lt.task.id === taskId) continue
+      if (parentId && lt.task.id !== parentId && lt.task.parentId !== parentId) continue
       if (!byRow.has(lt.subRow)) byRow.set(lt.subRow, { anchorId: lt.task.id, cy: lt.cy })
     }
     const rows = [...byRow.values()].sort((a, b) => a.cy - b.cy)
@@ -587,8 +592,8 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
       const newStart = model.dayOf(x) - drag.grabOffsetDays
       previewDrag(drag.taskId, { start: newStart }, newStart)
       useEditor.getState().setTaskStartLive(drag.taskId, newStart)
-      // Vertical component → preview which row the bar would join / create (skip
-      // when a filter is active: lanes/rows are a subset and the math is ambiguous).
+      // Vertical component → preview which row the bar would join / create. 세부공정은
+      // computeRowTarget에서 같은 상위 공정 블록으로 제한된다.
       if (filterActive(useEditor.getState().filter)) setReorderHint(null)
       else {
         const t = computeRowTarget(drag.taskId, y)
@@ -720,9 +725,8 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
     setReorderHint(null)
     if (!drag) return
     if (drag.kind === 'move' && drag.started && !filterActive(useEditor.getState().filter)) {
-      // The vertical part of the move assigns the activity's row — merging onto an
-      // existing row (one-line package) or making a new row above/below — and may
-      // move it to another 공종. Same gesture, so history:false (already snapped).
+      // The vertical part assigns the activity's row. 일반 공정은 공종 사이도 이동할 수 있지만,
+      // 세부공정은 같은 상위 공정 블록 안에서만 합치거나 위/아래 새 행을 만든다.
       const { y } = toContent(e.clientX, e.clientY)
       const dragged = model.tasks.find((lt) => lt.task.id === drag.taskId)
       const target = computeRowTarget(drag.taskId, y)

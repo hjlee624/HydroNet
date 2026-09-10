@@ -201,7 +201,6 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   const headerHeight = Math.max(
     view.headerHeight,
     Math.ceil((fs('axisYear') + fs('axisMonth')) * 1.6),
-    Math.ceil((fs('headerTitle') + fs('headerSub')) * 1.4),
   )
 
   // Drawing title = 사업명, plus the active 시트명 when the 사업 has more than one
@@ -234,16 +233,12 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   const catsWithTasks = new Set(tasks.map((t) => t.categoryId))
   const categories = filterOn ? baseCats.filter((c) => catsWithTasks.has(c.id)) : baseCats
 
-  // Left label column widens to fit the longest 공종/세부공종/헤더 label at the
-  // current font sizes, so big text never overruns into the chart (and the
-  // top-left "공종/마일스톤"·착수일 never bleed into the timeline). Defaults fit 150.
+  // Left label column widens to fit the longest 공종/세부공종/공정 label at the
+  // current font sizes. ChartSvg also clips the WBS group at this boundary because
+  // low-zoom screen legibility correction can make rendered glyphs wider than layout units.
   const catFs = fs('categoryLabel'),
     subFs = fs('subCategoryLabel')
-  let labelWidth = Math.max(
-    view.labelWidth,
-    12 + estimateTextWidth('공종 / 마일스톤', fs('headerTitle')) + 10,
-    12 + estimateTextWidth('착수 0000-00', fs('headerSub')) + 10,
-  )
+  let labelWidth = view.labelWidth
   for (const c of categories)
     labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
   // 좌측 라벨열은 WBS 트리(공종 > 세부공종 > 공정)를 담는다. 세부공종은 26, 공정은 그 하위로
@@ -300,25 +295,39 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     // a lane out in full (visibility is controlled by `hidden`, not `collapsed`).
     const laneY = cursorY
 
-    // Group tasks into visual rows (요구2). 세부공정(parentId 있음)은 **상위 공정 줄에 이어** 붙는다.
-    // 2패스: ① 상위/일반 공정·마일스톤(parentId 없음)에 줄 배정 → ② 세부공정을 상위 공정(parentId)의
-    // 줄에 얹는다. id로 연결하므로 이름/순서와 무관하게 안정적.
-    //   ▸ **공정·마일스톤은 명시 row와 무관하게 한 줄에 하나씩**(id 기준) 내린다 — 같은 줄에 여러 개를
-    //     쌓으면 좌측 공정명(cy 동일)·마일스톤 이름이 서로 겹치기 때문. 레인(공종)은 아래로 확장될 뿐
-    //     범위는 넘지 않으며, 순차 공정은 화살표(FS)로 이어진다.
+    // 상위 공정은 WBS 순서대로 한 블록씩 배치한다. 세부공정(parentId 있음)은 그 블록 안에서
+    // 자기 row를 사용할 수 있다. row 0은 상위 공정명 기준 줄이며, 같은 row의 세부공정은 한 줄에
+    // 이어지고 위/아래 row는 블록 높이를 늘린다. 따라서 세부공정은 상위 공정 밖으로 섞이지 않지만
+    // 반드시 상위 공정명과 같은 한 줄에만 있을 필요도 없다.
     let auto = 0
     const rawRowOf = new Map<string, number>()
-    const taskRow = new Map<string, number>() // task id → 줄(세부공정 상위 매칭용)
-    for (const t of catTasks) {
-      if (t.parentId) continue
-      const r = auto++
-      rawRowOf.set(t.id, r)
-      taskRow.set(t.id, r)
-    }
+    const childrenByParent = new Map<string, Task[]>()
     for (const t of catTasks) {
       if (!t.parentId) continue
-      const pr = taskRow.get(t.parentId)
-      rawRowOf.set(t.id, pr ?? auto++)
+      const siblings = childrenByParent.get(t.parentId)
+      if (siblings) siblings.push(t)
+      else childrenByParent.set(t.parentId, [t])
+    }
+    for (const parent of catTasks.filter((t) => !t.parentId)) {
+      const children = childrenByParent.get(parent.id) ?? []
+      if (!children.length) {
+        rawRowOf.set(parent.id, auto++)
+        continue
+      }
+      const childRows = children.map((child) =>
+        typeof child.row === 'number' && Number.isFinite(child.row) ? child.row : 0,
+      )
+      const localRows = [...new Set([0, ...childRows])].sort((a, b) => a - b)
+      const localDense = new Map(localRows.map((row, index) => [row, index]))
+      rawRowOf.set(parent.id, auto + (localDense.get(0) ?? 0))
+      children.forEach((child, index) => {
+        rawRowOf.set(child.id, auto + (localDense.get(childRows[index]) ?? 0))
+      })
+      auto += localRows.length
+    }
+    // 상위 공정이 없거나 다른 공종을 가리키는 레거시 고아 세부공정도 숨기지 않는다.
+    for (const t of catTasks) {
+      if (!rawRowOf.has(t.id)) rawRowOf.set(t.id, auto++)
     }
     const distinctRows = [...new Set(catTasks.map((t) => rawRowOf.get(t.id)!))].sort(
       (a, b) => a - b,

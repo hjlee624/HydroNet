@@ -737,7 +737,7 @@ function assignFractionalBlock<T>(
   return true
 }
 
-function moveTaskFractionally(
+export function moveTaskFractionally(
   project: Project,
   id: ID,
   targetCategoryId: ID,
@@ -746,15 +746,29 @@ function moveTaskFractionally(
 ): void {
   const moving = project.tasks.find((task) => task.id === id)
   if (!moving) return
+  const parent = moving.parentId
+    ? project.tasks.find((task) => task.id === moving.parentId)
+    : undefined
+  // 세부공정은 같은 상위 공정 블록 안에서만 행을 바꾼다. 다른 공종/공정 위에 놓더라도
+  // parentId와 공종을 바꾸지 않아 WBS 소속이 흐트러지지 않는다.
+  if (parent) targetCategoryId = parent.categoryId
   moving.categoryId = targetCategoryId
   const lane = project.tasks.filter(
-    (task) => task.categoryId === targetCategoryId && task.id !== id,
+    (task) =>
+      task.categoryId === targetCategoryId &&
+      task.id !== id &&
+      (!parent || task.parentId === parent.id),
   )
   let auto = 0
   const rowOf = new Map<ID, number>()
-  for (const task of lane) rowOf.set(task.id, typeof task.row === 'number' ? task.row : auto++)
+  for (const task of lane)
+    rowOf.set(task.id, typeof task.row === 'number' ? task.row : parent ? 0 : auto++)
   let rows = [...new Set(lane.map((task) => rowOf.get(task.id) ?? 0))].sort((a, b) => a - b)
-  let anchorIndex = anchorId == null ? -1 : rows.indexOf(rowOf.get(anchorId) ?? Number.NaN)
+  // 자식이 하나뿐이어도 상위 공정명 기준 줄(row 0)을 앵커로 삼아 위/아래로 분리할 수 있다.
+  if (parent && !rows.includes(0)) rows.push(0)
+  rows.sort((a, b) => a - b)
+  const anchorRow = parent && anchorId === parent.id ? 0 : rowOf.get(anchorId ?? '')
+  let anchorIndex = anchorId == null ? -1 : rows.indexOf(anchorRow ?? Number.NaN)
 
   if (mode === 'merge' && anchorIndex >= 0) {
     const anchorRow = rows[anchorIndex]
@@ -783,7 +797,11 @@ function moveTaskFractionally(
       })
       rows = rows.map((_, index) => (index + 1) * 1024)
       anchorIndex =
-        anchorId == null ? -1 : rows.indexOf(lane.find((t) => t.id === anchorId)?.row ?? Number.NaN)
+        anchorId == null
+          ? -1
+          : parent && anchorId === parent.id
+            ? rows.indexOf(1024)
+            : rows.indexOf(lane.find((t) => t.id === anchorId)?.row ?? Number.NaN)
       insertion = anchorIndex < 0 ? rows.length : anchorIndex + (mode === 'below' ? 1 : 0)
       before = insertion > 0 ? rows[insertion - 1] : undefined
       after = insertion < rows.length ? rows[insertion] : undefined

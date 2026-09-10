@@ -240,6 +240,9 @@ function ChartSvgBase({
         >
           <path d="M1,1 L9,5 L1,9 Z" fill={colors.critical} />
         </marker>
+        <clipPath id="hn-label-column-clip">
+          <rect x={0} y={titleHeight} width={Math.max(0, labelWidth - 2)} height={contentHeight - titleHeight} />
+        </clipPath>
       </defs>
 
       {/* background — screen-only; the exporter supplies its own (white, or none
@@ -485,13 +488,10 @@ function ChartSvgBase({
           strokeWidth={1}
         />
         <rect x={0} y={headerTop} width={labelWidth} height={headerHeight} fill={colors.cream} />
-        <text x={12} y={headerTop + headerHeight * 0.4} {...roleAttrs('headerTitle')}>
-          공종 / 마일스톤
-        </text>
-        <text x={12} y={headerTop + headerHeight * 0.82} {...roleAttrs('headerSub')}>
-          착수 {toISO(dayToDate(project.startDate, 0)).slice(0, 7)}
-        </text>
-        {model.categories.map((c) => {
+        {/* 낮은 배율에서 화면 판독용으로 글자를 키워도 WBS 문구는 이 경계를 넘어
+            시간축으로 침범하지 않는다. 전체 이름은 사이드바와 호버/선택 속성에서 확인한다. */}
+        <g clipPath="url(#hn-label-column-clip)" data-label-column-content="1">
+          {model.categories.map((c) => {
           const hasSubs = c.subGroups.length > 0
           // 공정명을 왼쪽에 나열하면 공종명은 레인 상단 헤더로 올린다(공정 줄과 겹치지 않게).
           const topAlign = hasSubs || taskCol
@@ -510,37 +510,36 @@ function ChartSvgBase({
               </text>
             </g>
           )
-        })}
-        {model.categories.flatMap((c) =>
-          c.subGroups.map((sg, i) => (
-            <text
-              key={`sub-${c.id}-${i}`}
-              x={26}
-              y={sg.y + Math.min(sg.height / 2 + 3.5, roleAttrs('subCategoryLabel').fontSize + 5)}
-              {...roleAttrs('subCategoryLabel')}
-            >
-              {sg.name}
-            </text>
-          )),
-        )}
-        {/* 좌측 라벨열 = 공종 > 공정. 각 막대(공정)는 layout에서 한 줄에 하나씩 배치되므로 공정명이
-            줄마다 분리돼 세로로 겹치지 않는다. 세부공정(parentId 있음)은 좌측에 나열하지 않고 상위
-            공정 줄에 막대로만 이어 붙는다(요구2). 상위 공정(세부공정 보유)은 막대는 숨겨도 여기 좌측
-            이름은 남긴다 — 그 줄의 대표 이름이 된다. 마일스톤 제외. */}
-        {taskCol &&
-          model.tasks.map((lt) =>
-            lt.isMilestone || lt.task.parentId ? null : (
+          })}
+          {model.categories.flatMap((c) =>
+            c.subGroups.map((sg, i) => (
               <text
-                key={`tl-${lt.task.id}`}
-                x={(lt.task.subName ?? '').trim() ? 40 : 30}
-                y={lt.cy + 3.5}
-                {...roleAttrs('taskName')}
-                {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
+                key={`sub-${c.id}-${i}`}
+                x={26}
+                y={sg.y + Math.min(sg.height / 2 + 3.5, roleAttrs('subCategoryLabel').fontSize + 5)}
+                {...roleAttrs('subCategoryLabel')}
               >
-                {lt.task.name.replace(/^◆\s*/, '')}
+                {sg.name}
               </text>
-            ),
+            )),
           )}
+          {/* 좌측 라벨열 = 공종 > 공정. 세부공정(parentId 있음)은 막대명으로 표시하고,
+              상위 공정명은 세부공정이 여러 행을 쓰더라도 그 블록의 기준 행에 남긴다. */}
+          {taskCol &&
+            model.tasks.map((lt) =>
+              lt.isMilestone || lt.task.parentId ? null : (
+                <text
+                  key={`tl-${lt.task.id}`}
+                  x={(lt.task.subName ?? '').trim() ? 40 : 30}
+                  y={lt.cy + 3.5}
+                  {...roleAttrs('taskName')}
+                  {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
+                >
+                  {lt.task.name.replace(/^◆\s*/, '')}
+                </text>
+              ),
+            )}
+        </g>
       </g>
 
       {/* DUMMY fill — 같은 줄에서 사용자가 화살표(링크)로 연결한 두 막대 사이의 빈 구간만
