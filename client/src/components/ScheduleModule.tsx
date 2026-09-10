@@ -39,6 +39,7 @@ const lsSet = (key: string, value: string) => {
 
 export function ScheduleModule() {
   const [exportOpen, setExportOpen] = useState(false)
+  const [fitRequest, setFitRequest] = useState(0)
   const [leftWidth, setLeftWidth] = useState(() => lsNum('sequence:leftW', 288))
   const [rightWidth, setRightWidth] = useState(() => lsNum('sequence:rightW', 300))
   // Fullscreen preview hides the side panels so the chart can be checked
@@ -168,6 +169,7 @@ export function ScheduleModule() {
     <div className="app">
       <TopBar
         onExport={() => setExportOpen(true)}
+        onFitChart={() => setFitRequest((request) => request + 1)}
         onToggleFullscreen={toggleFullscreen}
         fullscreen={presentation}
       />
@@ -244,7 +246,7 @@ export function ScheduleModule() {
             </div>
           )}
           {!presentation && <ViewBar />}
-          <ChartCanvas />
+          <ChartCanvas fitRequest={fitRequest} />
           {/* 문제 목록 팝오버는 상태바 바로 위에 뜬다(상태바의 ⚠ 버튼으로 토글). */}
           <ProblemList />
           <StatusBar />

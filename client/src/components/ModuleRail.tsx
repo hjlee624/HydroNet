@@ -28,6 +28,7 @@ export function ModuleRail() {
                 type="button"
                 className={`mrail__item${view === m.id ? ' is-active' : ''}`}
                 title={m.blurb}
+                aria-label={m.label}
                 aria-current={view === m.id ? 'page' : undefined}
                 onClick={() => setView(m.id)}
               >
@@ -41,8 +42,8 @@ export function ModuleRail() {
         )
       })}
       {mobile && (
-        <p className="mrail__note">
-          휴대전화에서는 조회·검토·진척 입력만 제공합니다. 편집은 PC에서 하세요.
+        <p className="mrail__note" title="휴대전화에서는 조회·검토·진척 입력만 제공합니다. 편집은 PC에서 하세요.">
+          조회<br />검토<br />진척
         </p>
       )}
     </nav>

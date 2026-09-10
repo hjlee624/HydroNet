@@ -245,7 +245,8 @@ export interface EditorState {
    *  조회 전용은 무반영. 반영 건수를 돌려준다. */
   importBoqQuantities: (
     items: Array<{ taskId: ID; quantity?: number; unit?: string; workCode?: string }>,
-  ) => { applied: number }
+    rows?: Array<{ name: string; category?: string; spec?: string; unit?: string; quantity: number; price?: number; note?: string }>,
+  ) => { applied: number; recordsAdded: number }
   /** 사내 일정표(엑셀·CSV) 취입(F12) — 공종 생성·공정 upsert·선후행 연결을 **단일 커밋**
    *  (undo 1엔트리)으로 반영한다. 같은 번호(extId)/공정 id 는 새로 만들지 않고 갱신한다.
    *  reschedule 은 호출하지 않는다(외부 일정표의 날짜가 정본). 조회 전용은 무반영. */
@@ -1379,11 +1380,18 @@ export const useEditor = create<EditorState>()((set, get) => {
       }
       return { applied, skipped }
     },
-    importBoqQuantities: (items) => {
-      if (get().readOnly) return { applied: 0 }
+    importBoqQuantities: (items, rows = []) => {
+      if (get().readOnly) return { applied: 0, recordsAdded: 0 }
       let applied = 0
+      let recordsAdded = 0
       commit(
         (p) => {
+          p.modules ??= {}
+          p.modules.boq ??= []
+          for (const row of rows) {
+            p.modules.boq.push({ id: `mr-${nanoid(8)}`, values: { category: row.category ?? '', item: row.name, spec: row.spec ?? '', unit: row.unit ?? '', qty: String(row.quantity), price: row.price == null ? '' : String(row.price), note: row.note ?? '' } })
+            recordsAdded++
+          }
           for (const it of items) {
             const t = p.tasks.find((x) => x.id === it.taskId)
             if (!t || t.isMilestone) continue
@@ -1405,7 +1413,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { cascade: false, history: true },
       )
-      return { applied }
+      return { applied, recordsAdded }
     },
     importScheduleRows: (plan) => {
       if (get().readOnly) return { created: 0, updated: 0, linked: 0, unresolved: [] }
@@ -1448,6 +1456,7 @@ export const useEditor = create<EditorState>()((set, get) => {
             const owner = item.owner?.trim() ? item.owner.trim() : undefined
             const existing = item.taskId ? p.tasks.find((t) => t.id === item.taskId) : undefined
             if (existing) {
+              existing.categoryId = categoryId
               existing.name = item.name
               existing.start = item.start
               existing.duration = item.duration
@@ -1479,15 +1488,20 @@ export const useEditor = create<EditorState>()((set, get) => {
           }
           // ③ 선후행. relinkIncoming 은 부르지 않는다 — 외부 일정표의 지연(lag)이 정본이고,
           //    위치에서 역산하면 파일이 지정한 연결 의미가 조용히 바뀐다.
-          const existingPair = new Set(p.links.map((l) => `${l.from} ${l.to} ${l.type}`))
+          const existingPair = new Map(p.links.map((l) => [`${l.from} ${l.to} ${l.type}`, l]))
           for (const link of plan.links) {
             const from = keyToTaskId.get(link.fromKey)
             const to = keyToTaskId.get(link.toKey)
             if (!from || !to || from === to) continue
             const pair = `${from} ${to} ${link.type}`
-            if (existingPair.has(pair)) continue
-            existingPair.add(pair)
-            p.links.push({ id: `l-${nanoid(8)}`, from, to, type: link.type, lag: link.lag })
+            const existing = existingPair.get(pair)
+            if (existing) {
+              existing.lag = link.lag
+              continue
+            }
+            const added = { id: `l-${nanoid(8)}`, from, to, type: link.type, lag: link.lag }
+            existingPair.set(pair, added)
+            p.links.push(added)
             linked++
           }
         },
@@ -2276,7 +2290,7 @@ export const useEditor = create<EditorState>()((set, get) => {
         ...(role ? { inspectorTab: 'text' as InspectorTab } : {}),
       }),
     setInspectorTab: (tab) => set({ inspectorTab: tab }),
-    setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.25, z)) }),
+    setZoom: (z) => set({ zoom: Math.min(6, Math.max(0.02, z)) }),
     setNavMode: (m) => set({ navMode: m }),
     setFilter: (patch) => set((s) => ({ filter: { ...s.filter, ...patch } })),
     clearFilter: () => set({ filter: { ...FILTER_OFF } }),

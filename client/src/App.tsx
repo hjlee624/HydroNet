@@ -26,7 +26,7 @@ function renderModule(view: ProjectView) {
   if (view === 'progress') return <ProgressModule />
   if (view === 'history') return <HistoryModule />
   if (view === 'report') return <ReportModule />
-  return MODULE_MAP[view]?.fields ? <RecordModule id={view} /> : <ModulePlaceholder id={view} />
+  return MODULE_MAP[view]?.fields ? <RecordModule key={view} id={view} /> : <ModulePlaceholder id={view} />
 }
 
 /**

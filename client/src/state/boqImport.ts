@@ -14,6 +14,7 @@ import { compareUnits, normalizeUnit, type UnitCheck } from '../engine/units'
 import type { Task } from '../types/model'
 
 export interface BoqRow {
+  category?: string
   /** 항목명(품명/공종). */
   name: string
   /** 규격/사양(선택). */
@@ -22,6 +23,8 @@ export interface BoqRow {
   unit?: string
   /** 수량(물량). 0 이하/비수치는 제외. */
   quantity: number
+  price?: number
+  note?: string
 }
 
 export interface BoqColumns {
@@ -33,6 +36,9 @@ export interface BoqColumns {
   unit: number
   /** 수량 열(-1=미지정). */
   qty: number
+  category: number
+  price: number
+  note: number
 }
 
 export interface BoqParseResult {
@@ -49,6 +55,9 @@ const NAME_KEYS = /품\s*명|명\s*칭|공\s*종|항\s*목|작업|내역|공종�
 const QTY_KEYS = /수\s*량|물\s*량|q'?ty|quantity/i
 const UNIT_KEYS = /단\s*위|unit/i
 const SPEC_KEYS = /규\s*격|사\s*양|spec|치수/i
+const CATEGORY_KEYS = /공\s*종|분\s*류|구\s*분|category/i
+const PRICE_KEYS = /단\s*가|unit\s*price|price/i
+const NOTE_KEYS = /비\s*고|메\s*모|note/i
 /** 합계/소계 행 판별 — 일정표 취입(state/scheduleImport.ts)도 같은 규칙을 쓴다. */
 export const TOTAL_ROW = /^\s*(합\s*계|소\s*계|총\s*계|계|합계금액)\s*$/
 
@@ -102,7 +111,7 @@ export function parseCsv(text: string): string[][] {
 
 /** 헤더 행을 찾아 표준 열(항목·규격·단위·수량)을 매핑. 상위 25행 내에서 탐색. */
 function detectColumns(aoa: string[][]): { headerRowIndex: number; columns: BoqColumns } {
-  const empty: BoqColumns = { name: -1, spec: -1, unit: -1, qty: -1 }
+  const empty: BoqColumns = { name: -1, spec: -1, unit: -1, qty: -1, category: -1, price: -1, note: -1 }
   const limit = Math.min(aoa.length, 25)
   for (let r = 0; r < limit; r++) {
     const rowCells = aoa[r].map(cell)
@@ -110,16 +119,22 @@ function detectColumns(aoa: string[][]): { headerRowIndex: number; columns: BoqC
     let spec = -1
     let unit = -1
     let qty = -1
+    let category = -1
+    let price = -1
+    let note = -1
     for (let c = 0; c < rowCells.length; c++) {
       const v = rowCells[c]
       if (!v) continue
       if (qty < 0 && QTY_KEYS.test(v)) qty = c
+      else if (price < 0 && PRICE_KEYS.test(v)) price = c
+      else if (note < 0 && NOTE_KEYS.test(v)) note = c
+      else if (category < 0 && CATEGORY_KEYS.test(v) && !NAME_KEYS.test(v)) category = c
       else if (unit < 0 && UNIT_KEYS.test(v)) unit = c
       else if (spec < 0 && SPEC_KEYS.test(v)) spec = c
       else if (name < 0 && NAME_KEYS.test(v)) name = c
     }
     // 항목명+수량이 모두 있어야 유효한 헤더로 인정.
-    if (name >= 0 && qty >= 0) return { headerRowIndex: r, columns: { name, spec, unit, qty } }
+    if (name >= 0 && qty >= 0) return { headerRowIndex: r, columns: { name, spec, unit, qty, category, price, note } }
   }
   return { headerRowIndex: -1, columns: empty }
 }
@@ -140,7 +155,10 @@ export function extractRows(
     if (qty == null || qty <= 0) continue
     const unit = columns.unit >= 0 ? cell(rowCells[columns.unit]) : ''
     const spec = columns.spec >= 0 ? cell(rowCells[columns.spec]) : ''
-    out.push({ name, quantity: qty, ...(unit ? { unit } : {}), ...(spec ? { spec } : {}) })
+    const category = columns.category >= 0 ? cell(rowCells[columns.category]) : ''
+    const price = columns.price >= 0 ? parseQuantity(rowCells[columns.price]) : null
+    const note = columns.note >= 0 ? cell(rowCells[columns.note]) : ''
+    out.push({ name, quantity: qty, ...(unit ? { unit } : {}), ...(spec ? { spec } : {}), ...(category ? { category } : {}), ...(price != null ? { price } : {}), ...(note ? { note } : {}) })
   }
   return out
 }

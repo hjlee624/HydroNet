@@ -345,7 +345,7 @@ export function buildSchedulePlan(project: Project, rows: ScheduleRow[]): Schedu
       items.push({ ...base, mode: 'error', error: '종료일·기간(일)이 모두 없습니다.' })
       continue
     }
-    if (duration < 0) {
+    if (duration < 0 || (finishDay != null && finishDay < startDay)) {
       items.push({ ...base, mode: 'error', error: '종료일이 시작일보다 앞섭니다.' })
       continue
     }
@@ -361,11 +361,18 @@ export function buildSchedulePlan(project: Project, rows: ScheduleRow[]): Schedu
       if (hit && !usedTaskIds.has(hit)) taskId = hit
     }
 
+    const catNorm = normWorkName(categoryName)
+    if (!existingCategoryNames.has(catNorm) && !seenNewCat.has(catNorm)) {
+      seenNewCat.add(catNorm)
+      newCategories.push(categoryName)
+    }
     if (taskId) {
       usedTaskIds.add(taskId)
       const current = project.tasks.find((t) => t.id === taskId)
       const changed: string[] = []
       if (current) {
+        const currentCategory = project.categories.find((c) => c.id === current.categoryId)
+        if (!currentCategory || normWorkName(currentCategory.name) !== catNorm) changed.push('공종')
         if (current.start !== startDay) changed.push('시작일')
         if (current.duration !== duration) changed.push('기간')
         if ((current.owner ?? '') !== (row.owner ?? '')) changed.push('담당자')
@@ -381,11 +388,6 @@ export function buildSchedulePlan(project: Project, rows: ScheduleRow[]): Schedu
         changed,
       })
     } else {
-      const catNorm = normWorkName(categoryName)
-      if (!existingCategoryNames.has(catNorm) && !seenNewCat.has(catNorm)) {
-        seenNewCat.add(catNorm)
-        newCategories.push(categoryName)
-      }
       items.push({
         ...base,
         mode: 'create',

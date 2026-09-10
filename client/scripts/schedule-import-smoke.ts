@@ -716,4 +716,30 @@ ok((after.changeLog?.length ?? 0) >= 2, '되돌려도 변경 이력(누가 언�
   )
 }
 
+// Reimport must preserve identity while applying category and lag changes.
+{
+  const p = emptyProject()
+  p.tasks = [
+    { id: 'a', extId: 'A', categoryId: 'cat-토공', name: 'A', start: 0, duration: 2 },
+    { id: 'b', extId: 'B', categoryId: 'cat-토공', name: 'B', start: 2, duration: 2 },
+  ]
+  p.links = [{ id: 'ab', from: 'a', to: 'b', type: 'FS', lag: 0 }]
+  useEditor.getState().setProject(p)
+  const parsed = parseScheduleAoa(parseCsv(`${HEADER_LINE}\nA,새공종,A,,2026-03-01,2026-03-02,2,\nB,토공,B,,2026-03-03,2026-03-04,2,AFS+7\n`))
+  const plan = buildSchedulePlan(p, parsed.rows)
+  ok(plan.newCategories.includes('새공종'), '기존 공정의 새 공종도 생성 계획에 포함')
+  ok(plan.items[0].changed.includes('공종'), '공종 변경 미리보기')
+  useEditor.getState().importScheduleRows({
+    categories: plan.newCategories,
+    tasks: plan.items.map((i) => ({ taskId: i.taskId, extId: i.row.key, categoryName: i.categoryName, name: i.row.name, start: i.startDay!, duration: i.duration! })),
+    links: [{ fromKey: 'A', toKey: 'B', type: 'FS', lag: 7 }],
+  })
+  const result = useEditor.getState().project
+  eq(result.tasks.find((t) => t.id === 'a')?.categoryId, result.categories.find((c) => c.name === '새공종')?.id, '기존 ID 유지하며 공종 이동')
+  eq(result.links.length, 1, '재취입 시 연결 중복 없음')
+  eq(result.links[0].lag, 7, '기존 연결 지연일 갱신')
+  const invalid = parseScheduleAoa(parseCsv(`${HEADER_LINE}\nX,토공,X,,2026-03-02,2026-03-01,,\n`))
+  eq(buildSchedulePlan(p, invalid.rows).items[0].mode, 'error', '종료일이 시작 전날이면 오류')
+}
+
 console.log(`✓ schedule-import-smoke: ${checks} checks passed`)

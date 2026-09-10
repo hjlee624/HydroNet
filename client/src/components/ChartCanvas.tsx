@@ -51,7 +51,24 @@ type Drag =
   | { kind: 'rainy'; seasonId: string; edge: 'start' | 'end'; started: boolean }
   | null
 
-export function ChartCanvas() {
+const MIN_ZOOM = 0.02
+
+/** 현재 시트 전체가 캔버스 안에 들어오는 배율. 가로·세로 중 더 작은 비율을 사용한다. */
+export function fitChartZoom(
+  contentWidth: number,
+  contentHeight: number,
+  viewportWidth: number,
+  viewportHeight: number,
+  padding = 48,
+): number {
+  const availableWidth = Math.max(1, viewportWidth - padding)
+  const availableHeight = Math.max(1, viewportHeight - padding)
+  const widthZoom = availableWidth / Math.max(1, contentWidth)
+  const heightZoom = availableHeight / Math.max(1, contentHeight)
+  return Math.min(6, Math.max(MIN_ZOOM, Math.min(widthZoom, heightZoom)))
+}
+
+export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
   const project = useEditor((s) => s.project)
   const zoom = useEditor((s) => s.zoom)
   const navMode = useEditor((s) => s.navMode)
@@ -245,6 +262,23 @@ export function ChartCanvas() {
     wrap.scrollTop += r.top + a.cY * a.z - a.clientY
   }, [zoom])
 
+  // 예정공정표와 마일스톤은 같은 캔버스를 사용한다. 요청 시 현재 활성 시트의 실제
+  // 콘텐츠 크기와 보이는 캔버스 크기를 모두 재서 가로·세로 전체가 한 번에 보이게 한다.
+  useLayoutEffect(() => {
+    if (fitRequest === 0) return
+    const wrap = wrapRef.current
+    if (!wrap) return
+    const next = fitChartZoom(
+      model.contentWidth,
+      model.contentHeight,
+      wrap.clientWidth,
+      wrap.clientHeight,
+    )
+    useEditor.getState().setZoom(next)
+    wrap.scrollLeft = 0
+    wrap.scrollTop = 0
+  }, [fitRequest, model.contentHeight, model.contentWidth])
+
   // Native (non-passive) wheel listener so we can preventDefault while zooming.
   useEffect(() => {
     const wrap = wrapRef.current
@@ -262,7 +296,7 @@ export function ChartCanvas() {
       const r = paper.getBoundingClientRect()
       const cX = (e.clientX - r.left) / z1
       const cY = (e.clientY - r.top) / z1
-      const z2 = Math.min(6, Math.max(0.25, z1 * (e.deltaY < 0 ? 1.12 : 1 / 1.12)))
+      const z2 = Math.min(6, Math.max(MIN_ZOOM, z1 * (e.deltaY < 0 ? 1.12 : 1 / 1.12)))
       if (Math.abs(z2 - z1) < 1e-4) return
       zoomAnchor.current = { cX, cY, clientX: e.clientX, clientY: e.clientY, z: z2 }
       st.setZoom(z2)

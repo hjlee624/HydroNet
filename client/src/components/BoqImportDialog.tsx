@@ -7,7 +7,7 @@
 // 절대 크래시하거나 미확인 값을 자동 반영하지 않는다. 구버전 .hwp(바이너리)는 파싱이
 // 불안정하므로 HWPX/PDF/엑셀 저장을 안내한다(대충 파서로 오류를 만들지 않는다).
 
-import { type CSSProperties, useState } from 'react'
+import { type CSSProperties, useEffect, useState } from 'react'
 import { findStandardRate, STANDARD_RATE_OPTIONS } from '../data/standardRates'
 import { compareUnits } from '../engine/units'
 import {
@@ -30,7 +30,7 @@ type Loaded =
   | { kind: 'error'; message: string }
 
 /** 시트 뷰어에서 한 열에 지정하는 역할. */
-type ColRole = 'name' | 'unit' | 'qty' | 'spec' | 'none'
+type ColRole = 'name' | 'unit' | 'qty' | 'spec' | 'category' | 'price' | 'note' | 'none'
 
 async function readFileToLoaded(file: File): Promise<Loaded> {
   const ext = (file.name.split('.').pop() ?? '').toLowerCase()
@@ -142,7 +142,7 @@ async function pdfToText(buf: ArrayBuffer): Promise<string> {
   return text
 }
 
-export function BoqImportDialog({ onClose }: { onClose: () => void }) {
+export function BoqImportDialog({ onClose, initialFile }: { onClose: () => void; initialFile?: File }) {
   const project = useEditor((s) => s.project)
   const readOnly = useEditor((s) => s.readOnly)
   const a = useEditor.getState
@@ -182,6 +182,31 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
     setResult(null)
   }
 
+  async function loadFile(f: File): Promise<void> {
+    setBusy(true)
+    setFileName(f.name)
+    setManual(null)
+    setSheets(null)
+    setActiveSheet(0)
+    const loaded = await readFileToLoaded(f)
+    setBusy(false)
+    if (loaded.kind === 'sheets') {
+      const withCounts = loaded.sheets.map((s) => ({ ...s, rowCount: parseBoqAoa(s.aoa).rows.length }))
+      let idx = 0
+      for (let i = 1; i < withCounts.length; i++) if (withCounts[i].rowCount > withCounts[idx].rowCount) idx = i
+      setSheets(withCounts)
+      setActiveSheet(idx)
+      ingest(parseBoqAoa(withCounts[idx].aoa))
+    } else if (loaded.kind === 'aoa') ingest(parseBoqAoa(loaded.aoa))
+    else if (loaded.kind === 'text') {
+      setManual(loaded.text); setMessage(loaded.note ?? '텍스트를 추출했습니다 — 아래에서 정리 후 [텍스트 인식].'); setParse(null); setMappings([]); setUnmatched([])
+    } else {
+      setManual(''); setMessage(loaded.message); setParse(null); setMappings([]); setUnmatched([])
+    }
+  }
+
+  useEffect(() => { if (initialFile) void loadFile(initialFile) }, [initialFile])
+
   async function onPick(): Promise<void> {
     const input = document.createElement('input')
     input.type = 'file'
@@ -189,39 +214,7 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
     input.onchange = async () => {
       const f = input.files?.[0]
       if (!f) return
-      setBusy(true)
-      setFileName(f.name)
-      setManual(null)
-      setSheets(null)
-      setActiveSheet(0)
-      const loaded = await readFileToLoaded(f)
-      setBusy(false)
-      if (loaded.kind === 'sheets') {
-        // 각 시트의 자동 인식 행 수를 미리 계산 → 물량이 가장 많은 시트를 기본 선택(추천).
-        const withCounts = loaded.sheets.map((s) => ({
-          ...s,
-          rowCount: parseBoqAoa(s.aoa).rows.length,
-        }))
-        let idx = 0
-        for (let i = 1; i < withCounts.length; i++)
-          if (withCounts[i].rowCount > withCounts[idx].rowCount) idx = i
-        setSheets(withCounts)
-        setActiveSheet(idx)
-        ingest(parseBoqAoa(withCounts[idx].aoa))
-      } else if (loaded.kind === 'aoa') ingest(parseBoqAoa(loaded.aoa))
-      else if (loaded.kind === 'text') {
-        setManual(loaded.text)
-        setMessage(loaded.note ?? '텍스트를 추출했습니다 — 아래에서 정리 후 [텍스트 인식].')
-        setParse(null)
-        setMappings([])
-        setUnmatched([])
-      } else {
-        setManual('')
-        setMessage(loaded.message)
-        setParse(null)
-        setMappings([])
-        setUnmatched([])
-      }
+      await loadFile(f)
     }
     input.click()
   }
@@ -255,14 +248,14 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
   /** 뷰어에서 한 열에 지정된 역할(항목/단위/수량/규격) — 없으면 'none'. */
   function roleOfColumn(c: number): ColRole {
     if (!parse) return 'none'
-    for (const k of ['name', 'unit', 'qty', 'spec'] as const) if (parse.columns[k] === c) return k
+    for (const k of ['name', 'unit', 'qty', 'spec', 'category', 'price', 'note'] as const) if (parse.columns[k] === c) return k
     return 'none'
   }
   /** 열 c 에 역할을 지정 — 같은 열이 갖던 다른 역할은 해제(역할당 1열 유지). */
   function assignRole(c: number, role: ColRole): void {
     if (!parse) return
     const cols: BoqColumns = { ...parse.columns }
-    for (const k of ['name', 'unit', 'qty', 'spec'] as const) if (cols[k] === c) cols[k] = -1
+    for (const k of ['name', 'unit', 'qty', 'spec', 'category', 'price', 'note'] as const) if (cols[k] === c) cols[k] = -1
     if (role !== 'none') cols[role] = c
     setColumns(cols)
   }
@@ -302,8 +295,8 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
     const items = mappings
       .filter((m) => include.has(m.taskId) && m.quantity != null && m.quantity > 0)
       .map((m) => ({ taskId: m.taskId, quantity: m.quantity, unit: m.unit, workCode: m.workCode }))
-    if (items.length === 0) return
-    const r = a().importBoqQuantities(items)
+    if (items.length === 0 && !parse?.rows.length) return
+    const r = a().importBoqQuantities(items, parse?.rows ?? [])
     setResult(r.applied)
     setInclude(new Set())
   }
@@ -503,6 +496,9 @@ export function BoqImportDialog({ onClose }: { onClose: () => void }) {
                           <option value="unit">단위</option>
                           <option value="qty">수량</option>
                           <option value="spec">규격</option>
+                          <option value="category">공종</option>
+                          <option value="price">단가</option>
+                          <option value="note">비고</option>
                         </select>
                       </th>
                     )
@@ -720,6 +716,9 @@ const BOQ_ROLE_COLOR: Record<Exclude<ColRole, 'none'>, string> = {
   unit: '#eef8f0',
   qty: '#fbf1dc',
   spec: '#f0eef7',
+  category: '#eaf4f4',
+  price: '#fff0e6',
+  note: '#f5f5f5',
 }
 const boqCorner: CSSProperties = {
   position: 'sticky',

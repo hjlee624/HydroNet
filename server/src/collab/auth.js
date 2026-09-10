@@ -25,7 +25,8 @@ export async function authenticateProjectToken(repo, token, documentName) {
     repo.getProject(String(documentName)),
   ])
   if (!user || user.active === false) throw denied()
-  if (!project) throw denied()
+  // Match HTTP access: developers retain recovery access to inactive projects.
+  if (!project || (project.active === false && !canAccessAll(user))) throw denied()
 
   const membership = canAccessAll(user)
     ? { projectId: documentName, userId: user.id, role: 'developer' }

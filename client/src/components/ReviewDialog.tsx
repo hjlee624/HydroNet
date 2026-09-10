@@ -5,6 +5,7 @@
 
 import { useEffect, useState } from 'react'
 import { buildReviewRequestMd, downloadReviewRequest } from '../export/reviewRequest'
+import { useAuth } from '../state/authStore'
 import { buildReviewPlan, type ReviewItem, type ReviewPlan } from '../state/reviewImport'
 import { useEditor } from '../state/store'
 import { Modal } from './Modal'
@@ -32,6 +33,9 @@ const BADGE: Record<ReviewItem['verdict'], { label: string; bg: string; fg: stri
 export function ReviewDialog({ onClose }: { onClose: () => void }) {
   const a = useEditor.getState
   const readOnly = useEditor((s) => s.readOnly)
+  const authMode = useAuth((s) => s.mode)
+  const authUser = useAuth((s) => s.user)
+  const entered = useAuth((s) => s.entered)
 
   const [text, setText] = useState<string | null>(null)
   const [plan, setPlan] = useState<ReviewPlan | null>(null)
@@ -47,7 +51,20 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
 
   useEffect(() => {
     let alive = true
-    fetch('/api/review/providers', { credentials: 'include' })
+    if (authMode === 'server' && !authUser) {
+      setRunError('Sequence 로그인이 필요합니다. 다시 로그인한 뒤 AI 검토를 실행하세요.')
+      return () => {
+        alive = false
+      }
+    }
+    const projectId = entered?.id ?? a().project.id
+    const headers: Record<string, string> = entered?.token
+      ? { authorization: `Bearer ${entered.token}`, 'x-sequence-project-id': projectId }
+      : { 'x-sequence-project-id': projectId }
+    fetch(`/api/review/providers?projectId=${encodeURIComponent(projectId)}`, {
+      credentials: 'include',
+      headers,
+    })
       .then((r) => (r.ok ? r.json() : null))
       .then((j: Record<Provider, boolean> | null) => {
         if (!alive || !j) return
@@ -59,18 +76,23 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
     return () => {
       alive = false
     }
-  }, [])
+  }, [authMode, authUser, entered])
 
   async function onRunDirect() {
     setRunning(true)
     setRunError(null)
     try {
       const md = buildReviewRequestMd(a().project)
+      const projectId = entered?.id ?? a().project.id
       const res = await fetch('/api/review/complete', {
         method: 'POST',
-        headers: { 'content-type': 'application/json' },
+        headers: {
+          'content-type': 'application/json',
+          'x-sequence-project-id': projectId,
+          ...(entered?.token ? { authorization: `Bearer ${entered.token}` } : {}),
+        },
         credentials: 'include',
-        body: JSON.stringify({ provider, prompt: md }),
+        body: JSON.stringify({ provider, prompt: md, projectId }),
       })
       const data = await res.json().catch(() => ({}) as { text?: string; error?: string })
       if (!res.ok) throw new Error(data?.error || `검토 실패(${res.status})`)
@@ -167,10 +189,11 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
 
       {/* ①-B 앱에서 바로 검토 (BYO 키) */}
       <section style={{ marginBottom: 16 }}>
-        <div style={{ fontWeight: 700, marginBottom: 4 }}>⚡ 앱에서 바로 검토 (BYO 키)</div>
+        <div style={{ fontWeight: 700, marginBottom: 4 }}>⚡ 앱에서 바로 AI 검토</div>
         <p style={{ margin: '0 0 8px', fontSize: 13, color: '#5b6b7a' }}>
-          서버에 설정된 API 키로 <b>즉시</b> 검토받아 아래 프리뷰로 반영합니다(파일 왕복 불필요).
-          법정 산정 근거가 담긴 요청을 그대로 LLM에 전달합니다.
+          Sequence 로그인과 프로젝트 권한을 확인한 뒤, 서버에 연결된 LLM으로 <b>즉시</b>
+          검토받아 아래 프리뷰로 반영합니다(파일 왕복 불필요). 법정 산정 근거가 담긴 요청을 그대로
+          LLM에 전달합니다.
         </p>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
           <select
@@ -205,7 +228,8 @@ export function ReviewDialog({ onClose }: { onClose: () => void }) {
           </button>
           {providers && !anyProvider && (
             <span style={{ fontSize: 12, color: '#8a5a12' }}>
-              서버 <code>.env</code> 에 API 키를 설정하면 활성화됩니다
+              로그인은 연결되었지만 사용 가능한 LLM이 없습니다. 서버 <code>.env</code>에 API 키를
+              설정하세요
             </span>
           )}
         </div>

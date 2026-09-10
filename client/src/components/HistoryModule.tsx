@@ -17,6 +17,7 @@ import { baselineDiff } from '../engine/projectKpis'
 import { useEditor } from '../state/store'
 import { useView } from '../state/viewStore'
 import type { ChangeEntry, ChangeState } from '../types/model'
+import { DocumentPanel } from './DocumentPanel'
 
 const KIND_LABEL: Record<ChangeEntry['kind'], string> = {
   duration: '공기 변경',
@@ -291,6 +292,7 @@ export function HistoryModule() {
         )}
       </section>
 
+      <DocumentPanel moduleId="history" readOnly={readOnly} />
       <p className="seq-rec__foot">
         이력은 사업 데이터와 함께 저장·동기화되며 <b>되돌리기(Ctrl+Z)로 지워지지 않습니다</b> — 감사
         기록이기 때문입니다. 동시 편집 중에도 각자의 이력은 서로 덮어쓰지 않고 모두 남습니다.

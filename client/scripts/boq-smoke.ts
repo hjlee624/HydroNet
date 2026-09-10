@@ -50,6 +50,14 @@ eq(res.rows[0].name, '토사 굴착', 'parseBoqAoa: 행0 name')
 eq(res.rows[0].quantity, 1040, 'parseBoqAoa: 행0 수량(콤마 파싱)')
 eq(res.rows[0].unit, '㎥', 'parseBoqAoa: 행0 단위')
 
+const priced = parseBoqAoa([
+  ['구분', '품명', '단위', '수량', '단가', '비고'],
+  ['토공', '되메우기', '㎥', '12', '3,500', '현장 반입'],
+])
+eq(priced.rows[0].category, '토공', 'parseBoqAoa: 공종 구분 보존')
+eq(priced.rows[0].price, 3500, 'parseBoqAoa: 단가 파싱')
+eq(priced.rows[0].note, '현장 반입', 'parseBoqAoa: 비고 보존')
+
 // 헤더 미검출 → rows 빈배열 + 경고(크래시 없음)
 const noHeader = parseBoqAoa([
   ['a', 'b'],
@@ -59,7 +67,7 @@ eq(noHeader.rows.length, 0, 'parseBoqAoa: 헤더 없으면 rows 빈배열')
 assert(noHeader.warnings.length > 0, 'parseBoqAoa: 헤더 없으면 경고')
 
 // 사용자 수동 열지정 재추출
-const manual = extractRows(aoa, 1, { name: 0, spec: 1, unit: 2, qty: 3 })
+const manual = extractRows(aoa, 1, { name: 0, spec: 1, unit: 2, qty: 3, category: -1, price: -1, note: -1 })
 eq(manual.length, 2, 'extractRows: 수동 열지정 2행')
 
 // ── suggestWorkCode ──

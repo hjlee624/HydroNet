@@ -12,6 +12,7 @@ import {
 } from '../engine/projectKpis'
 import { useEditor } from '../state/store'
 import { type ProjectView, useView } from '../state/viewStore'
+import { DocumentPanel } from './DocumentPanel'
 
 const f = (n: number) => Math.round(n).toLocaleString()
 const r0 = (n: number) => Math.round(n)
@@ -27,6 +28,7 @@ interface ModHighlight {
 
 export function ReportModule() {
   const project = useEditor((s) => s.project)
+  const readOnly = useEditor((s) => s.readOnly)
   const setView = useView((s) => s.setView)
 
   const k = useMemo(() => projectKpis(project), [project])
@@ -230,6 +232,7 @@ export function ReportModule() {
         )}
       </section>
 
+      <DocumentPanel moduleId="report" readOnly={readOnly} />
       <p className="seq-rec__foot">
         집계는 입력된 데이터로 실시간 산출됩니다. 주간 회의 표의 각 행은 <b>원본 공정</b>에서 바로
         파생되므로(별도 수기 집계 없음), 보고 숫자를 진척·실적 화면의 같은 공정에서 그대로 추적할 수

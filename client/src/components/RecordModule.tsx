@@ -2,9 +2,13 @@
 // 리스크를 각자의 ModuleField 스키마로 렌더한다. 행=ModuleRecord, 열=필드. 계산 컬럼(compute)은
 // 다른 필드에서 자동 산출(금액=수량×단가, 잔액=예산−집행). 데이터는 Project.modules[id](사업
 // 단위, CRDT root/modules로 동기화). 조회 전용 사용자는 편집 비활성.
+import { useState } from 'react'
 import { MODULE_MAP, type ModuleField, type ModuleId } from '../data/modules'
 import { useEditor } from '../state/store'
 import { useView } from '../state/viewStore'
+import { BoqImportDialog } from './BoqImportDialog'
+import { DocumentPanel } from './DocumentPanel'
+import { SaveStatusChip } from './SaveStatusChip'
 
 type ComputeSpec = NonNullable<ModuleField['compute']>
 
@@ -38,6 +42,7 @@ export function RecordModule({ id }: { id: ModuleId }) {
   const update = useEditor((s) => s.updateModuleRecord)
   const remove = useEditor((s) => s.deleteModuleRecord)
   const setView = useView((s) => s.setView)
+  const [boqOpen, setBoqOpen] = useState(false)
   const rows = records ?? []
 
   // 합계 행: 숫자/계산 컬럼 중 noTotal이 아닌 것(단가·수량 등 합산 무의미 컬럼 제외).
@@ -72,6 +77,9 @@ export function RecordModule({ id }: { id: ModuleId }) {
           <button type="button" className="btn" onClick={() => setView('dashboard')}>
             ← 총괄
           </button>
+          {!readOnly && (
+            id === 'boq' && <button type="button" className="btn" onClick={() => setBoqOpen(true)}>📥 내역서 취입</button>
+          )}
           {!readOnly && (
             <button type="button" className="btn btn--primary" onClick={() => add(id)}>
               ＋ 추가
@@ -126,6 +134,7 @@ export function RecordModule({ id }: { id: ModuleId }) {
                     return (
                       <td key={f.key} className={f.wide ? 'seq-rec__wide' : ''}>
                         <Cell
+                          row={i + 1}
                           field={f}
                           value={r.values[f.key] ?? ''}
                           readOnly={readOnly}
@@ -140,6 +149,7 @@ export function RecordModule({ id }: { id: ModuleId }) {
                         type="button"
                         className="seq-rec__del"
                         title="삭제"
+                        aria-label={`${m.label} ${i + 1}행 삭제`}
                         onClick={() => remove(id, r.id)}
                       >
                         ✕
@@ -168,20 +178,25 @@ export function RecordModule({ id }: { id: ModuleId }) {
           </table>
         </div>
       )}
-      <p className="seq-rec__foot">
-        기록은 사업에 자동 저장·팀원 간 동기화됩니다. 공정(마일스톤)과 연계한 집계·EVM은 순차
-        고도화됩니다.
-      </p>
+      <div className="seq-rec__foot">
+        <div className="seq-rec__save"><SaveStatusChip /></div>
+        <p>기록은 현재 프로젝트에 반영됩니다. 서버 저장 여부는 위 상태에서 확인하세요. 첨부 문서는 별도로 저장됩니다.</p>
+        <button type="button" className="btn btn--sm" onClick={() => setView('report')}>보고서에서 집계 확인 →</button>
+      </div>
+      <DocumentPanel moduleId={id} readOnly={readOnly} />
+      {boqOpen && <BoqImportDialog onClose={() => setBoqOpen(false)} />}
     </div>
   )
 }
 
 function Cell({
+  row,
   field,
   value,
   readOnly,
   onChange,
 }: {
+  row: number
   field: ModuleField
   value: string
   readOnly: boolean
@@ -190,6 +205,7 @@ function Cell({
   if (field.type === 'select') {
     return (
       <select
+        aria-label={`${row}행 ${field.label}`}
         className="seq-rec__in"
         value={value}
         disabled={readOnly}
@@ -207,6 +223,7 @@ function Cell({
   const type = field.type === 'date' ? 'date' : field.type === 'num' ? 'number' : 'text'
   return (
     <input
+      aria-label={`${row}행 ${field.label}`}
       className="seq-rec__in"
       type={type}
       value={value}

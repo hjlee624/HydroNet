@@ -23,6 +23,7 @@ import { bootstrapSampleProjects } from './auth/sampleProjects.js'
 import { attachCollaborationServer } from './collab/index.js'
 import { decodeProjectFromState } from './collab/seed.js'
 import { reviewProviderStatus, runReview } from './llm/review.js'
+import { createDocumentStore } from './documents.js'
 import {
   createBoundedRateLimiter,
   createHttpOriginPolicy,
@@ -33,6 +34,7 @@ import {
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const ROOT = path.resolve(__dirname, '..', '..')
 const DATA_DIR = path.resolve(process.env.HN_DATA_DIR || path.resolve(__dirname, '..', 'data'))
+const DOCUMENT_DIR = path.resolve(process.env.HN_DOCUMENT_DIR || path.join(DATA_DIR, 'documents'))
 const CLIENT_DIST = path.resolve(ROOT, 'client', 'dist')
 const PUBLIC_FONTS = path.resolve(ROOT, 'client', 'public', 'fonts')
 const ERROR_LOG = path.resolve(process.env.HN_ERROR_LOG || path.resolve(ROOT, 'error.log'))
@@ -41,6 +43,7 @@ const PORT = Number(process.env.PORT || 4020)
 const HOST = process.env.HOST || '0.0.0.0'
 const AUTH_ENABLED = process.env.AUTH_ENABLED !== '0'
 const { backend: AUTH_BACKEND, databaseUrl: DATABASE_URL } = resolveAuthBackendConfig(process.env)
+const documentStore = createDocumentStore(DOCUMENT_DIR)
 
 /** Non-internal IPv4 addresses (for printing LAN URLs). */
 function lanAddresses() {
@@ -244,6 +247,37 @@ const projectGate = async (req, res, next) => {
   }
 }
 
+// AI 검토는 일반 세션 쿠키뿐 아니라 현재 프로젝트 입장 토큰도 인정한다. 클라이언트가
+// 화면상 프로젝트에 정상 입장했는데 쿠키 수명/전달 조건만 달라 401이 되는 경로를 막고,
+// 토큰의 프로젝트 접근 권한은 snapshot/collab과 동일한 resolveProjectAccess로 검증한다.
+const reviewGate = async (req, res, next) => {
+  if (!AUTH_ENABLED) return next()
+  try {
+    const cookie = sessionCookie(req)
+    if (cookie) {
+      const session = await verifyToken(cookie, 'session').catch(() => null)
+      const user = session?.sub ? await authRepo.getUser(String(session.sub)) : null
+      if (user && user.active !== false) {
+        req.user = user
+        return next()
+      }
+    }
+    const projectId = String(
+      req.body?.projectId || req.query?.projectId || req.headers['x-sequence-project-id'] || '',
+    )
+    const access = projectId ? await resolveProjectAccess(req, projectId) : null
+    if (!access)
+      return res.status(401).json({
+        error: 'Sequence 로그인 또는 프로젝트 입장 인증이 필요합니다. 다시 로그인해 주세요.',
+      })
+    req.user = access.user
+    req.projectGrant = access
+    next()
+  } catch (error) {
+    next(error)
+  }
+}
+
 // 프로젝트 **쓰기** 게이트 — projectGate 뒤에만 붙인다. CRDT 연결이 조회 전용
 // (connectionConfig.readOnly)으로 강등되는 사용자는 HTTP 쓰기 경로에서도 동일하게 막힌다.
 const projectEditGate = (req, res, next) => {
@@ -330,11 +364,11 @@ app.post(
 
 // ── 실시간 AI 검토 프록시(검토서 Part A) — BYO 키로 3사 LLM 호출 ──
 // 반영은 여전히 앱 내 승인 게이트(ReviewDialog)를 거친다 — 모델은 '제안'만.
-app.get('/api/review/providers', listGate, (_req, res) => res.json(reviewProviderStatus()))
+app.get('/api/review/providers', reviewGate, (_req, res) => res.json(reviewProviderStatus()))
 
 app.post(
   '/api/review/complete',
-  listGate,
+  reviewGate,
   asyncRoute(async (req, res) => {
     const { provider, model, prompt } = req.body || {}
     if (typeof prompt !== 'string' || !prompt.trim())
@@ -347,6 +381,47 @@ app.post(
       appendLog('warn', 'review/complete 실패', { provider, code: e?.code, message: e?.message })
       res.status(status).json({ error: e?.message || 'LLM 호출에 실패했습니다.', code: e?.code })
     }
+  }),
+)
+
+// ── 프로젝트 모듈 문서함 ────────────────────────────────────────────────────
+app.get(
+  '/api/projects/:id/documents',
+  projectGate,
+  asyncRoute(async (req, res) => {
+    const items = await documentStore.list(req.params.id)
+    const moduleId = String(req.query.moduleId || '')
+    res.json(moduleId ? items.filter((item) => item.moduleId === moduleId) : items)
+  }),
+)
+app.post(
+  '/api/projects/:id/documents',
+  projectGate,
+  projectEditGate,
+  asyncRoute(async (req, res) => {
+    const item = await documentStore.put(req.params.id, req.body)
+    res.status(201).json(item)
+  }),
+)
+app.get(
+  '/api/projects/:id/documents/:documentId/content',
+  projectGate,
+  asyncRoute(async (req, res) => {
+    const found = await documentStore.get(req.params.id, req.params.documentId)
+    if (!found) return res.status(404).json({ error: '문서를 찾을 수 없습니다.' })
+    res.setHeader('Content-Type', found.meta.mimeType)
+    res.setHeader('Content-Length', String(found.bytes.length))
+    res.setHeader('Content-Disposition', `inline; filename*=UTF-8''${encodeURIComponent(found.meta.name)}`)
+    res.send(found.bytes)
+  }),
+)
+app.delete(
+  '/api/projects/:id/documents/:documentId',
+  projectGate,
+  projectEditGate,
+  asyncRoute(async (req, res) => {
+    const removed = await documentStore.remove(req.params.id, req.params.documentId)
+    res.status(removed ? 200 : 404).json(removed ? { ok: true } : { error: '문서를 찾을 수 없습니다.' })
   }),
 )
 

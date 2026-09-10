@@ -113,10 +113,32 @@ async function main() {
   await new Promise((r) => setTimeout(r, 300))
 
   const { useEditor } = await import('../src/state/store')
+  const { fitChartZoom } = await import('../src/components/ChartCanvas')
   const { ALL_SHORTCUTS } = await import('../src/state/keymap')
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const key = (target: EventTarget, init: KeyboardEventInit) =>
     target.dispatchEvent(new w.KeyboardEvent('keydown', { bubbles: true, ...init }))
+
+  console.log('\n[공정표 전체 맞춤]')
+  const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null
+  const fitButton = [...document.querySelectorAll('button')].find(
+    (button) => button.textContent?.trim() === '전체 맞춤',
+  ) as HTMLButtonElement | undefined
+  check(!!canvasWrap && !!fitButton, '전체 맞춤 버튼과 공정표 캔버스가 렌더된다')
+  if (canvasWrap && fitButton) {
+    Object.defineProperty(canvasWrap, 'clientWidth', { configurable: true, value: 900 })
+    Object.defineProperty(canvasWrap, 'clientHeight', { configurable: true, value: 600 })
+    useEditor.getState().setZoom(1)
+    fitButton.click()
+    await wait(120)
+    const fitted = useEditor.getState().zoom
+    const paperScale = document.querySelector('.paper-scale') as HTMLElement | null
+    const fittedWidth = Number.parseFloat(paperScale?.style.width ?? 'Infinity')
+    const fittedHeight = Number.parseFloat(paperScale?.style.height ?? 'Infinity')
+    check(fitted < 1, `큰 시트는 100% 아래로 축소된다 (${Math.round(fitted * 100)}%)`)
+    check(fittedWidth <= 852.5 && fittedHeight <= 552.5, '현재 시트의 가로·세로 전체가 캔버스 안에 들어온다')
+    check(fitChartZoom(100_000, 50_000, 900, 600) === 0.02, '매우 큰 표도 2%까지 축소할 수 있다')
+  }
 
   console.log('\n[F11 키보드/모달]')
   const before = useEditor.getState().project.categories.length
@@ -607,7 +629,13 @@ async function main() {
     !railHtml.includes('리스크·이슈') && !railHtml.includes('인력·장비'),
     '휴대전화 레일에서 편집 중심 모듈은 빠진다',
   )
-  check(railHtml.includes('편집은 PC에서'), '휴대전화 범위 안내 문구가 뜬다')
+  const mobileNote = document.querySelector('.mrail__note')
+  check(
+    mobileNote?.textContent?.includes('조회') === true &&
+      mobileNote.textContent.includes('진척') &&
+      mobileNote.getAttribute('title')?.includes('편집은 PC에서') === true,
+    '휴대전화 범위는 짧은 안내와 상세 툴팁으로 표시된다',
+  )
 
   // (대조군 복귀) 넓은 화면으로 되돌리면 3단이 그대로 복원되어야 한다.
   useViewport.setState({ narrow: false, mobile: false })
@@ -618,47 +646,10 @@ async function main() {
   )
   check(!document.querySelector('.drawerbar'), '원복 후 서랍 토글 막대는 사라진다')
 
-  // ── 문의 · 진단 정보(F18) ──────────────────────────────────────────────────
-  console.log('\n[F18 문의 · 진단]')
-  const { deployMode } = await import('../src/state/logger')
+  // ── 상단바 정리 ────────────────────────────────────────────────────────────
+  console.log('\n[상단바 정리]')
   const supportBtn = document.querySelector('[aria-label="문의"]') as HTMLElement | null
-  check(!!supportBtn, '상단바에 🛟 문의 버튼이 있다')
-  if (supportBtn) {
-    supportBtn.click()
-    await wait(300)
-    const supportHtml = document.querySelector('.modal')?.textContent ?? ''
-    check(supportHtml.includes('진단 정보'), '문의 대화상자가 열리고 진단 정보 절이 보인다')
-    check(
-      supportHtml.includes('경영전략본부') && supportHtml.includes('안전품질관리실'),
-      '본부 담당자 표가 divisions.ts 의 본부로 렌더된다',
-    )
-    check(supportHtml.includes('미지정(배포 시 기입)'), '담당자 미기입 칸이 지어내지 않고 드러난다')
-    const copyBtn = Array.from(document.querySelectorAll<HTMLElement>('.modal button')).find((b) =>
-      b.textContent?.includes('진단 정보 복사'),
-    )
-    check(!!copyBtn, '[진단 정보 복사] 버튼을 찾았다')
-    copyBtn?.click()
-    await wait(250)
-    // jsdom 에는 clipboard·execCommand 가 없어 폴백 경로를 탄다 — 그래서 만들어진 진단
-    // 문자열이 화면(pre)에 그대로 노출되고, 그 내용을 여기서 검사할 수 있다.
-    const payload = document.querySelector('.support__diag')?.textContent ?? ''
-    check(payload.length > 0, `진단 정보 페이로드가 비어있지 않다 (${payload.length}자)`)
-    check(
-      payload.includes(`배포 형태: ${deployMode()}`),
-      `진단 정보에 배포 형태가 들어간다 (배포 형태: ${deployMode()})`,
-    )
-    check(payload.includes('앱 버전'), '진단 정보에 앱 버전이 들어간다')
-    check(payload.includes('모듈: schedule'), '진단 정보에 현재 모듈이 들어간다')
-    check(
-      payload.includes('공정수:') && payload.includes('연결수:'),
-      '진단 정보에 도면 규모가 들어간다',
-    )
-    // 개인정보가 새지 않는가 — 전화번호(=아이디) 형태의 11자리 숫자가 없어야 한다.
-    check(!/\b01\d{9}\b/.test(payload), '진단 정보에 전화번호(아이디) 형태 문자열이 없다')
-    key(w, { key: 'Escape' })
-    await wait(400)
-    check(!document.querySelector('.modal-backdrop'), 'Esc 로 문의 대화상자가 닫힌다')
-  }
+  check(!supportBtn, '요청에 따라 상단바 문의 버튼이 제거됐다')
 
   if (errors.length) {
     console.log(`\n(console.error ${errors.length}건):`)
