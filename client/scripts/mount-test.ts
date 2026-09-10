@@ -634,10 +634,36 @@ async function main() {
   // 있지도 않은 마지막 백업을 단언했다.
   console.log('\n[B5 저장 칩 툴팁]')
   const { usePersistence } = await import('../src/state/persistence')
-  usePersistence.setState({ fileBackupAt: null })
+  usePersistence.setState({
+    target: 'server',
+    link: 'connected',
+    serverConfirmedAt: Date.now(),
+    lastLocalChangeAt: null,
+    pending: false,
+    readOnly: false,
+    fileBackupAt: null,
+  })
   useEditor.setState({ dirty: false })
   await wait(150)
+  const syncChip = document.querySelector('.topbar .save-state--sync') as HTMLElement | null
   const fileChip = document.querySelector('.save-state--file') as HTMLElement | null
+  check(!!syncChip, '상단 서버 동기화 칩을 찾았다')
+  const syncedLabel = syncChip?.textContent ?? ''
+  const syncedWidth = syncChip?.style.width ?? ''
+  usePersistence.setState({ pending: true })
+  await wait(80)
+  const pendingSyncChip = document.querySelector('.topbar .save-state--sync') as HTMLElement | null
+  check(
+    syncedLabel.includes('서버 동기화 완료') &&
+      (pendingSyncChip?.textContent ?? '').includes('전송 대기') &&
+      syncedWidth === '148px' &&
+      pendingSyncChip?.style.width === syncedWidth &&
+      pendingSyncChip.style.minWidth === syncedWidth &&
+      pendingSyncChip.style.maxWidth === syncedWidth,
+    `동기화 상태 문구가 바뀌어도 상단 칩은 148px 고정 폭을 유지한다 (완료="${syncedLabel}" · 대기="${pendingSyncChip?.textContent ?? ''}" · 폭=${syncedWidth})`,
+  )
+  usePersistence.setState({ pending: false })
+  await wait(80)
   check(!!fileChip, '파일 백업 칩을 찾았다')
   check(
     (fileChip?.textContent ?? '').includes('파일 백업 없음'),

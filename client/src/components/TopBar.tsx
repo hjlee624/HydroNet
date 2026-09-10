@@ -267,7 +267,7 @@ export function TopBar({ onExport, onFitChart, onToggleFullscreen, fullscreen }:
         </div>
 
         <div className="topbar__group topbar__group--output">
-          <SaveStatusChip onOpenRestore={() => setRestoreOpen(true)} />
+          <SaveStatusChip stableWidth onOpenRestore={() => setRestoreOpen(true)} />
           <button
             className="btn btn--sm btn--dark"
             title="사용 방법 · 단축키"

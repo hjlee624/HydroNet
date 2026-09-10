@@ -266,6 +266,20 @@ textarea {
   justify-content: flex-end;
   margin-left: auto;
 }
+.topbar__group--output .save-state--sync {
+  box-sizing: border-box;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
+.topbar__group--output .save-state--file {
+  box-sizing: border-box;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  font-variant-numeric: tabular-nums;
+}
 .topbar__actions > * {
   flex-shrink: 0;
   white-space: nowrap;

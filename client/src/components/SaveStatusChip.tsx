@@ -1,13 +1,33 @@
 // 저장 상태 칩(F01) — '연결됨'이 아니라 '서버가 실제로 기록했다'만 완료로 표시한다.
 // 서버 동기화(협업)와 파일 백업(.json)은 성격이 다른 두 가지이므로 칩도 둘로 나눈다.
 // 저장 위치 · 마지막 확정 시각 · 복구 동작은 칩을 눌러 여는 한 패널에 모두 모아 둔다.
-import { useState } from 'react'
+import { type CSSProperties, useState } from 'react'
 import { useAuth } from '../state/authStore'
 import { describeSaveStatus, formatClock, usePersistence } from '../state/persistence'
 import { backupProjectToFile, useEditor } from '../state/store'
 import { Modal } from './Modal'
 
-export function SaveStatusChip({ onOpenRestore }: { onOpenRestore?: () => void }) {
+const STABLE_SYNC_STYLE: CSSProperties = {
+  flex: '0 0 148px',
+  width: 148,
+  minWidth: 148,
+  maxWidth: 148,
+}
+
+const STABLE_FILE_STYLE: CSSProperties = {
+  flex: '0 0 106px',
+  width: 106,
+  minWidth: 106,
+  maxWidth: 106,
+}
+
+export function SaveStatusChip({
+  onOpenRestore,
+  stableWidth = false,
+}: {
+  onOpenRestore?: () => void
+  stableWidth?: boolean
+}) {
   // 셀렉터는 전부 원시값 — 매 렌더 새 객체를 만들면 무한 렌더로 화면이 죽는다(mount-test 가드).
   const target = usePersistence((s) => s.target)
   const link = usePersistence((s) => s.link)
@@ -40,6 +60,7 @@ export function SaveStatusChip({ onOpenRestore }: { onOpenRestore?: () => void }
         className={`save-state save-state--sync is-${view.tone}`}
         title={`${view.label} — ${view.detail}\n저장 위치: ${location}`}
         aria-label={`저장 상태: ${view.label}`}
+        style={stableWidth ? STABLE_SYNC_STYLE : undefined}
         onClick={() => setOpen(true)}
       >
         {view.label}
@@ -49,6 +70,7 @@ export function SaveStatusChip({ onOpenRestore }: { onOpenRestore?: () => void }
           ('파일 백업 없음')과 같은 요소 안에서 서로를 부정했다. */}
       <span
         className={`save-state save-state--file ${dirty ? 'dirty' : ''}`}
+        style={stableWidth ? STABLE_FILE_STYLE : undefined}
         title={
           dirty
             ? '마지막 파일 백업 이후 변경이 있습니다 — 저장 또는 Ctrl+S'
