@@ -165,11 +165,13 @@ textarea {
 .topbar {
   display: flex;
   flex: 0 0 auto;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 8px 16px;
+  gap: 8px;
   min-height: 56px;
   padding: 8px 16px;
+  overflow-x: auto;
+  overflow-y: hidden;
   background: var(--canvas);
   border-bottom: 1px solid var(--hairline-soft);
   position: relative;
@@ -217,7 +219,8 @@ textarea {
   border-radius: var(--radius-md);
   padding: 6px 10px;
   background: transparent;
-  min-width: 200px;
+  flex: 0 1 180px;
+  min-width: 120px;
 }
 .topbar__project:hover {
   border-color: var(--hairline);
@@ -229,7 +232,7 @@ textarea {
 }
 
 .topbar__spacer {
-  flex: 1 1 auto;
+  flex: 1 1 8px;
   display: flex;
   align-items: center;
   justify-content: center; /* 조회 전용 배지를 상단 줄 가운데(빈 공간)에 배치 */
@@ -239,7 +242,7 @@ textarea {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
   max-width: 100%;
 }
@@ -250,13 +253,13 @@ textarea {
 .topbar__actions--secondary {
   flex: 0 0 auto;
   justify-content: flex-end;
-  gap: 12px;
+  gap: 8px;
 }
 .topbar__group {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   min-width: 0;
 }
 .topbar__group--output {
@@ -283,7 +286,7 @@ textarea {
   gap: 6px;
 }
 .zoom-slider {
-  width: 92px;
+  width: clamp(64px, 5vw, 92px);
   accent-color: var(--primary);
   cursor: pointer;
 }
@@ -5370,21 +5373,11 @@ textarea.input {
   .topbar {
     height: auto;
     min-height: 56px;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
     padding: 6px 10px;
-    row-gap: 6px;
   }
   .topbar__project {
     min-width: 120px;
-  }
-  .topbar__actions--primary,
-  .topbar__actions--secondary {
-    flex-basis: 100%;
-    justify-content: flex-start;
-  }
-  .topbar__group--output {
-    justify-content: flex-start;
-    margin-left: 0;
   }
 }
 

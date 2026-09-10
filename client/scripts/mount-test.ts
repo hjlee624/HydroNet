@@ -119,6 +119,9 @@ async function main() {
   const key = (target: EventTarget, init: KeyboardEventInit) =>
     target.dispatchEvent(new w.KeyboardEvent('keydown', { bubbles: true, ...init }))
 
+  const topbar = document.querySelector('.topbar') as HTMLElement | null
+  check(!!topbar && getComputedStyle(topbar).flexWrap === 'nowrap', '상단바는 한 줄 레이아웃을 유지한다')
+
   console.log('\n[공정표 전체 맞춤]')
   const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null
   const fitButton = [...document.querySelectorAll('button')].find(
