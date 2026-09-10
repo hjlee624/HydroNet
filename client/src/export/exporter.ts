@@ -33,6 +33,21 @@ export function buildExportSvgString(
   const clone = svg.cloneNode(true) as SVGSVGElement
   // Drop on-screen-only overlays (selection grips, link anchors, logo handles).
   clone.querySelectorAll('[data-export-hide]').forEach((el) => el.remove())
+  // 전체 맞춤 화면은 낮은 배율에서도 읽히도록 글자를 역보정한다. 출력물에는 사용자가 지정한
+  // 원래 도면 글자 크기를 복원해 화면 배율이 출력 결과를 바꾸지 않게 한다.
+  clone.querySelectorAll('[data-export-font-size]').forEach((el) => {
+    const size = el.getAttribute('data-export-font-size')
+    if (size) el.setAttribute('font-size', size)
+    el.removeAttribute('data-export-font-size')
+  })
+  // 화면에서만 보장한 최소 막대 폭·높이와 그에 맞춘 라벨 위치도 원래 도면 좌표로 복원한다.
+  for (const attr of ['x', 'y', 'width', 'height', 'points'] as const) {
+    clone.querySelectorAll(`[data-export-${attr}]`).forEach((el) => {
+      const value = el.getAttribute(`data-export-${attr}`)
+      if (value != null) el.setAttribute(attr, value)
+      el.removeAttribute(`data-export-${attr}`)
+    })
+  }
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')
   clone.setAttribute('xmlns:xlink', 'http://www.w3.org/1999/xlink')
   clone.setAttribute('width', String(content.width))

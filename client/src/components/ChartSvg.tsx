@@ -14,7 +14,7 @@ import { dayToDate, toISO } from '../engine/dates'
 import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
 import type { RemotePresence } from '../state/collaboration'
-import { colors, fonts, resolveTextStyle } from '../styles/theme'
+import { colors, fonts, readableScreenTextSize, resolveTextStyle } from '../styles/theme'
 import type { Project, TextRole } from '../types/model'
 
 export interface LinkingGhost {
@@ -193,11 +193,13 @@ function ChartSvgBase({
     const s = resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1)
     const style: CSSProperties = { fontFamily: s.fontFamily, cursor: 'pointer' }
     return {
-      fontSize: s.fontSize,
+      fontSize: readableScreenTextSize(role, s.fontSize, screenScale),
       fontWeight: s.fontWeight,
       fill: s.fill,
       style,
       'data-text-role': role,
+      // 출력기는 이 값으로 화면 판독용 최소 크기를 원래 도면 크기로 되돌린다.
+      'data-export-font-size': s.fontSize,
       className: selectedTextRole === role ? 'tr-selected' : undefined,
       onClick: (e: RMouseEvent<SVGTextElement>) => {
         e.stopPropagation()
@@ -509,6 +511,18 @@ function ChartSvgBase({
             </g>
           )
         })}
+        {model.categories.flatMap((c) =>
+          c.subGroups.map((sg, i) => (
+            <text
+              key={`sub-${c.id}-${i}`}
+              x={26}
+              y={sg.y + Math.min(sg.height / 2 + 3.5, roleAttrs('subCategoryLabel').fontSize + 5)}
+              {...roleAttrs('subCategoryLabel')}
+            >
+              {sg.name}
+            </text>
+          )),
+        )}
         {/* 좌측 라벨열 = 공종 > 공정. 각 막대(공정)는 layout에서 한 줄에 하나씩 배치되므로 공정명이
             줄마다 분리돼 세로로 겹치지 않는다. 세부공정(parentId 있음)은 좌측에 나열하지 않고 상위
             공정 줄에 막대로만 이어 붙는다(요구2). 상위 공정(세부공정 보유)은 막대는 숨겨도 여기 좌측
@@ -518,7 +532,7 @@ function ChartSvgBase({
             lt.isMilestone || lt.task.parentId ? null : (
               <text
                 key={`tl-${lt.task.id}`}
-                x={30}
+                x={(lt.task.subName ?? '').trim() ? 40 : 30}
                 y={lt.cy + 3.5}
                 {...roleAttrs('taskName')}
                 {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
@@ -675,6 +689,7 @@ function ChartSvgBase({
                 <text
                   x={lt.cx}
                   y={lt.cy - r - 4}
+                  data-export-y={lt.cy - baseR - 4}
                   textAnchor="middle"
                   {...roleAttrs('milestoneName')}
                   {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
@@ -684,6 +699,7 @@ function ChartSvgBase({
                 {crit && (
                   <polygon
                     points={diamond(lt.cx, lt.cy, r + 5)}
+                    data-export-points={diamond(lt.cx, lt.cy, baseR + 5)}
                     fill={colors.critical}
                     opacity={0.2}
                   />
@@ -703,6 +719,7 @@ function ChartSvgBase({
                 <polygon
                   data-task-id={mirror ? undefined : t.id}
                   points={diamond(lt.cx, lt.cy, r)}
+                  data-export-points={diamond(lt.cx, lt.cy, baseR)}
                   fill={emphasizeCrit ? colors.critical : colors.milestone}
                   stroke={selected ? colors.primary : crit ? '#ffffff' : colors.canvas}
                   strokeWidth={selected ? 2.5 : crit ? 2 : 1.5}
@@ -713,6 +730,7 @@ function ChartSvgBase({
                 <text
                   x={lt.cx}
                   y={lt.cy + r + 12}
+                  data-export-y={lt.cy + baseR + 12}
                   textAnchor="middle"
                   {...roleAttrs('milestoneDate')}
                 >
@@ -726,11 +744,16 @@ function ChartSvgBase({
             Math.max(lt.h, 6 / screenScale),
           )
           const visibleY = lt.cy - visibleHeight / 2
+          const taskMidX = (lt.startX + lt.endX) / 2
+          const visibleWidth = Math.max(lt.w, 5 / screenScale)
+          const visibleX = taskMidX - visibleWidth / 2
           const hitHeight = Math.min(
             model.rowHeight * 0.9,
             Math.max(visibleHeight, 18 / screenScale),
           )
           const hitY = lt.cy - hitHeight / 2
+          const hitWidth = Math.max(lt.w, 14 / screenScale)
+          const hitX = taskMidX - hitWidth / 2
           return (
             <g
               key={t.id}
@@ -755,8 +778,9 @@ function ChartSvgBase({
               {/* 공정명은 항상 막대 위 **중앙**에 표기(요구). 막대 선택을 방해하지 않도록 클릭
                   통과(pointer-events none) — 칸이 좁아도 막대가 잘 잡힌다. 텍스트 편집은 인스펙터/사이드바. */}
               <text
-                x={lt.x + lt.w / 2}
-                y={lt.y - 3.5}
+                x={taskMidX}
+                y={visibleY - 4}
+                data-export-y={lt.y - 3.5}
                 textAnchor="middle"
                 {...roleAttrs('taskName')}
                 {...(emphasizeCrit ? { fill: colors.critical, fontWeight: 700 } : {})}
@@ -768,9 +792,9 @@ function ChartSvgBase({
                 <rect
                   data-task-id={t.id}
                   data-export-hide="1"
-                  x={lt.x}
+                  x={hitX}
                   y={hitY}
-                  width={lt.w}
+                  width={hitWidth}
                   height={hitHeight}
                   rx={3}
                   fill="transparent"
@@ -785,10 +809,14 @@ function ChartSvgBase({
               <rect
                 className="chart-bar"
                 data-task-id={mirror ? undefined : t.id}
-                x={lt.x}
+                x={visibleX}
                 y={visibleY}
-                width={lt.w}
+                width={visibleWidth}
                 height={visibleHeight}
+                data-export-x={lt.x}
+                data-export-y={lt.y}
+                data-export-width={lt.w}
+                data-export-height={lt.h}
                 rx={3}
                 fill={fill}
                 fillOpacity={isDummy ? DUMMY_OPACITY : mirror ? 0.5 : undefined}
@@ -820,8 +848,10 @@ function ChartSvgBase({
                 )}
               </rect>
               <text
-                x={lt.x}
+                x={visibleX}
                 y={visibleY + visibleHeight + roleAttrs('taskDuration').fontSize * 0.85 + 3}
+                data-export-x={lt.x}
+                data-export-y={lt.y + lt.h + resolveTextStyle('taskDuration', project.view.textStyles, project.view.fontScale ?? 1).fontSize * 0.85 + 3}
                 {...roleAttrs('taskDuration')}
                 style={{ ...roleAttrs('taskDuration').style, pointerEvents: 'none' }}
               >

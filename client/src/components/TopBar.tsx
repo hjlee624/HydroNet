@@ -217,7 +217,7 @@ export function TopBar({ onExport, onFitChart, onToggleFullscreen, fullscreen }:
             <button
               className="btn btn--sm"
               type="button"
-              title="현재 시트의 가로·세로 전체를 화면에 맞춤"
+              title="현재 시트 전체를 화면에 맞추고 공정명·연월이 읽히도록 축 밀도를 균형 조정"
               onClick={onFitChart}
             >
               전체 맞춤

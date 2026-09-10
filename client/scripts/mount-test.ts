@@ -113,8 +113,10 @@ async function main() {
   await new Promise((r) => setTimeout(r, 300))
 
   const { useEditor } = await import('../src/state/store')
-  const { fitChartZoom } = await import('../src/components/ChartCanvas')
+  const { fitChartZoom, fitOverviewDensity } = await import('../src/components/ChartCanvas')
   const { monthWidthFromPxPerDay, pxPerDayFromMonthWidth } = await import('../src/engine/layout')
+  const { SCREEN_TEXT_MIN_PX } = await import('../src/styles/theme')
+  const { buildExportSvgString } = await import('../src/export/exporter')
   const { ALL_SHORTCUTS } = await import('../src/state/keymap')
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const key = (target: EventTarget, init: KeyboardEventInit) =>
@@ -142,6 +144,53 @@ async function main() {
   const hitScreenHeight = Number(lowZoomHit?.getAttribute('height') ?? 0) * 0.15
   check(visibleScreenHeight >= 5, `15% 배율에서도 막대가 화면상 5px 이상 보인다 (${visibleScreenHeight.toFixed(1)}px)`)
   check(hitScreenHeight > visibleScreenHeight, `막대의 투명 클릭 영역이 시각 막대보다 넓다 (${hitScreenHeight.toFixed(1)}px)`)
+  useEditor.getState().setZoom(0.03)
+  await wait(80)
+  const readableRoles = [
+    'title',
+    'categoryLabel',
+    'taskName',
+    'taskDuration',
+    'axisYear',
+    'axisMonth',
+  ] as const
+  for (const role of readableRoles) {
+    const textEl = document.querySelector(`[data-text-role="${role}"]`) as SVGTextElement | null
+    const screenPx = Number(textEl?.getAttribute('font-size') ?? 0) * 0.03
+    check(
+      screenPx >= SCREEN_TEXT_MIN_PX[role] - 0.05,
+      `3% 전체 맞춤에서도 ${role} 글자가 최소 ${SCREEN_TEXT_MIN_PX[role]}px로 보인다 (${screenPx.toFixed(1)}px)`,
+    )
+  }
+  const threePctBar = document.querySelector('.chart-bar') as SVGRectElement | null
+  const barScreenWidth = Number(threePctBar?.getAttribute('width') ?? 0) * 0.03
+  check(barScreenWidth >= 5, `3% 전체 맞춤에서도 짧은 막대가 최소 5px 폭으로 보인다 (${barScreenWidth.toFixed(1)}px)`)
+  const chartSvg = document.getElementById('sequence-chart') as unknown as SVGSVGElement | null
+  const screenTaskText = chartSvg?.querySelector('[data-text-role="taskName"]')
+  const exportBaseSize = screenTaskText?.getAttribute('data-export-font-size')
+  const exportSvg = chartSvg
+    ? buildExportSvgString(
+        chartSvg,
+        {
+          width: Number(chartSvg.getAttribute('width')),
+          height: Number(chartSvg.getAttribute('height')),
+        },
+        {},
+      )
+    : ''
+  const exportedTaskTag = exportSvg.match(/<text[^>]*data-text-role="taskName"[^>]*>/)?.[0]
+  const exportedTaskSize = exportedTaskTag?.match(/font-size="([^"]+)"/)?.[1]
+  check(
+    !!exportBaseSize && exportedTaskSize === exportBaseSize,
+    `화면 판독용 글자 확대가 출력 도면에는 반영되지 않는다 (기준 ${exportBaseSize} · 출력 ${exportedTaskSize})`,
+  )
+  const barExportWidth = threePctBar?.getAttribute('data-export-width')
+  const exportedBarTag = exportSvg.match(/<rect[^>]*class="chart-bar"[^>]*>/)?.[0]
+  const exportedBarWidth = exportedBarTag?.match(/width="([^"]+)"/)?.[1]
+  check(
+    !!barExportWidth && exportedBarWidth === barExportWidth,
+    `화면 판독용 최소 막대 폭이 출력 도면에는 반영되지 않는다 (기준 ${barExportWidth} · 출력 ${exportedBarWidth})`,
+  )
   useEditor.getState().setView({ pxPerDay: originalPxPerDay })
   useEditor.getState().setZoom(1)
   await wait(80)
@@ -164,6 +213,19 @@ async function main() {
     const fittedHeight = Number.parseFloat(paperScale?.style.height ?? 'Infinity')
     check(fitted < 1, `큰 시트는 100% 아래로 축소된다 (${Math.round(fitted * 100)}%)`)
     check(fittedWidth <= 852.5 && fittedHeight <= 552.5, '현재 시트의 가로·세로 전체가 캔버스 안에 들어온다')
+    check(
+      fittedWidth >= 852 * 0.85 && fittedHeight >= 552 * 0.85,
+      `축 밀도 균형 조정으로 가로·세로를 함께 사용한다 (${Math.round(fittedWidth)}×${Math.round(fittedHeight)})`,
+    )
+    const wideProject = {
+      ...useEditor.getState().project,
+      view: { ...useEditor.getState().project.view, pxPerDay: 20, rowHeight: 46 },
+    }
+    const densityPatch = fitOverviewDensity(wideProject, 900, 600)
+    check(
+      (densityPatch.rowHeight ?? 46) > 46,
+      '시간축이 과도하게 넓으면 월 폭을 줄이지 않고 행 높이를 늘려 판독 공간을 확보한다',
+    )
     check(fitChartZoom(100_000, 50_000, 900, 600) === 0.02, '매우 큰 표도 2%까지 축소할 수 있다')
   }
 

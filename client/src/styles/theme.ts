@@ -138,6 +138,29 @@ export const TEXT_ROLE_LABELS: Record<TextRole, string> = {
   rainyLabel: '우기 라벨',
 }
 
+/**
+ * 화면 전체 맞춤처럼 도면이 크게 축소될 때도 판독해야 하는 최소 화면 글자 크기.
+ * 도면/출력의 원래 글자 크기는 유지하고 ChartSvg의 화면 렌더링에만 적용한다.
+ */
+export const SCREEN_TEXT_MIN_PX: Record<TextRole, number> = {
+  title: 11,
+  categoryLabel: 9,
+  subCategoryLabel: 8,
+  headerTitle: 8.5,
+  headerSub: 7.5,
+  taskName: 8.5,
+  taskDuration: 7.5,
+  milestoneName: 8.5,
+  milestoneDate: 7.5,
+  axisYear: 8.5,
+  axisMonth: 7.5,
+  rainyLabel: 7.5,
+}
+
+export function readableScreenTextSize(role: TextRole, baseSize: number, zoom: number): number {
+  return Math.max(baseSize, SCREEN_TEXT_MIN_PX[role] / Math.max(0.02, zoom))
+}
+
 /** Selectable 글꼴 options for the text-style inspector (export-safe Windows faces). */
 export const FONT_FAMILY_OPTIONS: { label: string; value: string }[] = [
   { label: 'KoPub 굵게 (Bold)', value: KOPUB_BOLD },

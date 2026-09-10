@@ -11,14 +11,14 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { standardDurationIndex } from '../data/facilities'
 import { type AdequacyResult, assessTasks } from '../engine/adequacy'
 import { dateToDay, daysInMonth, dayToDate, toISO } from '../engine/dates'
-import { computeLayout, type LayoutModel } from '../engine/layout'
+import { computeLayout, type LayoutFilter, type LayoutModel } from '../engine/layout'
 import { augmentForMirror } from '../engine/mirror'
 import { routeLinks } from '../engine/routing'
 import { type EditImpact, editImpactUndoable, previewEdit } from '../engine/scheduling'
 import { publishPresenceCursor, usePresence } from '../state/collaboration'
 import { getCurrentCrdtRuntime } from '../state/crdt'
 import { filterActive, useEditor } from '../state/store'
-import type { Link, LinkType, Task } from '../types/model'
+import type { Link, LinkType, Project, Task } from '../types/model'
 import { ChartSvg, type LinkingGhost } from './ChartSvg'
 import { EditImpactCard } from './EditImpactCard'
 import { Modal } from './Modal'
@@ -68,6 +68,45 @@ export function fitChartZoom(
   return Math.min(6, Math.max(MIN_ZOOM, Math.min(widthZoom, heightZoom)))
 }
 
+/**
+ * 전체 맞춤에서 시간축과 행축 중 한쪽만 과도하게 길면, 짧은 축의 밀도를 늘려
+ * 캔버스 종횡비에 가깝게 만든다. 사용자가 정한 월 폭/행 높이는 줄이지 않으며
+ * 도면이 화면의 가로·세로를 함께 사용하므로 같은 전체 표시에서도 글자가 더 크게 보인다.
+ */
+export function fitOverviewDensity(
+  project: Project,
+  viewportWidth: number,
+  viewportHeight: number,
+  filter?: LayoutFilter,
+  padding = 48,
+): { pxPerDay?: number; rowHeight?: number } {
+  const availableWidth = Math.max(1, viewportWidth - padding)
+  const availableHeight = Math.max(1, viewportHeight - padding)
+  const targetAspect = availableWidth / availableHeight
+  const model = computeLayout(project, filter)
+  const currentAspect = model.contentWidth / Math.max(1, model.contentHeight)
+  if (!Number.isFinite(currentAspect) || !Number.isFinite(targetAspect)) return {}
+
+  if (currentAspect > targetAspect * 1.02) {
+    const totalRows = Math.max(1, model.categories.reduce((sum, c) => sum + c.subRows, 0))
+    const fixedHeight = model.contentHeight - totalRows * model.rowHeight
+    const needed = (model.contentWidth / targetAspect - fixedHeight) / totalRows
+    const rowHeight = Math.min(2000, Math.max(model.rowHeight, needed))
+    return rowHeight > model.rowHeight + 0.5 ? { rowHeight: Math.ceil(rowHeight) } : {}
+  }
+
+  if (currentAspect < targetAspect / 1.02) {
+    const domainDays = Math.max(1, model.domainEndDay - model.domainStartDay)
+    const needed = (targetAspect * model.contentHeight - model.labelWidth) / domainDays
+    const pxPerDay = Math.min(400, Math.max(model.pxPerDay, needed))
+    return pxPerDay > model.pxPerDay + 0.001
+      ? { pxPerDay: Number(pxPerDay.toFixed(4)) }
+      : {}
+  }
+
+  return {}
+}
+
 export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
   const project = useEditor((s) => s.project)
   const zoom = useEditor((s) => s.zoom)
@@ -88,6 +127,7 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
 
   const wrapRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null)
+  const handledFitRequest = useRef(0)
   const dragRef = useRef<Drag>(null)
   const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
   const zoomAnchor = useRef<{
@@ -265,19 +305,33 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
   // 예정공정표와 마일스톤은 같은 캔버스를 사용한다. 요청 시 현재 활성 시트의 실제
   // 콘텐츠 크기와 보이는 캔버스 크기를 모두 재서 가로·세로 전체가 한 번에 보이게 한다.
   useLayoutEffect(() => {
-    if (fitRequest === 0) return
+    if (fitRequest === 0 || handledFitRequest.current === fitRequest) return
     const wrap = wrapRef.current
     if (!wrap) return
+    handledFitRequest.current = fitRequest
+    const densityPatch = fitOverviewDensity(
+      augmented,
+      wrap.clientWidth,
+      wrap.clientHeight,
+      filter,
+    )
+    const fittedProject = Object.keys(densityPatch).length
+      ? { ...augmented, view: { ...augmented.view, ...densityPatch } }
+      : augmented
+    const fittedModel = Object.keys(densityPatch).length
+      ? computeLayout(fittedProject, filter)
+      : model
+    if (Object.keys(densityPatch).length) useEditor.getState().setView(densityPatch)
     const next = fitChartZoom(
-      model.contentWidth,
-      model.contentHeight,
+      fittedModel.contentWidth,
+      fittedModel.contentHeight,
       wrap.clientWidth,
       wrap.clientHeight,
     )
     useEditor.getState().setZoom(next)
     wrap.scrollLeft = 0
     wrap.scrollTop = 0
-  }, [fitRequest, model.contentHeight, model.contentWidth])
+  }, [augmented, filter, fitRequest, model])
 
   // Native (non-passive) wheel listener so we can preventDefault while zooming.
   useEffect(() => {
