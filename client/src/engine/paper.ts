@@ -53,8 +53,7 @@ export interface TilePlan {
  * 도면(contentW×contentH)을 한 장(pageW×pageH)씩 잘라 실을 때 필요한 장수.
  * 모든 값은 **같은 단위**(보통 출력 픽셀)여야 한다. 순수·결정적 함수라
  * 사전 점검(export/preflight.ts)과 스모크가 같은 결과를 공유한다.
- * 현재 출력 엔진은 항상 1장(레터박스 축소)이므로, 이 함수는 "읽을 수 있는 크기로
- * 인쇄하려면 몇 장이 필요한가"를 사용자에게 알리는 용도로 쓴다.
+ * PDF 출력 엔진과 사전 점검이 함께 사용해 최소 글자 크기를 지키는 자동 분할 장수를 정한다.
  */
 export function tilePages(
   contentW: number,
@@ -65,6 +64,25 @@ export function tilePages(
   const safe = (v: number) => (Number.isFinite(v) && v > 0 ? v : 1)
   const cols = Math.max(1, Math.ceil(safe(contentW) / safe(pageW)))
   const rows = Math.max(1, Math.ceil(safe(contentH) / safe(pageH)))
+  return { cols, rows, pages: cols * rows }
+}
+
+/** Repeat the left WBS column and top time header on every PDF tile. */
+export function tilePagesWithFrozen(
+  contentW: number,
+  contentH: number,
+  pageW: number,
+  pageH: number,
+  frozenW: number,
+  frozenH: number,
+): TilePlan {
+  const safe = (v: number) => (Number.isFinite(v) && v > 0 ? v : 1)
+  const bodyW = Math.max(0, safe(contentW) - Math.max(0, frozenW))
+  const bodyH = Math.max(0, safe(contentH) - Math.max(0, frozenH))
+  const usableW = Math.max(1, safe(pageW) - Math.max(0, frozenW))
+  const usableH = Math.max(1, safe(pageH) - Math.max(0, frozenH))
+  const cols = Math.max(1, Math.ceil(bodyW / usableW))
+  const rows = Math.max(1, Math.ceil(bodyH / usableH))
   return { cols, rows, pages: cols * rows }
 }
 

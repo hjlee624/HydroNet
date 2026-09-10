@@ -88,7 +88,7 @@ export const space = {
 /** The signature sunset-stripe gradient (brand continuity element). */
 export const sunsetStripe = `linear-gradient(90deg, ${colors.primary} 0%, ${colors.sunshine700} 28%, ${colors.sunshine500} 52%, ${colors.yellow} 76%, ${colors.cream} 100%)`
 
-/** Default palette assigned to new 공종 lanes, cycled by index. */
+/** Shared palette for WBS accents and top-level process groups, cycled by index. */
 export const lanePalette = [
   '#6E8CA8', // steel blue (토목)
   '#C9803B', // ochre (가물막이)

@@ -1,4 +1,4 @@
-// Top application bar — brand, project name, history, schedule actions, zoom,
+// Top application bar — project name, history, schedule actions, zoom,
 // commissioning toggle and the export entry point.
 
 import { useEffect, useState } from 'react'
@@ -87,13 +87,6 @@ export function TopBar({ onExport, onFitChart, onToggleFullscreen, fullscreen }:
 
   return (
     <header className="topbar">
-      <div className="brand">
-        <span className="brand__mark">
-          <em>Seq</em>uence
-        </span>
-        <span className="brand__sub">건설 공정표</span>
-      </div>
-
       <input
         className="topbar__project"
         value={name}

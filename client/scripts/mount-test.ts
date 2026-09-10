@@ -2,6 +2,7 @@
 // (e.g. unstable zustand selectors → infinite loop → blank screen) that the
 // type-check / bundle build cannot detect. Run: npx tsx scripts/mount-test.ts
 import { JSDOM } from 'jsdom'
+import { readFileSync } from 'node:fs'
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
   url: 'http://localhost:5273/',
@@ -124,6 +125,25 @@ async function main() {
 
   const topbar = document.querySelector('.topbar') as HTMLElement | null
   check(!!topbar && getComputedStyle(topbar).flexWrap === 'nowrap', '상단바는 한 줄 레이아웃을 유지한다')
+  const appCss = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8')
+  check(
+    /\.topbar\s*\{[\s\S]*?overflow:\s*hidden\s*;/.test(appCss),
+    '상단바는 가로 드래그바를 만들지 않는다',
+  )
+  check(
+    !topbar?.querySelector('.mrail__brand') &&
+      !!document.querySelector('.mrail__brand')?.textContent?.includes('Sequence') &&
+      !!document.querySelector('.mrail__brand')?.textContent?.includes('건설 공정표'),
+    'Sequence / 건설 공정표 브랜드는 모듈 레일에 두 줄로 배치된다',
+  )
+  useEditor.getState().setInspectorTab('text')
+  useEditor.getState().selectTextRole('taskName')
+  await wait(40)
+  const textSizeInput = document.querySelector('.panel--right input[type="number"]') as HTMLInputElement | null
+  check(!!textSizeInput && !textSizeInput.hasAttribute('max'), '텍스트 글자 크기 입력에는 최대값 제한이 없다')
+  useEditor.getState().selectTextRole(null)
+  useEditor.getState().setInspectorTab('project')
+  await wait(40)
 
   console.log('\n[월 폭·저배율 편집성]')
   const monthWidthInput = document.querySelector('input[aria-label="월 폭"]') as HTMLInputElement | null

@@ -42,7 +42,7 @@ export interface TextStyle {
 export interface Category {
   id: ID
   name: string
-  /** Bar fill colour for tasks in this lane (tasks may override). */
+  /** WBS/category accent colour. Bar colours are assigned by top-level process. */
   color: string
   /** Sidebar tree expand/collapse ONLY — does not affect the chart. */
   collapsed: boolean
@@ -94,7 +94,7 @@ export interface Task {
   actualStart?: string
   /** 실적 완료일(ISO YYYY-MM-DD). 미입력 = 미완료. 계획과 달리 CPM에 영향 없음. */
   actualFinish?: string
-  /** DUMMY(가상/연결) 공정 표시 — 막대를 공종색 60% 투명(opacity 0.4)으로 칠해
+  /** DUMMY(가상/연결) 공정 표시 — 막대를 공정색 60% 투명(opacity 0.4)으로 칠해
    *  실제 작업이 아닌 연결/대기 구간임을 나타낸다. CPM 계산엔 일반 공정과 동일하게
    *  참여(기간·선후행 유지). undefined/false = 일반 공정. */
   isDummy?: boolean
@@ -138,7 +138,7 @@ export interface Link {
   style?: LinkStyle
   /** Arrow line width in px. Undefined = auto (critical=2, else 1.3). 연결 속성에서 조절. */
   width?: number
-  /** 같은 줄로 연결된 두 공정 사이 빈 구간의 DUMMY 음영(공종색 옅게) 표시 여부.
+  /** 같은 줄로 연결된 두 공정 사이 빈 구간의 DUMMY 음영(공정색 옅게) 표시 여부.
    *  undefined/true = 표시(기존 동작), false = 숨김. 연결 속성에서 토글. */
   showDummy?: boolean
 }

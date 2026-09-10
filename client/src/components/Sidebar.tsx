@@ -600,7 +600,7 @@ function CategoryNode({
                   boxShadow: '0 6px 20px rgba(0,0,0,0.16)',
                 }}
               >
-                <div style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 6 }}>공종 색상</div>
+                <div style={{ fontSize: 11, color: 'var(--slate)', marginBottom: 6 }}>공종 표식 색상</div>
                 <input
                   type="color"
                   value={/^#[0-9a-f]{6}$/i.test(cat.color) ? cat.color : '#7c93a8'}
@@ -638,7 +638,7 @@ function CategoryNode({
                         key={i}
                         type="button"
                         className="palette__sw palette__sw--empty"
-                        title="현재 공종 색을 즐겨찾기에 추가"
+                        title="현재 공종 표식 색을 즐겨찾기에 추가"
                         onClick={() => a().addPaletteColor(cat.color)}
                       >
                         ＋

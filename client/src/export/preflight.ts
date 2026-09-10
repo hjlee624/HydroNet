@@ -13,7 +13,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeLayout, type LayoutFilter } from '../engine/layout'
-import { paperPx, tilePages } from '../engine/paper'
+import { paperPx, tilePagesWithFrozen } from '../engine/paper'
 import { computeSchedule } from '../engine/scheduling'
 import { resolveTextStyle } from '../styles/theme'
 import type { PaperSettings, Project, TextRole } from '../types/model'
@@ -93,12 +93,18 @@ export interface PreflightResult {
   minFontPt: number
   /** 그 글자가 어떤 역할인지(한국어). */
   minFontRole: string
-  /** 실제 출력 장수 — 현재 엔진은 항상 1장(축소해 한 장에 담음). */
+  /** 실제 출력 장수 — PDF는 최소 글자 크기를 지키기 위해 자동 분할할 수 있다. */
   pages: number
   /** 최소 글자 크기를 확보하려면 필요한 분할 장수(1이면 나눌 필요 없음). */
   legiblePages: number
   legibleCols: number
   legibleRows: number
+  /** PDF 자동 분할에서 SVG 좌표를 출력 픽셀로 바꾸는 배율. */
+  legibleScale: number
+  /** PDF 각 장에 반복할 좌측 WBS·상단 축 영역(도면 좌표). */
+  frozenLabelWidth: number
+  frozenHeaderHeight: number
+  frozenTitleHeight: number
   /** 출력 픽셀 크기(용량 보호로 DPI 가 낮춰졌으면 clamped=true). */
   outPx: { w: number; h: number; dpi: number; clamped: boolean }
   /** 미해결 일정 문제(순환 의존성 등) 건수 — 0 이 아니면 이 도면의 준공일·주공정은 잠정. */
@@ -117,8 +123,18 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
   const { project, filter, scope, paper, format } = i
   const vector = format === 'svg' || format === 'dxf'
 
-  const full = computeLayout(project)
-  const shown = scope === 'view' && filterOn(filter) ? computeLayout(project, filter) : full
+  // 전체 도면은 화면에서 임시로 늘려 둔 표시 기간을 버리고 실제 공정 데이터 범위만 쓴다.
+  const fullProject: Project = {
+    ...project,
+    view: { ...project.view, displayStart: undefined, displayEnd: undefined },
+  }
+  const full = computeLayout(fullProject)
+  const shown =
+    scope === 'view'
+      ? filterOn(filter)
+        ? computeLayout(project, filter)
+        : computeLayout(project)
+      : full
 
   const hiddenCategories = project.categories.filter((c) => c.hidden).length
   const hiddenTasks = project.tasks.filter((t) => t.hidden).length
@@ -146,16 +162,18 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
 
   // 읽을 수 있는 크기(MIN_FONT_PT)로 키우면 도면이 용지를 넘친다 → 몇 장 분할이 필요한가.
   const legibleScale = minFontPt > 0 ? drawScale * Math.max(1, MIN_FONT_PT / minFontPt) : drawScale
-  const tiles = tilePages(
+  const tiles = tilePagesWithFrozen(
     shown.contentWidth * legibleScale,
     shown.contentHeight * legibleScale,
     px.wPx,
     px.hPx,
+    shown.labelWidth * legibleScale,
+    shown.chartTop * legibleScale,
   )
 
   const ds = project.view.displayStart
   const de = project.view.displayEnd
-  const rangeLimited = !!(ds && de)
+  const rangeLimited = scope === 'view' && !!(ds && de)
 
   const warnings: string[] = []
   const sheetName = project.activeSheet?.name ?? project.name ?? '(이름 없음)'
@@ -183,10 +201,9 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
   if (!vector) {
     if (minFontPt > 0 && minFontPt < MIN_FONT_PT)
       warnings.push(
-        `용지에서 가장 작은 글자(${ROLE_LABELS[minFontRoleId]})가 약 ${minFontPt.toFixed(1)}pt로 인쇄됩니다 — 오른쪽 [도면/용지]의 글자 크기를 키우거나 더 큰 용지를 고르세요` +
-          (tiles.pages > 1
-            ? `(지금 크기로 읽으려면 ${paper.size} ${tiles.cols}×${tiles.rows} = ${tiles.pages}장 분할이 필요합니다).`
-            : '.'),
+        format === 'pdf' && tiles.pages > 1
+          ? `한 장에 넣으면 가장 작은 글자(${ROLE_LABELS[minFontRoleId]})가 약 ${minFontPt.toFixed(1)}pt라 읽기 어려워 ${paper.size} ${tiles.cols}×${tiles.rows} = ${tiles.pages}장으로 자동 분할합니다.`
+          : `용지에서 가장 작은 글자(${ROLE_LABELS[minFontRoleId]})가 약 ${minFontPt.toFixed(1)}pt로 인쇄됩니다 — 글자 크기를 키우거나 더 큰 용지를 고르세요.`,
       )
     if (marginPct > 5)
       warnings.push(
@@ -213,10 +230,14 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
     marginPct,
     minFontPt,
     minFontRole: ROLE_LABELS[minFontRoleId],
-    pages: 1,
+    pages: format === 'pdf' ? tiles.pages : 1,
     legiblePages: tiles.pages,
     legibleCols: tiles.cols,
     legibleRows: tiles.rows,
+    legibleScale,
+    frozenLabelWidth: shown.labelWidth,
+    frozenHeaderHeight: shown.chartTop,
+    frozenTitleHeight: shown.titleHeight,
     outPx: { w: px.wPx, h: px.hPx, dpi: px.effectiveDpi, clamped: px.clamped },
     unresolvedProblems,
     provisional: unresolvedProblems > 0,

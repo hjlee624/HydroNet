@@ -6,8 +6,9 @@
 
 import { createSampleProject } from '../src/data/sampleProject'
 import { computeLayout, type LayoutFilter } from '../src/engine/layout'
-import { paperPx, tilePages } from '../src/engine/paper'
+import { paperPx, tilePages, tilePagesWithFrozen } from '../src/engine/paper'
 import { computeSchedule } from '../src/engine/scheduling'
+import { processColor, processTaskIds } from '../src/engine/taskColor'
 import { projectToDxf } from '../src/export/dxf'
 import { exportDiagnostics, exportPreflight, MIN_FONT_PT } from '../src/export/preflight'
 import { ALL_SHORTCUTS, KEYMAP, resolveAction } from '../src/state/keymap'
@@ -29,6 +30,23 @@ const FILTER_OFF: LayoutFilter = { critical: false, milestone: false, query: '' 
 const FILTER_CRIT: LayoutFilter = { critical: true, milestone: false, query: '' }
 const A4: PaperSettings = { size: 'A4', orientation: 'landscape', dpi: 150 }
 const A1: PaperSettings = { size: 'A1', orientation: 'landscape', dpi: 150 }
+
+// 막대 색상은 공종이 아니라 상위 공정 묶음 기준이다.
+const sameLaneRoots = project.tasks.filter((task) => !task.parentId && !task.isMilestone).slice(0, 2)
+if (sameLaneRoots.length >= 2) {
+  sameLaneRoots[1] = { ...sameLaneRoots[1], categoryId: sameLaneRoots[0].categoryId }
+  const child = { ...sameLaneRoots[0], id: 'process-color-child', parentId: sameLaneRoots[0].id }
+  const colorTasks = [...sameLaneRoots, child]
+  check(
+    processColor(sameLaneRoots[0], colorTasks) !== processColor(sameLaneRoots[1], colorTasks),
+    '같은 공종 안의 서로 다른 상위 공정은 서로 다른 기본 막대색을 쓴다',
+  )
+  check(
+    processColor(sameLaneRoots[0], colorTasks) === processColor(child, colorTasks) &&
+      processTaskIds(child, colorTasks).includes(sameLaneRoots[0].id),
+    '상위 공정과 세부공정은 같은 막대색 묶음으로 동작한다',
+  )
+}
 
 // ── 1. 출력 범위가 선택과 일치하는가 ───────────────────────────────────────────
 console.log('\n[출력 범위]')
@@ -126,6 +144,7 @@ check(
 // ── 3. 최소 글자 크기(pt) — A4/150dpi 에서는 너무 작다고 경고해야 한다 ─────────
 console.log('\n[최소 글자 크기]')
 const a4 = exportPreflight({ project, filter: FILTER_OFF, scope: 'full', paper: A4, format: 'png' })
+const a4Pdf = exportPreflight({ project, filter: FILTER_OFF, scope: 'full', paper: A4, format: 'pdf' })
 const a1 = exportPreflight({ project, filter: FILTER_OFF, scope: 'full', paper: A1, format: 'png' })
 console.log(
   `  A4 150dpi → ${a4.minFontPt.toFixed(2)}pt (${a4.minFontRole}) · A1 150dpi → ${a1.minFontPt.toFixed(2)}pt · 기준 ${MIN_FONT_PT}pt`,
@@ -160,21 +179,31 @@ const px4 = paperPx(A4)
 const m = computeLayout(project)
 const drawScale = Math.min(px4.wPx / m.contentWidth, px4.hPx / m.contentHeight)
 const legibleScale = drawScale * Math.max(1, MIN_FONT_PT / a4.minFontPt)
-const expect = tilePages(
+const expect = tilePagesWithFrozen(
   m.contentWidth * legibleScale,
   m.contentHeight * legibleScale,
   px4.wPx,
   px4.hPx,
+  m.labelWidth * legibleScale,
+  m.chartTop * legibleScale,
 )
 console.log(
   `  preflight ${a4.legibleCols}×${a4.legibleRows}=${a4.legiblePages}장 · tilePages ${expect.cols}×${expect.rows}=${expect.pages}장`,
 )
-check(a4.pages === 1, '현재 출력 엔진은 항상 1장(축소·레터박스)')
+check(a4.pages === 1, 'PNG는 한 장 이미지로 유지한다')
+check(
+  a4Pdf.pages === a4Pdf.legiblePages && a4Pdf.pages > 1,
+  `PDF는 최소 ${MIN_FONT_PT}pt 확보를 위해 자동 분할한다 (${a4Pdf.pages}장)`,
+)
 check(
   a4.legiblePages === expect.pages &&
     a4.legibleCols === expect.cols &&
     a4.legibleRows === expect.rows,
   '읽을 수 있는 크기의 분할 장수가 engine/paper.ts tilePages 와 일치',
+)
+check(
+  a4Pdf.frozenLabelWidth === m.labelWidth && a4Pdf.frozenHeaderHeight === m.chartTop,
+  'PDF 자동 분할은 매 장에 좌측 WBS와 상단 연·월 헤더를 반복한다',
 )
 check(tilePages(100, 100, 100, 100).pages === 1, 'tilePages: 딱 맞으면 1장')
 check(tilePages(201, 100, 100, 100).pages === 3, 'tilePages: 가로 2.01배면 3장(3×1)')
@@ -186,20 +215,31 @@ const ranged: Project = {
   ...project,
   view: { ...project.view, displayStart: '2026-03', displayEnd: '2027-02' },
 }
-const rp = exportPreflight({
+const rpFull = exportPreflight({
   project: ranged,
   filter: FILTER_OFF,
   scope: 'full',
   paper: A4,
   format: 'png',
 })
+const rpView = exportPreflight({
+  project: ranged,
+  filter: FILTER_OFF,
+  scope: 'view',
+  paper: A4,
+  format: 'png',
+})
 check(
-  rp.rangeLimited && rp.rangeLabel === '2026-03 ~ 2027-02',
-  `표시 기간 제한을 감지 (${rp.rangeLabel})`,
+  !rpFull.rangeLimited && rpFull.rangeLabel === undefined,
+  '전체 도면은 화면용 표시 기간을 무시하고 실제 공정 기간을 쓴다',
 )
 check(
-  rp.warnings.some((w) => w.includes('표시 기간')),
-  '표시 기간으로 잘린다는 사실을 경고한다',
+  rpView.rangeLimited && rpView.rangeLabel === '2026-03 ~ 2027-02',
+  `현재 표시 범위는 기간 제한을 감지한다 (${rpView.rangeLabel})`,
+)
+check(
+  rpView.warnings.some((w) => w.includes('표시 기간')),
+  '현재 표시 범위가 기간으로 잘린다는 사실을 경고한다',
 )
 check(!a4.rangeLimited, '표시 기간 미설정이면 제한 없음으로 본다')
 

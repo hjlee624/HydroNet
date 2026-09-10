@@ -26,7 +26,7 @@ const FORMATS: { id: ExportFormat; label: string; hint: string }[] = [
 ]
 
 const SCOPES: { id: ExportScope; label: string; hint: string }[] = [
-  { id: 'full', label: '전체 도면', hint: '화면 필터와 무관하게 도면 전체를 출력합니다.' },
+  { id: 'full', label: '전체 도면', hint: '화면 필터·표시 기간을 제외하고 실제 공정 기간 전체를 출력합니다.' },
   {
     id: 'view',
     label: '현재 표시 범위',
@@ -123,7 +123,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
 
   /**
    * 선택한 출력 범위를 실제 화면(=클론 원본인 라이브 SVG)에 반영한 뒤 fn 을 실행한다.
-   *   • '전체 도면'      → 필터를 잠시 해제해 전체가 그려진 상태에서 캡처
+   *   • '전체 도면'      → 필터와 화면용 표시 기간을 잠시 해제해 실제 공정 범위로 캡처
    *   • '현재 표시 범위' → 필터를 그대로 둔 채 캡처
    * 어느 쪽이든 선택 링은 지우고, React 가 DOM 을 커밋하도록 두 프레임 기다린 뒤
    * 캡처하며, 끝나면 원래 필터를 복원해 작업 화면은 건드리지 않는다.
@@ -131,13 +131,18 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   async function withScope<T>(fn: () => Promise<T> | T): Promise<T> {
     const prevFilter = a().filter
     const restoreFilter = scope === 'full' && filterActive(prevFilter)
+    const prevStart = a().project.view.displayStart
+    const prevEnd = a().project.view.displayEnd
+    const restoreRange = scope === 'full' && !!(prevStart || prevEnd)
     a().selectTask(null)
     if (restoreFilter) a().clearFilter()
+    if (restoreRange) a().setView({ displayStart: undefined, displayEnd: undefined })
     await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())))
     try {
       return await fn()
     } finally {
       if (restoreFilter) a().setFilter(prevFilter)
+      if (restoreRange) a().setView({ displayStart: prevStart, displayEnd: prevEnd })
     }
   }
 
@@ -188,7 +193,11 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       setBusy(true)
       setMsg(null)
       try {
-        const dxf = projectToDxf(project, scope === 'view' ? filter : undefined)
+        const exportProject =
+          scope === 'full'
+            ? { ...project, view: { ...project.view, displayStart: undefined, displayEnd: undefined } }
+            : project
+        const dxf = projectToDxf(exportProject, scope === 'view' ? filter : undefined)
         download(dxf, `${filename}.dxf`, 'application/dxf')
         logInfo(`DXF 내보내기 완료(${pre.scopeLabel}): ${filename}.dxf`)
         setMsg(
@@ -220,9 +229,20 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           format,
           transparent,
           stamp: stamp ? stampText : undefined,
+          pdfTiles:
+            format === 'pdf' && pre.pages > 1
+              ? {
+                  scale: pre.legibleScale,
+                  cols: pre.legibleCols,
+                  rows: pre.legibleRows,
+                  labelWidth: pre.frozenLabelWidth,
+                  headerHeight: pre.frozenHeaderHeight,
+                  titleHeight: pre.frozenTitleHeight,
+                }
+              : undefined,
         })
         setMsg(
-          `${pre.scopeLabel} · 공정 ${pre.taskCount}개 · ${pre.sheetName} — ` +
+          `${pre.scopeLabel} · 공정 ${pre.taskCount}개 · ${pre.sheetName} · ${r.pages}장 — ` +
             (r.clamped
               ? `완료(용량 보호를 위해 ${px.effectiveDpi}dpi로 자동 조정)`
               : '내보내기를 완료했습니다.'),
@@ -471,6 +491,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         <p className="note">
           {vector
             ? '미리보기는 래스터 출력(PNG·JPG·PDF) 기준 배치입니다. SVG·DXF는 벡터 원본이라 여백 개념이 없습니다.'
+            : format === 'pdf' && pre.pages > 1
+              ? `미리보기는 전체 도면 개요입니다. 실제 PDF는 ${pre.legibleCols}×${pre.legibleRows} = ${pre.pages}장으로 나뉘며 각 장에 공사명·좌측 WBS·연·월 헤더를 반복합니다.`
             : '용지 안에 도면이 어떻게 앉는지(여백 포함) 실제 출력과 같은 방식으로 보여줍니다.'}
         </p>
       </div>

@@ -14,6 +14,10 @@ export function ModuleRail() {
   const mobile = useViewport((s) => s.mobile)
   return (
     <nav className="mrail" data-export-hide="1" aria-label="모듈">
+      <div className="mrail__brand">
+        <span className="mrail__brand-mark"><em>Seq</em>uence</span>
+        <span className="mrail__brand-sub">건설 공정표</span>
+      </div>
       {GROUPS.map((group) => {
         const mods = MODULES.filter(
           (m) => m.group === group && (!mobile || MOBILE_MODULES.includes(m.id)),

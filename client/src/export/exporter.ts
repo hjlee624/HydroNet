@@ -145,6 +145,69 @@ async function rasterize(
   return canvas
 }
 
+async function loadSvgImage(svgString: string): Promise<HTMLImageElement> {
+  const img = new Image()
+  img.decoding = 'sync'
+  await new Promise<void>((resolve, reject) => {
+    img.onload = () => resolve()
+    img.onerror = () => reject(new Error('SVG 이미지를 로드하지 못했습니다.'))
+    img.src = svgToDataUrl(svgString)
+  })
+  return img
+}
+
+function rasterizePdfTile(
+  img: HTMLImageElement,
+  content: ContentSize,
+  pageW: number,
+  pageH: number,
+  scale: number,
+  col: number,
+  row: number,
+  background: string,
+  frozen: { labelWidth: number; headerHeight: number; titleHeight: number },
+): HTMLCanvasElement {
+  const canvas = document.createElement('canvas')
+  canvas.width = pageW
+  canvas.height = pageH
+  const ctx = canvas.getContext('2d')!
+  ctx.fillStyle = background
+  ctx.fillRect(0, 0, pageW, pageH)
+  const labelPx = Math.min(pageW - 1, Math.max(0, frozen.labelWidth * scale))
+  const headerPx = Math.min(pageH - 1, Math.max(0, frozen.headerHeight * scale))
+  const titlePx = Math.min(headerPx, Math.max(0, frozen.titleHeight * scale))
+  const bodyDestW = Math.max(1, pageW - labelPx)
+  const bodyDestH = Math.max(1, pageH - headerPx)
+  const bodySourceW = bodyDestW / scale
+  const bodySourceH = bodyDestH / scale
+  const sourceX = frozen.labelWidth + col * bodySourceW
+  const sourceY = frozen.headerHeight + row * bodySourceH
+  const sourceW = Math.max(0, Math.min(bodySourceW, content.width - sourceX))
+  const sourceH = Math.max(0, Math.min(bodySourceH, content.height - sourceY))
+
+  // Body quadrant.
+  if (sourceW > 0 && sourceH > 0)
+    ctx.drawImage(img, sourceX, sourceY, sourceW, sourceH, labelPx, headerPx, sourceW * scale, sourceH * scale)
+  // Timeline header for this horizontal slice.
+  const axisSourceH = Math.max(0, frozen.headerHeight - frozen.titleHeight)
+  if (sourceW > 0 && axisSourceH > 0)
+    ctx.drawImage(img, sourceX, frozen.titleHeight, sourceW, axisSourceH, labelPx, titlePx, sourceW * scale, axisSourceH * scale)
+  // WBS column for this vertical slice.
+  if (frozen.labelWidth > 0 && sourceH > 0)
+    ctx.drawImage(img, 0, sourceY, frozen.labelWidth, sourceH, 0, headerPx, labelPx, sourceH * scale)
+  // Top-left axis corner.
+  if (frozen.labelWidth > 0 && axisSourceH > 0)
+    ctx.drawImage(img, 0, frozen.titleHeight, frozen.labelWidth, axisSourceH, 0, titlePx, labelPx, axisSourceH * scale)
+  // Repeat the centered title band without distorting its text.
+  if (frozen.titleHeight > 0 && titlePx > 0) {
+    const titleSourceW = Math.min(content.width, pageW / scale)
+    const titleSourceX = Math.max(0, (content.width - titleSourceW) / 2)
+    const titleDestX = (pageW - titleSourceW * scale) / 2
+    ctx.drawImage(img, titleSourceX, 0, titleSourceW, frozen.titleHeight, titleDestX, 0, titleSourceW * scale, titlePx)
+  }
+  return canvas
+}
+
 export interface ExportOptions {
   svg: SVGSVGElement
   content: ContentSize
@@ -155,9 +218,18 @@ export interface ExportOptions {
   transparent?: boolean
   /** 우측 하단 버전 표기 한 줄(사업명·시트·출력 범위·시각). 미지정이면 표기 없음. */
   stamp?: string
+  /** PDF readability plan from preflight. Omit to keep a single fitted page. */
+  pdfTiles?: {
+    scale: number
+    cols: number
+    rows: number
+    labelWidth: number
+    headerHeight: number
+    titleHeight: number
+  }
 }
 
-export async function exportChart(opts: ExportOptions): Promise<{ clamped: boolean }> {
+export async function exportChart(opts: ExportOptions): Promise<{ clamped: boolean; pages: number }> {
   const { svg, content, paper, filename, format } = opts
   try {
     if (format === 'svg') {
@@ -167,7 +239,7 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
       })
       triggerDownload(new Blob([str], { type: 'image/svg+xml' }), `${filename}.svg`)
       logInfo(`SVG 내보내기 완료: ${filename}.svg`)
-      return { clamped: false }
+      return { clamped: false, pages: 1 }
     }
 
     const px = paperPx(paper)
@@ -179,9 +251,8 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
       stamp: opts.stamp,
     })
 
-    const canvas = await rasterize(svgString, content, px.wPx, px.hPx, bg)
-
     if (format === 'png' || format === 'jpg') {
+      const canvas = await rasterize(svgString, content, px.wPx, px.hPx, bg)
       const mime = format === 'png' ? 'image/png' : 'image/jpeg'
       const quality = format === 'jpg' ? 0.94 : undefined
       await new Promise<void>((resolve, reject) => {
@@ -203,17 +274,40 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
         )
       })
       logInfo(`${format.toUpperCase()} 내보내기 완료 (${px.effectiveDpi}dpi): ${filename}`)
-      return { clamped: px.clamped }
+      return { clamped: px.clamped, pages: 1 }
     }
 
-    // PDF — page sized to the chosen paper, raster placed full-bleed.
-    const dataUrl = canvas.toDataURL('image/jpeg', 0.94)
+    // PDF — when a fitted single page would make text unreadable, keep the requested
+    // paper size and tile the chart at the preflight's legible physical scale.
     const orientation = px.wMm >= px.hMm ? 'landscape' : 'portrait'
     const pdf = new jsPDF({ orientation, unit: 'mm', format: [px.wMm, px.hMm], compress: true })
-    pdf.addImage(dataUrl, 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
+    const tilePlan = opts.pdfTiles
+    const cols = Math.max(1, tilePlan?.cols ?? 1)
+    const rows = Math.max(1, tilePlan?.rows ?? 1)
+    const pages = cols * rows
+    if (pages === 1) {
+      const canvas = await rasterize(svgString, content, px.wPx, px.hPx, bg)
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
+    } else {
+      const img = await loadSvgImage(svgString)
+      const scale = Math.max(0.01, tilePlan?.scale ?? 1)
+      let pageIndex = 0
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          if (pageIndex > 0) pdf.addPage([px.wMm, px.hMm], orientation)
+          const canvas = rasterizePdfTile(img, content, px.wPx, px.hPx, scale, col, row, whiteBg, {
+            labelWidth: tilePlan?.labelWidth ?? 0,
+            headerHeight: tilePlan?.headerHeight ?? 0,
+            titleHeight: tilePlan?.titleHeight ?? 0,
+          })
+          pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
+          pageIndex++
+        }
+      }
+    }
     pdf.save(`${filename}.pdf`)
-    logInfo(`PDF 내보내기 완료 (${paper.size}, ${px.effectiveDpi}dpi): ${filename}`)
-    return { clamped: px.clamped }
+    logInfo(`PDF 내보내기 완료 (${paper.size}, ${px.effectiveDpi}dpi, ${pages}장): ${filename}`)
+    return { clamped: px.clamped, pages }
   } catch (e) {
     logError('내보내기 실패', e)
     throw e

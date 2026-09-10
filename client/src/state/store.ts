@@ -78,7 +78,7 @@ export interface ViewFilter {
   /** Substring match on the activity/milestone name (case-insensitive). */
   query: string
 }
-/** Bar colouring scheme: by 공종 lane colour, or critical-path emphasis (rest muted). */
+/** Bar colouring scheme: by top-level process, or critical-path emphasis (rest muted). */
 export type ColorMode = 'category' | 'critical'
 /** Progressive disclosure: 'simple' hides advanced controls, 'pro' shows everything. */
 export type UiMode = 'simple' | 'pro'
@@ -280,7 +280,7 @@ export interface EditorState {
   setTaskSpanLive: (id: ID, startDay: number, duration: number) => void
   deleteTask: (id: ID) => void
   toggleMilestone: (id: ID) => void
-  /** DUMMY(가상/연결) 공정 표시 토글 — 막대를 공종색 60% 투명으로 렌더(우클릭/인스펙터). */
+  /** DUMMY(가상/연결) 공정 표시 토글 — 막대를 공정색 60% 투명으로 렌더(우클릭/인스펙터). */
   toggleDummy: (id: ID) => void
   /** 다중 선택된 공정들을 한 번에 수평 이동(라이브 드래그). gesture는 이미 스냅샷됨. */
   setTasksStartLive: (moves: Array<{ id: ID; start: number }>) => void
@@ -297,8 +297,7 @@ export interface EditorState {
   // categories
   addCategory: (partial?: Partial<Category>) => ID
   updateCategory: (id: ID, patch: Partial<Category>) => void
-  /** 공종 색상 변경 — 그 공종에 속한 모든 공정의 색 override를 지워 새 공종색을 따르게 한다
-   *  (사이드바 색상 스와치, 하위 공정 색도 함께 변경). */
+  /** 공종 색상 변경 — 좌측 WBS 공종 표식에 적용한다. 막대 색상은 공정 묶음에서 관리한다. */
   setCategoryColor: (id: ID, color: string) => void
   deleteCategory: (id: ID) => void
   toggleCollapse: (id: ID) => void
@@ -1674,8 +1673,6 @@ export const useEditor = create<EditorState>()((set, get) => {
           const c = p.categories.find((x) => x.id === id)
           if (!c) return
           c.color = color
-          // 하위 공정의 개별 색 override 제거 → 전부 새 공종색을 따른다(요구: 다 바뀌게).
-          for (const t of p.tasks) if (t.categoryId === id) t.color = undefined
         },
         { history: false },
       ),

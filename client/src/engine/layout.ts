@@ -582,7 +582,8 @@ export function fitToPaperView(
       }
     }
     // Text legibility: size REF_PX to TARGET_MM on the sheet; only ever ENLARGE.
-    const fontScale = clamp((TARGET_MM * (contentWidthAfter / paperWmm)) / REF_PX, 1, 6)
+    const computedFontScale = (TARGET_MM * (contentWidthAfter / paperWmm)) / REF_PX
+    const fontScale = Number.isFinite(computedFontScale) ? Math.max(1, computedFontScale) : 1
     view = { ...view, pxPerDay, rowHeight, fontScale }
   }
 

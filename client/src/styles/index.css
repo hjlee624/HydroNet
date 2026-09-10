@@ -170,8 +170,7 @@ textarea {
   gap: 8px;
   min-height: 56px;
   padding: 8px 16px;
-  overflow-x: auto;
-  overflow-y: hidden;
+  overflow: hidden;
   background: var(--canvas);
   border-bottom: 1px solid var(--hairline-soft);
   position: relative;
@@ -186,31 +185,6 @@ textarea {
   background: var(--sunset-stripe);
   opacity: 0.92;
 }
-.brand {
-  display: flex;
-  flex-shrink: 0;
-  white-space: nowrap;
-  align-items: baseline;
-  gap: 8px;
-  user-select: none;
-}
-.brand__mark {
-  font-family: var(--font-display);
-  font-size: 22px;
-  font-weight: 700;
-  letter-spacing: -0.5px;
-  color: var(--ink);
-}
-.brand__mark em {
-  color: var(--primary);
-  font-style: normal;
-}
-.brand__sub {
-  font-size: 11px;
-  color: var(--steel);
-  letter-spacing: 0.3px;
-}
-
 .topbar__project {
   font-size: 14px;
   font-weight: 600;
@@ -219,8 +193,9 @@ textarea {
   border-radius: var(--radius-md);
   padding: 6px 10px;
   background: transparent;
-  flex: 0 1 180px;
-  min-width: 120px;
+  flex: 1 1 220px;
+  min-width: 110px;
+  max-width: 360px;
 }
 .topbar__project:hover {
   border-color: var(--hairline);
@@ -4343,6 +4318,33 @@ textarea.input {
   flex-direction: column;
   gap: 10px;
 }
+.mrail__brand {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  gap: 0;
+  padding: 2px 8px 9px;
+  border-bottom: 1px solid var(--hairline);
+  user-select: none;
+}
+.mrail__brand-mark {
+  color: var(--ink);
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.5px;
+}
+.mrail__brand-mark em {
+  color: var(--primary);
+  font-style: normal;
+}
+.mrail__brand-sub {
+  margin-top: 3px;
+  color: var(--steel);
+  font-size: 10px;
+  letter-spacing: 0.25px;
+}
 :fullscreen .mrail {
   display: none;
 }
@@ -5375,6 +5377,19 @@ textarea.input {
   .mrail {
     width: 56px;
     padding: 10px 6px 20px;
+  }
+  .mrail__brand {
+    padding: 3px 1px 8px;
+    align-items: center;
+  }
+  .mrail__brand-mark {
+    font-size: 0;
+  }
+  .mrail__brand-mark em {
+    font-size: 18px;
+  }
+  .mrail__brand-sub {
+    display: none;
   }
   .mrail__label,
   .mrail__glabel {

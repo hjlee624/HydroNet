@@ -13,6 +13,7 @@ import type { AdequacyResult } from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
 import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
+import { createProcessColorMap } from '../engine/taskColor'
 import type { RemotePresence } from '../state/collaboration'
 import { colors, fonts, readableScreenTextSize, resolveTextStyle } from '../styles/theme'
 import type { Project, TextRole } from '../types/model'
@@ -131,6 +132,7 @@ function ChartSvgBase({
   const singleSel = selectedTaskIds.length <= 1
   // DUMMY opacity: "투명도 60%" → 60% transparent → 0.4 opaque.
   const DUMMY_OPACITY = 0.4
+  const processColors = createProcessColorMap(project.tasks)
 
   // 자식(세부공정)을 가진 상위 공정 id 집합. 이런 상위 공정은 막대를 그리지 않고(세부공정 막대만
   // 그 줄에 표시) 이름은 좌측 라벨로만 남긴다. parentId로 판정하므로 이름 충돌과 무관.
@@ -138,7 +140,7 @@ function ChartSvgBase({
     model.tasks.map((lt) => lt.task.parentId).filter((p): p is string => !!p),
   )
   // DUMMY 채움: 같은 줄의 두 막대 **사이를 사용자가 화살표(링크)로 연결한 경우에만** 그 빈 구간을
-  // 공종색 옅게 채운다(요구). 링크 없이 그냥 인접하거나 세부공정을 추가한 것만으로는 더미를
+  // 공정색 옅게 채운다. 링크 없이 그냥 인접하거나 세부공정을 추가한 것만으로는 더미를
   // 만들지 않는다. 링크된 쌍(순서 무관)만 대상.
   // 링크된 쌍(순서 무관) + 그 링크의 DUMMY 음영 표시 여부(link.showDummy). false면 그 구간은
   // 채우지 않는다(연결 속성의 '연결 음영' 토글). 기본(undefined/true)은 표시.
@@ -182,7 +184,7 @@ function ChartSvgBase({
             y: prev.y,
             w: gap,
             h: prev.h,
-            color: laneColor(model, prev.categoryId),
+            color: processColors.get(prev.task.id) ?? colors.bar,
           })
       }
     }
@@ -554,7 +556,7 @@ function ChartSvgBase({
       </g>
 
       {/* DUMMY fill — 같은 줄에서 사용자가 화살표(링크)로 연결한 두 막대 사이의 빈 구간만
-          공종색 옅게 채운다(그 외/세부공정 추가엔 더미 없음). Exported too. */}
+          공정색 옅게 채운다(그 외/세부공정 추가엔 더미 없음). Exported too. */}
       {gapRects.length > 0 && (
         <g>
           {gapRects.map((r, i) => (
@@ -663,15 +665,17 @@ function ChartSvgBase({
           // 사용자가 공정 색을 지정하면 주공정(빨강 채움)보다 그 색을 우선한다 — 색을 바꿔도 주공정이
           // '해제'되지 않게(빨강 테두리·이름·화살표의 주공정 표시는 그대로 유지). 단 '주공정 강조'
           // 색상 모드에서는 스포트라이트 유지를 위해 지정색을 무시한다.
-          const userColor = mirror ? undefined : t.color
+          const groupedColor = mirror ? colors.bar : (processColors.get(t.id) ?? colors.bar)
           const baseFill =
             colorMode === 'critical'
               ? emphasizeCrit
                 ? colors.critical
                 : '#CFC8B8' // muted so the critical spine pops
-              : (userColor ?? (emphasizeCrit ? colors.critical : laneColor(model, lt.categoryId)))
-          // DUMMY 공정은 항상 공종색을 60% 투명(0.4)으로 칠한다.
-          const fill = isDummy ? laneColor(model, lt.categoryId) : baseFill
+              : emphasizeCrit
+                ? colors.critical
+                : groupedColor
+          // DUMMY 공정도 같은 공정 묶음 색을 60% 투명(0.4)으로 칠한다.
+          const fill = isDummy ? groupedColor : baseFill
           // 공기 적정성 부적정 판정(과소/과다). 툴팁(<title>)은 **마우스를 실제로 받는 막대**에
           // 붙인다 — 아래 경보 그래픽 그룹은 pointer-events:none 이라 그 안의 <title>은 히트
           // 테스트에 절대 걸리지 않아 영원히 뜨지 않았다.
@@ -850,7 +854,7 @@ function ChartSvgBase({
                     : emphasizeCrit
                       ? colors.critical
                       : isDummy
-                        ? laneColor(model, lt.categoryId)
+                        ? groupedColor
                         : 'rgba(0,0,0,0.18)'
                 }
                 strokeWidth={selected ? 2.4 : 1}
@@ -1250,10 +1254,6 @@ function ChartSvgBase({
       </g>
     </svg>
   )
-}
-
-function laneColor(model: LayoutModel, categoryId: string): string {
-  return model.categories.find((c) => c.id === categoryId)?.color ?? colors.bar
 }
 
 export const ChartSvg = memo(ChartSvgBase)

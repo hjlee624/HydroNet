@@ -16,6 +16,7 @@ import {
 } from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
 import { type EditImpact, previewEdit } from '../engine/scheduling'
+import { processColor, processTaskIds } from '../engine/taskColor'
 import type { InspectorTab } from '../state/store'
 import { useEditor } from '../state/store'
 import { FONT_FAMILY_OPTIONS, TEXT_ROLE_DEFAULTS, TEXT_ROLE_LABELS } from '../styles/theme'
@@ -174,7 +175,7 @@ function PtInput({
 }: {
   value: number
   min: number
-  max: number
+  max?: number
   onCommit: (v: number) => void
   maxWidth?: number
   disabled?: boolean
@@ -188,7 +189,7 @@ function PtInput({
     if (Number.isFinite(v) && v > 0) {
       // Reflect the actually-applied (clamped) value even when the store ref
       // doesn't change — e.g. typing >max while already at max.
-      const clamped = Math.max(min, Math.min(max, v))
+      const clamped = max == null ? Math.max(min, v) : Math.max(min, Math.min(max, v))
       setText(String(clamped))
       onCommit(clamped)
     } else {
@@ -288,7 +289,6 @@ function TextStyleInspector({ role }: { role: TextRole }) {
           <PtInput
             value={size}
             min={6}
-            max={120}
             onCommit={(v) => a().setTextStyle(role, { fontSize: v })}
           />
         </div>
@@ -375,17 +375,19 @@ function TaskInspector({ id }: { id: string }) {
     a().updateTask(id, patch)
   }
 
-  // 색상 변경은 다중 선택 시 **선택된 공정 모두**에 적용(단일이면 그 하나만).
+  // 색상은 상위 공정과 모든 세부공정을 하나의 공정 묶음으로 취급한다.
   const multiSel = selectedTaskIds.length > 1
   const applyColor = (color: string, opts?: { history?: boolean }) => {
-    if (multiSel) a().setTasksColor(selectedTaskIds, color, opts)
-    else a().updateTask(id, { color }, opts)
+    const selected = (multiSel ? selectedTaskIds : [id])
+      .map((taskId) => project.tasks.find((item) => item.id === taskId))
+      .filter((item): item is Task => !!item)
+    const ids = [...new Set(selected.flatMap((item) => processTaskIds(item, project.tasks)))]
+    a().setTasksColor(ids, color, opts)
   }
 
   const startISO = toISO(dayToDate(project.startDate, task.start))
   const finishISO = toISO(dayToDate(project.startDate, task.start + task.duration))
-  const currentColor =
-    task.color ?? project.categories.find((c) => c.id === task.categoryId)?.color ?? '#7c93a8'
+  const currentColor = processColor(task, project.tasks)
   const palette = project.palette ?? []
   // 물량 기반 공기 적정성(법정 산정식) — 마일스톤은 기간 개념이 없어 제외.
   // ② 표준대비는 표준 템플릿 공기를 넘겨야 판정된다. 넘기지 않으면 화면에선 영원히 null 이
@@ -497,7 +499,7 @@ function TaskInspector({ id }: { id: string }) {
         <div className="field">
           <label className="toggle">
             <input type="checkbox" checked={!!task.isDummy} onChange={() => a().toggleDummy(id)} />
-            DUMMY(가상·연결) 공정 — 공종색 60% 투명
+            DUMMY(가상·연결) 공정 — 공정색 60% 투명
           </label>
           <p className="note">
             막대 위에서 <b>우클릭</b>으로도 켜고 끌 수 있습니다.
@@ -539,8 +541,8 @@ function TaskInspector({ id }: { id: string }) {
       </div>
       {multiSel && (
         <p className="note" style={{ marginTop: 0 }}>
-          공정 <b>{selectedTaskIds.length}개</b>가 선택되어 있어 색상은 선택된 공정 전체에
-          적용됩니다.
+          공정 <b>{selectedTaskIds.length}개</b>가 선택되어 있어 각 상위 공정과 세부공정 묶음
+          전체에 같은 색상이 적용됩니다.
         </p>
       )}
 
@@ -576,7 +578,7 @@ function TaskInspector({ id }: { id: string }) {
           })}
         </div>
         <p className="note">
-          색을 클릭하면 이 공정에 적용됩니다. 빈 칸 ＋ 로 현재 색을 저장(최대 {PALETTE_MAX}개),
+          색을 클릭하면 이 공정과 세부공정 묶음에 적용됩니다. 빈 칸 ＋ 로 현재 색을 저장(최대 {PALETTE_MAX}개),
           우클릭으로 삭제합니다.
         </p>
       </div>
@@ -877,7 +879,7 @@ function LinkInspector({ id }: { id: string }) {
         연결 음영(DUMMY) 표시
       </label>
       <p className="note" style={{ marginTop: 0 }}>
-        같은 줄에서 연결된 두 공정 <b>사이 빈 구간</b>을 공종색 옅게 채우는 음영입니다. 끄면 그
+        같은 줄에서 연결된 두 공정 <b>사이 빈 구간</b>을 공정색 옅게 채우는 음영입니다. 끄면 그
         구간을 비웁니다(다른 줄로 이어지는 연결에는 영향 없음).
       </p>
       <button className="btn" style={{ width: '100%' }} onClick={() => a().deleteLink(id)}>

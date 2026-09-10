@@ -52,7 +52,7 @@ export function ViewBar() {
           className={colorMode === 'category' ? 'active' : ''}
           onClick={() => a().setColorMode('category')}
         >
-          공종색
+          공정색
         </button>
         <button
           className={colorMode === 'critical' ? 'active' : ''}
