@@ -165,6 +165,15 @@ async function main() {
   const threePctBar = document.querySelector('.chart-bar') as SVGRectElement | null
   const barScreenWidth = Number(threePctBar?.getAttribute('width') ?? 0) * 0.03
   check(barScreenWidth >= 5, `3% 전체 맞춤에서도 짧은 막대가 최소 5px 폭으로 보인다 (${barScreenWidth.toFixed(1)}px)`)
+  const threePctLink = document.querySelector('[data-link-id]') as SVGPathElement | null
+  const threePctLinkHit = document.querySelector('[data-link-hit]') as SVGPathElement | null
+  const linkScreenWidth = Number(threePctLink?.getAttribute('stroke-width') ?? 0) * 0.03
+  const linkHitScreenWidth = Number(threePctLinkHit?.getAttribute('stroke-width') ?? 0) * 0.03
+  check(linkScreenWidth >= 1.35, `3% 전체 맞춤에서도 연결선이 화면상 1.4px 이상 보인다 (${linkScreenWidth.toFixed(1)}px)`)
+  check(linkHitScreenWidth >= 13.9, `3% 전체 맞춤에서도 연결선을 잡는 영역이 화면상 14px 이상이다 (${linkHitScreenWidth.toFixed(1)}px)`)
+  const arrowMarker = document.getElementById('hn-arrow')
+  const arrowScreenWidth = Number(arrowMarker?.getAttribute('markerWidth') ?? arrowMarker?.getAttribute('marker-width') ?? 0) * 0.03
+  check(arrowScreenWidth >= 5.9, `3% 전체 맞춤에서도 화살촉이 화면상 6px 이상 보인다 (${arrowScreenWidth.toFixed(1)}px)`)
   const chartSvg = document.getElementById('sequence-chart') as unknown as SVGSVGElement | null
   check(
     !chartSvg?.textContent?.includes('공종 / 마일스톤') &&
@@ -201,6 +210,31 @@ async function main() {
     !!barExportWidth && exportedBarWidth === barExportWidth,
     `화면 판독용 최소 막대 폭이 출력 도면에는 반영되지 않는다 (기준 ${barExportWidth} · 출력 ${exportedBarWidth})`,
   )
+  const linkExportWidth = threePctLink?.getAttribute('data-export-stroke-width')
+  const exportedLinkTag = exportSvg.match(/<path[^>]*data-link-id="[^"]+"[^>]*>/)?.[0]
+  const exportedLinkWidth = exportedLinkTag?.match(/stroke-width="([^"]+)"/)?.[1]
+  check(
+    !!linkExportWidth && exportedLinkWidth === linkExportWidth,
+    `화면 판독용 연결선 확대가 출력 도면에는 반영되지 않는다 (기준 ${linkExportWidth} · 출력 ${exportedLinkWidth})`,
+  )
+  useEditor.getState().setInspectorTab('link')
+  await wait(40)
+  const linkList = document.querySelector('[aria-label="연결선 목록"]')
+  const linkChoices = linkList?.querySelectorAll('button').length ?? 0
+  check(
+    linkChoices === useEditor.getState().project.links.length && linkChoices > 0,
+    `화살표를 직접 잡지 않아도 연결 속성 목록에서 ${linkChoices}개 연결을 선택할 수 있다`,
+  )
+  ;(linkList?.querySelector('button') as HTMLButtonElement | null)?.click()
+  await wait(40)
+  check(
+    !!document.querySelector('input[aria-label="화살표 선 두께"]') &&
+      document.querySelector('.panel--right')?.textContent?.includes('화살표 선 스타일'),
+    '목록에서 연결을 고르면 선 종류·두께 편집기가 바로 열린다',
+  )
+  useEditor.getState().selectLink(null)
+  useEditor.getState().setInspectorTab('project')
+  await wait(40)
   useEditor.getState().setView({ pxPerDay: originalPxPerDay })
   useEditor.getState().setZoom(1)
   await wait(80)

@@ -82,7 +82,7 @@ export function Inspector({ width }: { width: number }) {
         ) : selectedLinkId ? (
           <LinkInspector id={selectedLinkId} />
         ) : (
-          <SelectHint kind="link" />
+          <LinkPicker />
         )}
       </div>
     </aside>
@@ -125,6 +125,40 @@ function SelectHint({ kind }: { kind: 'task' | 'link' }) {
         ? '차트나 왼쪽 공종 구성에서 공정(막대·마일스톤)을 클릭하면 여기에서 속성을 편집할 수 있습니다.'
         : '차트에서 연결(화살표)을 클릭하면 여기에서 관계·지연·선 스타일을 편집할 수 있습니다.'}
     </div>
+  )
+}
+
+/** 연결선이 겹치거나 전체 맞춤에서 짧게 보일 때도 속성 편집에 바로 들어가는 목록. */
+function LinkPicker() {
+  const project = useEditor((s) => s.project)
+  const a = useEditor.getState
+  const taskName = new Map(project.tasks.map((task) => [task.id, task.name]))
+  if (!project.links.length) {
+    return <div className="empty-hint">연결선이 없습니다. 막대 끝의 동그라미를 다른 막대 끝으로 끌어 연결하세요.</div>
+  }
+  return (
+    <>
+      <div className="field">
+        <label>연결선 선택</label>
+        <p className="note">차트의 화살표 또는 아래 목록을 누르면 선 종류와 두께를 수정할 수 있습니다.</p>
+      </div>
+      <div className="role-list" aria-label="연결선 목록">
+        {project.links.map((link) => (
+          <button
+            key={link.id}
+            type="button"
+            className="role-list__item"
+            onClick={() => a().selectLink(link.id)}
+            title={`${taskName.get(link.from) ?? '?'} → ${taskName.get(link.to) ?? '?'}`}
+          >
+            <span>{taskName.get(link.from) ?? '?'}</span>
+            <span style={{ color: 'var(--primary)', padding: '0 4px' }}>→</span>
+            <span>{taskName.get(link.to) ?? '?'}</span>
+            <small style={{ marginLeft: 'auto', color: 'var(--stone)' }}>{link.type}</small>
+          </button>
+        ))}
+      </div>
+    </>
   )
 }
 

@@ -41,11 +41,22 @@ export function buildExportSvgString(
     el.removeAttribute('data-export-font-size')
   })
   // 화면에서만 보장한 최소 막대 폭·높이와 그에 맞춘 라벨 위치도 원래 도면 좌표로 복원한다.
-  for (const attr of ['x', 'y', 'width', 'height', 'points'] as const) {
-    clone.querySelectorAll(`[data-export-${attr}]`).forEach((el) => {
-      const value = el.getAttribute(`data-export-${attr}`)
-      if (value != null) el.setAttribute(attr, value)
-      el.removeAttribute(`data-export-${attr}`)
+  const exportAttrs = [
+    ['x', 'x'],
+    ['y', 'y'],
+    ['width', 'width'],
+    ['height', 'height'],
+    ['points', 'points'],
+    ['stroke-width', 'stroke-width'],
+    ['stroke-dasharray', 'stroke-dasharray'],
+    ['marker-width', 'markerWidth'],
+    ['marker-height', 'markerHeight'],
+  ] as const
+  for (const [dataName, svgName] of exportAttrs) {
+    clone.querySelectorAll(`[data-export-${dataName}]`).forEach((el) => {
+      const value = el.getAttribute(`data-export-${dataName}`)
+      if (value != null) el.setAttribute(svgName, value)
+      el.removeAttribute(`data-export-${dataName}`)
     })
   }
   clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg')

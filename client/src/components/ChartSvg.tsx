@@ -120,6 +120,11 @@ function ChartSvgBase({
   const monthLineW = project.view.monthLineWidth ?? 1
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
   const screenScale = Math.max(0.02, zoom)
+  // 전체 맞춤처럼 배율이 낮아져도 연결선과 화살촉은 화면에서 막대와 함께 읽혀야 한다.
+  // 출력 시에는 data-export-* 값으로 사용자가 지정한 원래 도면 두께를 복원한다.
+  const arrowScreenSize = 6
+  const arrowSize = Math.max(9, arrowScreenSize / screenScale)
+  const criticalArrowSize = Math.max(10, (arrowScreenSize + 1) / screenScale)
   // presence 마커는 줌에 반비례로 역-스케일 → 확대/축소해도 항상 같은(큰) 화면 크기로 보임(관제 가독성).
   const presenceScale = 1 / Math.max(0.1, zoom)
   const selSet = new Set(selectedTaskIds)
@@ -220,21 +225,27 @@ function ChartSvgBase({
       <defs>
         <marker
           id="hn-arrow"
-          markerWidth="9"
-          markerHeight="9"
-          refX="7"
-          refY="4.5"
+          markerWidth={arrowSize}
+          markerHeight={arrowSize}
+          data-export-marker-width="9"
+          data-export-marker-height="9"
+          refX="8"
+          refY="5"
+          viewBox="0 0 10 10"
           orient="auto"
           markerUnits="userSpaceOnUse"
         >
-          <path d="M1,1 L8,4.5 L1,8 Z" fill={colors.steel} />
+          <path d="M1,1 L9,5 L1,9 Z" fill={colors.charcoal} />
         </marker>
         <marker
           id="hn-arrow-crit"
-          markerWidth="10"
-          markerHeight="10"
-          refX="7.5"
+          markerWidth={criticalArrowSize}
+          markerHeight={criticalArrowSize}
+          data-export-marker-width="10"
+          data-export-marker-height="10"
+          refX="8"
           refY="5"
+          viewBox="0 0 10 10"
           orient="auto"
           markerUnits="userSpaceOnUse"
         >
@@ -569,7 +580,7 @@ function ChartSvgBase({
           const selected = r.id === selectedLinkId
           // User-chosen line style overrides the auto pattern (auto = critical solid,
           // others dashed) so arrows can be drawn 실선/파선/점선 individually.
-          const dash =
+          const baseDash =
             r.style === 'solid'
               ? undefined
               : r.style === 'dashed'
@@ -579,9 +590,19 @@ function ChartSvgBase({
                   : crit
                     ? undefined
                     : '5 3'
+          const dashScale = Math.max(1, 1 / screenScale)
+          const dash = baseDash
+            ?.split(' ')
+            .map((part) => Number(part) * dashScale)
+            .join(' ')
           // 사용자 지정 선 두께(연결 속성) 우선, 없으면 자동(주공정 2·그 외 1.3).
           const baseW = r.width ?? (crit ? 2 : 1.3)
-          const lineW = selected ? Math.max(2.4, baseW) : baseW
+          const fromBar = model.tasks.find((lt) => lt.task.id === r.from)
+          const toBar = model.tasks.find((lt) => lt.task.id === r.to)
+          const endpointBarScreenHeight = Math.max(fromBar?.h ?? 0, toBar?.h ?? 0) * screenScale
+          const proportionalScreenW = Math.max(1.4, Math.min(3.5, endpointBarScreenHeight * 0.12))
+          const readableW = Math.max(baseW, proportionalScreenW / screenScale)
+          const lineW = selected ? Math.max(readableW, 2.4 / screenScale) : readableW
           return (
             <g key={r.id}>
               {/* Invisible fat hit area: pointer-events:'stroke' makes the WHOLE
@@ -593,8 +614,9 @@ function ChartSvgBase({
                 d={r.d}
                 fill="none"
                 stroke="transparent"
-                strokeWidth={Math.max(14, lineW + 6)}
+                strokeWidth={Math.max(14 / screenScale, lineW + 6 / screenScale)}
                 strokeLinecap="round"
+                data-link-hit={r.id}
                 data-export-hide="1"
                 style={{ cursor: 'pointer', pointerEvents: 'stroke' }}
                 onClick={(e) => {
@@ -605,8 +627,11 @@ function ChartSvgBase({
               <path
                 d={r.d}
                 fill="none"
-                stroke={selected ? colors.primary : crit ? colors.critical : colors.steel}
+                stroke={selected ? colors.primary : crit ? colors.critical : colors.charcoal}
                 strokeWidth={lineW}
+                data-link-id={r.id}
+                data-export-stroke-width={baseW}
+                data-export-stroke-dasharray={baseDash}
                 strokeDasharray={dash}
                 markerEnd={`url(#${crit ? 'hn-arrow-crit' : 'hn-arrow'})`}
                 style={{ pointerEvents: 'none' }}
