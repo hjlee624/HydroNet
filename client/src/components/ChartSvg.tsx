@@ -119,6 +119,7 @@ function ChartSvgBase({
   const showMonthLine = project.view.showMonthLine !== false
   const monthLineW = project.view.monthLineWidth ?? 1
   const milestoneR = Math.min(model.rowHeight * 0.3, 11)
+  const screenScale = Math.max(0.02, zoom)
   // presence 마커는 줌에 반비례로 역-스케일 → 확대/축소해도 항상 같은(큰) 화면 크기로 보임(관제 가독성).
   const presenceScale = 1 / Math.max(0.1, zoom)
   const selSet = new Set(selectedTaskIds)
@@ -644,7 +645,9 @@ function ChartSvgBase({
           if (lt.isMilestone) {
             // Critical milestones are enlarged with a red halo so the critical
             // path reads clearly even at the diamond markers.
-            const r = crit ? milestoneR * 1.45 : milestoneR
+            const baseR = crit ? milestoneR * 1.45 : milestoneR
+            const r = Math.min(model.rowHeight * 0.3, Math.max(baseR, 5 / screenScale))
+            const hitR = Math.min(model.rowHeight * 0.42, Math.max(r, 10 / screenScale))
             return (
               <g
                 key={t.id}
@@ -685,6 +688,18 @@ function ChartSvgBase({
                     opacity={0.2}
                   />
                 )}
+                {!mirror && (
+                  <circle
+                    data-task-id={t.id}
+                    data-export-hide="1"
+                    cx={lt.cx}
+                    cy={lt.cy}
+                    r={hitR}
+                    fill="transparent"
+                    style={{ cursor: 'pointer' }}
+                    onPointerDown={(e) => onTaskPointerDown(e, t.id)}
+                  />
+                )}
                 <polygon
                   data-task-id={mirror ? undefined : t.id}
                   points={diamond(lt.cx, lt.cy, r)}
@@ -706,6 +721,16 @@ function ChartSvgBase({
               </g>
             )
           }
+          const visibleHeight = Math.min(
+            model.rowHeight * 0.8,
+            Math.max(lt.h, 6 / screenScale),
+          )
+          const visibleY = lt.cy - visibleHeight / 2
+          const hitHeight = Math.min(
+            model.rowHeight * 0.9,
+            Math.max(visibleHeight, 18 / screenScale),
+          )
+          const hitY = lt.cy - hitHeight / 2
           return (
             <g
               key={t.id}
@@ -739,13 +764,31 @@ function ChartSvgBase({
               >
                 {t.name}
               </text>
+              {!mirror && (
+                <rect
+                  data-task-id={t.id}
+                  data-export-hide="1"
+                  x={lt.x}
+                  y={hitY}
+                  width={lt.w}
+                  height={hitHeight}
+                  rx={3}
+                  fill="transparent"
+                  style={{ cursor: 'grab' }}
+                  onPointerDown={(e) => onTaskPointerDown(e, t.id)}
+                  onMouseEnter={
+                    !onTaskHover ? undefined : (e) => onTaskHover(t.id, e.clientX, e.clientY)
+                  }
+                  onMouseLeave={!onTaskHover ? undefined : () => onTaskHover(null, 0, 0)}
+                />
+              )}
               <rect
                 className="chart-bar"
                 data-task-id={mirror ? undefined : t.id}
                 x={lt.x}
-                y={lt.y}
+                y={visibleY}
                 width={lt.w}
-                height={lt.h}
+                height={visibleHeight}
                 rx={3}
                 fill={fill}
                 fillOpacity={isDummy ? DUMMY_OPACITY : mirror ? 0.5 : undefined}
@@ -778,7 +821,7 @@ function ChartSvgBase({
               </rect>
               <text
                 x={lt.x}
-                y={lt.y + lt.h + roleAttrs('taskDuration').fontSize * 0.85 + 3}
+                y={visibleY + visibleHeight + roleAttrs('taskDuration').fontSize * 0.85 + 3}
                 {...roleAttrs('taskDuration')}
                 style={{ ...roleAttrs('taskDuration').style, pointerEvents: 'none' }}
               >
@@ -796,9 +839,9 @@ function ChartSvgBase({
                     {ref ? (
                       <line
                         x1={lt.x}
-                        y1={lt.y + 0.75}
+                        y1={visibleY + 0.75}
                         x2={lt.x + lt.w}
-                        y2={lt.y + 0.75}
+                        y2={visibleY + 0.75}
                         stroke={warnColor}
                         strokeWidth={1.5}
                         strokeDasharray="3 2.5"
@@ -806,7 +849,7 @@ function ChartSvgBase({
                     ) : (
                       <rect
                         x={lt.x}
-                        y={lt.y - 0.5}
+                        y={visibleY - 0.5}
                         width={lt.w}
                         height={2.5}
                         rx={1}
@@ -830,12 +873,16 @@ function ChartSvgBase({
                   primary single selection only (다중선택 그룹 이동 중엔 숨김 · 미러 제외). */}
               {t.id === selectedTaskId && singleSel && !mirror && (
                 <>
+                  {(() => {
+                    const gripWidth = Math.max(6, 10 / screenScale)
+                    return (
+                      <>
                   <rect
                     data-export-hide="1"
-                    x={lt.startX - 3}
-                    y={lt.y - 1}
-                    width={6}
-                    height={lt.h + 2}
+                    x={lt.startX - gripWidth / 2}
+                    y={hitY}
+                    width={gripWidth}
+                    height={hitHeight}
                     rx={1.5}
                     fill={colors.primary}
                     stroke={colors.canvas}
@@ -845,10 +892,10 @@ function ChartSvgBase({
                   />
                   <rect
                     data-export-hide="1"
-                    x={lt.endX - 3}
-                    y={lt.y - 1}
-                    width={6}
-                    height={lt.h + 2}
+                    x={lt.endX - gripWidth / 2}
+                    y={hitY}
+                    width={gripWidth}
+                    height={hitHeight}
                     rx={1.5}
                     fill={colors.primary}
                     stroke={colors.canvas}
@@ -856,6 +903,9 @@ function ChartSvgBase({
                     style={{ cursor: 'ew-resize' }}
                     onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'end')}
                   />
+                      </>
+                    )
+                  })()}
                   {/* 연결 앵커 2개 — 막대 앞(start)·뒤(end) 양쪽에서 화살표를 끌어 만들 수 있다.
                       출발 끝점 + 도착 끝점 조합으로 FS/SS/FF/SF가 자동 결정된다. */}
                   <circle
@@ -863,7 +913,7 @@ function ChartSvgBase({
                     className="chart-anchor"
                     cx={lt.startX - 11}
                     cy={lt.cy}
-                    r={5.5}
+                    r={Math.max(5.5, 8 / screenScale)}
                     fill={colors.canvas}
                     stroke={colors.primary}
                     strokeWidth={2}
@@ -874,7 +924,7 @@ function ChartSvgBase({
                     className="chart-anchor"
                     cx={lt.endX + 11}
                     cy={lt.cy}
-                    r={5.5}
+                    r={Math.max(5.5, 8 / screenScale)}
                     fill={colors.canvas}
                     stroke={colors.primary}
                     strokeWidth={2}

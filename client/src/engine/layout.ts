@@ -138,6 +138,17 @@ export interface LayoutFilter {
   query: string
 }
 
+/** UI에서 다루는 '월 폭'과 일정 엔진의 px/day 사이 변환 기준. */
+export const AVERAGE_DAYS_PER_MONTH = 365.2425 / 12
+
+export function monthWidthFromPxPerDay(pxPerDay: number): number {
+  return pxPerDay * AVERAGE_DAYS_PER_MONTH
+}
+
+export function pxPerDayFromMonthWidth(monthWidth: number): number {
+  return Math.min(400, Math.max(0.05, monthWidth / AVERAGE_DAYS_PER_MONTH))
+}
+
 function matchesFilter(t: Task, f?: LayoutFilter): boolean {
   if (!f) return true
   if (f.critical && !t.critical) return false

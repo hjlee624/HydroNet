@@ -114,6 +114,7 @@ async function main() {
 
   const { useEditor } = await import('../src/state/store')
   const { fitChartZoom } = await import('../src/components/ChartCanvas')
+  const { monthWidthFromPxPerDay, pxPerDayFromMonthWidth } = await import('../src/engine/layout')
   const { ALL_SHORTCUTS } = await import('../src/state/keymap')
   const wait = (ms: number) => new Promise((r) => setTimeout(r, ms))
   const key = (target: EventTarget, init: KeyboardEventInit) =>
@@ -121,6 +122,29 @@ async function main() {
 
   const topbar = document.querySelector('.topbar') as HTMLElement | null
   check(!!topbar && getComputedStyle(topbar).flexWrap === 'nowrap', '상단바는 한 줄 레이아웃을 유지한다')
+
+  console.log('\n[월 폭·저배율 편집성]')
+  const monthWidthInput = document.querySelector('input[aria-label="월 폭"]') as HTMLInputElement | null
+  check(!!monthWidthInput, '도면·프로젝트 속성에 월 폭 조절기가 렌더된다')
+  const originalPxPerDay = useEditor.getState().project.view.pxPerDay
+  useEditor.getState().setView({ pxPerDay: pxPerDayFromMonthWidth(120) })
+  check(
+    Math.abs(monthWidthFromPxPerDay(useEditor.getState().project.view.pxPerDay) - 120) < 0.01,
+    '월 폭을 공사기간·용지와 별도로 설정할 수 있다',
+  )
+  useEditor.getState().setZoom(0.15)
+  await wait(80)
+  const lowZoomBar = document.querySelector('.chart-bar') as SVGRectElement | null
+  const lowZoomHit = lowZoomBar?.parentElement?.querySelector(
+    'rect[data-export-hide="1"][fill="transparent"][data-task-id]',
+  ) as SVGRectElement | null
+  const visibleScreenHeight = Number(lowZoomBar?.getAttribute('height') ?? 0) * 0.15
+  const hitScreenHeight = Number(lowZoomHit?.getAttribute('height') ?? 0) * 0.15
+  check(visibleScreenHeight >= 5, `15% 배율에서도 막대가 화면상 5px 이상 보인다 (${visibleScreenHeight.toFixed(1)}px)`)
+  check(hitScreenHeight > visibleScreenHeight, `막대의 투명 클릭 영역이 시각 막대보다 넓다 (${hitScreenHeight.toFixed(1)}px)`)
+  useEditor.getState().setView({ pxPerDay: originalPxPerDay })
+  useEditor.getState().setZoom(1)
+  await wait(80)
 
   console.log('\n[공정표 전체 맞춤]')
   const canvasWrap = document.querySelector('.canvas-wrap') as HTMLElement | null

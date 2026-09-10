@@ -8,7 +8,12 @@ import { standardDurationIndex } from '../data/facilities'
 import { findStandardRate, STANDARD_RATE_OPTIONS } from '../data/standardRates'
 import { assessConstructionPeriod, assessTaskAdequacy, normWorkName } from '../engine/adequacy'
 import { dateToDay, daysInMonth, dayToDate, parseISO, toISO } from '../engine/dates'
-import { computeLayout, fitToPaperView } from '../engine/layout'
+import {
+  computeLayout,
+  fitToPaperView,
+  monthWidthFromPxPerDay,
+  pxPerDayFromMonthWidth,
+} from '../engine/layout'
 import { PAPER_SIZES, paperMm } from '../engine/paper'
 import { type EditImpact, previewEdit } from '../engine/scheduling'
 import type { InspectorTab } from '../state/store'
@@ -852,9 +857,10 @@ function ProjectInspector() {
   const project = useEditor((s) => s.project)
   const a = useEditor.getState
   const fontScale = project.view.fontScale ?? 1
+  const monthWidth = Math.round(monthWidthFromPxPerDay(project.view.pxPerDay))
   // Margin the letterbox fit would leave = how far the drawing aspect is from
-  // the sheet. Changing the sheet auto-fits (one undoable step) so the preview
-  // conforms live; DPI is set later in the 도면 출력 dialog, not here.
+  // the sheet. Paper selection preserves the editing density; the explicit fit
+  // button below is the only action that rewrites the time/row scale.
   const fitState = useMemo(() => {
     const m = computeLayout(project)
     const { w, h } = paperMm(project.paper.size, project.paper.orientation)
@@ -867,10 +873,7 @@ function ProjectInspector() {
     return { offPct, canFit }
   }, [project])
   function setSheet(patch: { size?: PaperSize; orientation?: 'landscape' | 'portrait' }) {
-    a().beginGesture()
     a().setPaper(patch)
-    a().fitToPaper()
-    a().endGesture()
   }
   const rainy = project.rainySeasons[0]
   const logos = project.branding?.logos ?? []
@@ -1122,6 +1125,39 @@ function ProjectInspector() {
       </div>
       <div className="field">
         <label>
+          월 폭{' '}
+          <span style={{ color: 'var(--stone)', fontWeight: 400 }}>{monthWidth}px</span>
+        </label>
+        <input
+          type="range"
+          min={8}
+          max={600}
+          step={2}
+          value={monthWidth}
+          onChange={(e) =>
+            a().setView({ pxPerDay: pxPerDayFromMonthWidth(Number(e.target.value)) })
+          }
+          aria-label="월 폭"
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span className="note" style={{ margin: 0 }}>
+            좁게 · 전체 기간 확인
+          </span>
+          <button
+            type="button"
+            className="btn btn--sm"
+            onClick={() => a().setView({ pxPerDay: 1.5 })}
+          >
+            기본 46px
+          </button>
+          <span className="note" style={{ margin: 0 }}>
+            넓게 · 세부 편집
+          </span>
+        </div>
+      </div>
+      <div className="field">
+        <label>
           글자 크기{' '}
           <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
             {Math.round(fontScale * 100)}%
@@ -1166,8 +1202,8 @@ function ProjectInspector() {
         </div>
       )}
       <p className="note">
-        용지·방향을 바꾸면 자동으로 여백 없이 채워집니다. 출력 해상도(DPI)는 <b>도면 출력</b> 창에서
-        정합니다.
+        용지·방향을 바꿔도 월 폭과 행 높이는 유지됩니다. 필요할 때만 위 버튼으로 시트 비율을
+        맞추세요. 출력 해상도(DPI)는 <b>도면 출력</b> 창에서 정합니다.
       </p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
