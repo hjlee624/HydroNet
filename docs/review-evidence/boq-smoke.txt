@@ -2,4 +2,4 @@
 > sequence-client@0.1.0 smoke:boq
 > tsx scripts/boq-smoke.ts
 
-✓ boq-smoke: 34 checks passed
+✓ boq-smoke: 37 checks passed

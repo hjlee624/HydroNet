@@ -157,8 +157,59 @@ export const SCREEN_TEXT_MIN_PX: Record<TextRole, number> = {
   rainyLabel: 7.5,
 }
 
-export function readableScreenTextSize(role: TextRole, baseSize: number, zoom: number): number {
-  return Math.max(baseSize, SCREEN_TEXT_MIN_PX[role] / Math.max(0.02, zoom))
+/**
+ * 저배율에서도 읽히도록 화면 글자 크기를 역보정한다(출력물은 data-export-font-size 로 원래
+ * 크기를 복원하므로 영향 없음).
+ *
+ * `maxSize` 는 **행 높이가 허락하는 상한**이다. layout.ts 는 확대 *전* 글자 크기로 행 높이를
+ * 잡기 때문에, 상한 없이 키우면 위 행의 공사일수(막대 아래)와 아래 행의 공정명(막대 위)이
+ * 같은 띠를 차지해 서로 겹친다. 상한을 줘도 base 아래로는 내리지 않는다 — base 는 layout 이
+ * 이미 자리를 확보해 둔 크기라 줄일 이유가 없다.
+ */
+export function readableScreenTextSize(
+  role: TextRole,
+  baseSize: number,
+  zoom: number,
+  maxSize?: number,
+): number {
+  const wanted = Math.max(baseSize, SCREEN_TEXT_MIN_PX[role] / Math.max(0.02, zoom))
+  if (maxSize == null || !Number.isFinite(maxSize)) return wanted
+  return Math.max(baseSize, Math.min(wanted, maxSize))
+}
+
+/** 글자 크기 대비 실제 <text> 상자 높이 배수(어센더·디센더 포함) — 실측 1.53~1.60. */
+export const TEXT_BOX_RATIO = 1.6
+
+/**
+ * 한 행이 감당할 수 있는 공정명·공사일수 화면 글자 크기를 정한다.
+ *
+ * 공정명은 막대 **위**, 공사일수는 막대 **아래**에 놓이므로 이웃한 두 행 사이의 띠에는
+ * "위 행의 공사일수 + 아래 행의 공정명"이 함께 들어간다. layout.ts 는 **확대 전** 크기로 행
+ * 높이를 잡는데 저배율에서는 화면 글자를 minPx/zoom 으로 키우므로, 상한을 두지 않으면 둘이
+ * 겹친다(실측: 48% 배율 TBM 터널 프리셋에서 9~12px 겹침).
+ *
+ * 둘 다 판독 크기로 들어가면 그대로 두고, 안 되면 **이름을 우선**해 띠 전체를 이름에 주고
+ * 공사일수는 화면에서만 감춘다. 공사일수 몫을 남겨 두면 이름까지 판독 크기 아래로 내려가
+ * (실측 5.3px) 둘 다 못 읽게 되기 때문이다. 감춘 라벨은 출력에서 되살린다.
+ */
+export function resolveRowLabelSizes(args: {
+  rowHeight: number
+  barHeight: number
+  nameBase: number
+  durationBase: number
+  zoom: number
+}): { nameSize: number; durationSize: number; showDuration: boolean } {
+  const { rowHeight, barHeight, nameBase, durationBase, zoom } = args
+  const budget = Math.max(0, rowHeight - barHeight)
+  const nameWanted = readableScreenTextSize('taskName', nameBase, zoom)
+  const durationWanted = readableScreenTextSize('taskDuration', durationBase, zoom)
+  if ((nameWanted + durationWanted) * TEXT_BOX_RATIO <= budget)
+    return { nameSize: nameWanted, durationSize: durationWanted, showDuration: true }
+  return {
+    nameSize: readableScreenTextSize('taskName', nameBase, zoom, budget / TEXT_BOX_RATIO),
+    durationSize: durationBase,
+    showDuration: false,
+  }
 }
 
 /** Selectable 글꼴 options for the text-style inspector (export-safe Windows faces). */

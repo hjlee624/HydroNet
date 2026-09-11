@@ -28,14 +28,14 @@ cd client && npx tsx ../docs/review-evidence/domain-probe.ts > ../docs/review-ev
 
 | 파일 | 무엇을 보여주는가 | 결과 |
 | --- | --- | --- |
-| `client-smoke.txt` | 레이아웃·라우팅·프리셋 마일스톤 위생·일정 편집 의미론 | ✅ ALL PASS (검사 371건) |
+| `client-smoke.txt` | 레이아웃·라우팅·프리셋 마일스톤 위생·일정 편집 의미론·행 라벨 띠 예산 | ✅ ALL PASS |
 | `adequacy-smoke.txt` | 공기 적정성(법정 산정식·단위 검증·허용 편차) | ✓ 108 checks passed |
-| `boq-smoke.txt` | 내역서(BoQ) 파싱·매핑·미매칭 행 노출 | ✓ 34 checks passed |
+| `boq-smoke.txt` | 내역서(BoQ) 파싱·매핑·미매칭 행 노출 | ✓ 37 checks passed |
 | `crdt-smoke.txt` | 협업 수렴·권위·산정 전제 병합·실적 필드 병합·감사기록 | CRDT SMOKE OK |
 | `export-smoke.txt` | 출력 범위·사전 점검·단축키 범위 행렬·서버 시드 왕복 | ✅ EXPORT SMOKE OK |
 | `persist-smoke.txt` | 저장 표시 모델·내용 대조 확정·파일 백업 정직성·스키마 버전 | passed |
-| `schedule-import-smoke.txt` | 일정표 취입 왕복·오류행·복구 시 감사기록 보존 | ✓ 238 checks passed |
-| `perf-smoke.txt` | 100/500/1000공정 산정·레이아웃 응답 시간 | ✅ PERF OK (1000공정 p95 4.1ms) |
+| `schedule-import-smoke.txt` | 일정표 취입 왕복·오류행·복구 시 감사기록 보존 | ✓ 244 checks passed |
+| `perf-smoke.txt` | 100/500/1000공정 산정·레이아웃 응답 시간 | ✅ PERF OK (1000공정 p95 3.9ms) |
 | `mount-test.txt` | 실제 DOM 마운트 — 모달 포커스·출력 대화상자·반응형·지원 대화상자 | ✅ MOUNT OK |
 | `onboarding-smoke.txt` | 첫 실행 안내 단계 판정·프로젝트 목록 권한 범위 | ✅ ONBOARDING SMOKE PASS |
 | `presence-smoke.txt` | 참여자 표시(전송 전용, Y.Doc 미기록) | passed |

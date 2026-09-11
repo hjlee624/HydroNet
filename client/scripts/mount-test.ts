@@ -1,8 +1,9 @@
 // Dev-only: mount the FULL React app in jsdom to catch runtime render errors
 // (e.g. unstable zustand selectors → infinite loop → blank screen) that the
 // type-check / bundle build cannot detect. Run: npx tsx scripts/mount-test.ts
-import { JSDOM } from 'jsdom'
+
 import { readFileSync } from 'node:fs'
+import { JSDOM } from 'jsdom'
 
 const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
   url: 'http://localhost:5273/',
@@ -115,7 +116,9 @@ async function main() {
 
   const { useEditor } = await import('../src/state/store')
   const { fitChartZoom, fitOverviewDensity } = await import('../src/components/ChartCanvas')
-  const { AUTO_FIT_LIMITS, monthWidthFromPxPerDay, pxPerDayFromMonthWidth } = await import('../src/engine/layout')
+  const { AUTO_FIT_LIMITS, monthWidthFromPxPerDay, pxPerDayFromMonthWidth } = await import(
+    '../src/engine/layout'
+  )
   const { SCREEN_TEXT_MIN_PX } = await import('../src/styles/theme')
   const { buildExportSvgString } = await import('../src/export/exporter')
   const { ALL_SHORTCUTS } = await import('../src/state/keymap')
@@ -124,7 +127,10 @@ async function main() {
     target.dispatchEvent(new w.KeyboardEvent('keydown', { bubbles: true, ...init }))
 
   const topbar = document.querySelector('.topbar') as HTMLElement | null
-  check(!!topbar && getComputedStyle(topbar).flexWrap === 'nowrap', '상단바는 한 줄 레이아웃을 유지한다')
+  check(
+    !!topbar && getComputedStyle(topbar).flexWrap === 'nowrap',
+    '상단바는 한 줄 레이아웃을 유지한다',
+  )
   const appCss = readFileSync(new URL('../src/styles/index.css', import.meta.url), 'utf8')
   check(
     /\.topbar\s*\{[\s\S]*?overflow:\s*hidden\s*;/.test(appCss),
@@ -139,14 +145,21 @@ async function main() {
   useEditor.getState().setInspectorTab('text')
   useEditor.getState().selectTextRole('taskName')
   await wait(40)
-  const textSizeInput = document.querySelector('.panel--right input[type="number"]') as HTMLInputElement | null
-  check(!!textSizeInput && !textSizeInput.hasAttribute('max'), '텍스트 글자 크기 입력에는 최대값 제한이 없다')
+  const textSizeInput = document.querySelector(
+    '.panel--right input[type="number"]',
+  ) as HTMLInputElement | null
+  check(
+    !!textSizeInput && !textSizeInput.hasAttribute('max'),
+    '텍스트 글자 크기 입력에는 최대값 제한이 없다',
+  )
   useEditor.getState().selectTextRole(null)
   useEditor.getState().setInspectorTab('project')
   await wait(40)
 
   console.log('\n[월 폭·저배율 편집성]')
-  const monthWidthInput = document.querySelector('input[aria-label="월 폭"]') as HTMLInputElement | null
+  const monthWidthInput = document.querySelector(
+    'input[aria-label="월 폭"]',
+  ) as HTMLInputElement | null
   check(!!monthWidthInput, '도면·프로젝트 속성에 월 폭 조절기가 렌더된다')
   const originalPxPerDay = useEditor.getState().project.view.pxPerDay
   useEditor.getState().setView({ pxPerDay: pxPerDayFromMonthWidth(120) })
@@ -162,18 +175,18 @@ async function main() {
   ) as SVGRectElement | null
   const visibleScreenHeight = Number(lowZoomBar?.getAttribute('height') ?? 0) * 0.15
   const hitScreenHeight = Number(lowZoomHit?.getAttribute('height') ?? 0) * 0.15
-  check(visibleScreenHeight >= 5, `15% 배율에서도 막대가 화면상 5px 이상 보인다 (${visibleScreenHeight.toFixed(1)}px)`)
-  check(hitScreenHeight > visibleScreenHeight, `막대의 투명 클릭 영역이 시각 막대보다 넓다 (${hitScreenHeight.toFixed(1)}px)`)
+  check(
+    visibleScreenHeight >= 5,
+    `15% 배율에서도 막대가 화면상 5px 이상 보인다 (${visibleScreenHeight.toFixed(1)}px)`,
+  )
+  check(
+    hitScreenHeight > visibleScreenHeight,
+    `막대의 투명 클릭 영역이 시각 막대보다 넓다 (${hitScreenHeight.toFixed(1)}px)`,
+  )
   useEditor.getState().setZoom(0.03)
   await wait(80)
-  const readableRoles = [
-    'title',
-    'categoryLabel',
-    'taskName',
-    'taskDuration',
-    'axisYear',
-    'axisMonth',
-  ] as const
+  // 행에 얽매이지 않는 역할(제목·공종·연·월)은 저배율에서도 판독 크기를 그대로 지킨다.
+  const readableRoles = ['title', 'categoryLabel', 'axisYear', 'axisMonth'] as const
   for (const role of readableRoles) {
     const textEl = document.querySelector(`[data-text-role="${role}"]`) as SVGTextElement | null
     const screenPx = Number(textEl?.getAttribute('font-size') ?? 0) * 0.03
@@ -182,18 +195,54 @@ async function main() {
       `3% 전체 맞춤에서도 ${role} 글자가 최소 ${SCREEN_TEXT_MIN_PX[role]}px로 보인다 (${screenPx.toFixed(1)}px)`,
     )
   }
+  // taskName·taskDuration 은 **행 높이 안에 갇힌** 라벨이라 사정이 다르다. 공정명은 막대 위,
+  // 공사일수는 막대 아래에 놓여 이웃한 두 행 사이 띠를 나눠 쓰기 때문이다. 3% 배율에서 둘 다
+  // 판독 크기로 만들려면 행 띠가 853units 필요한데 자동 맞춤 행 높이 상한은 240units 다
+  // (이름만 따져도 453units — 1.9배 초과). 예전에는 이 검사를 통과시키려고 글자를 키웠지만
+  // 그 결과가 실제 브라우저에서 측정된 9~12px 라벨 겹침이었다(TBM 터널 프리셋 48% 배율).
+  // 그래서 지킬 수 있는 계약으로 바꾼다: **겹치지 않을 것**, 그리고 **행이 허락하는 한 최대로
+  // 키울 것**. 공사일수는 자리가 없으면 화면에서만 감추고 출력물에서는 되살린다.
+  {
+    const nameEl = document.querySelector('[data-text-role="taskName"]') as SVGTextElement | null
+    const durEl = document.querySelector('[data-text-role="taskDuration"]') as SVGTextElement | null
+    const nameSize = Number(nameEl?.getAttribute('font-size') ?? 0)
+    const durHidden = durEl?.getAttribute('opacity') === '0'
+    check(nameSize > 0, '3% 전체 맞춤에서도 공정명 라벨은 렌더된다')
+    check(durHidden, '3% 전체 맞춤에서 공사일수는 화면에서 감춘다(겹침 방지 — 출력에는 남는다)')
+    check(
+      durEl?.getAttribute('data-export-opacity') === '1',
+      '감춘 공사일수는 출력물에서 되살아난다(data-export-opacity=1)',
+    )
+    // 띠 예산 산식 자체(겹치지 않는 크기 선택)는 순수 함수로 smoke.ts 에서 수치까지 검증한다 —
+    // jsdom 은 레이아웃 엔진이 없어 getBBox/폭이 0 이라 여기서는 잴 수 없다.
+  }
   const threePctBar = document.querySelector('.chart-bar') as SVGRectElement | null
   const barScreenWidth = Number(threePctBar?.getAttribute('width') ?? 0) * 0.03
-  check(barScreenWidth >= 5, `3% 전체 맞춤에서도 짧은 막대가 최소 5px 폭으로 보인다 (${barScreenWidth.toFixed(1)}px)`)
+  check(
+    barScreenWidth >= 5,
+    `3% 전체 맞춤에서도 짧은 막대가 최소 5px 폭으로 보인다 (${barScreenWidth.toFixed(1)}px)`,
+  )
   const threePctLink = document.querySelector('[data-link-id]') as SVGPathElement | null
   const threePctLinkHit = document.querySelector('[data-link-hit]') as SVGPathElement | null
   const linkScreenWidth = Number(threePctLink?.getAttribute('stroke-width') ?? 0) * 0.03
   const linkHitScreenWidth = Number(threePctLinkHit?.getAttribute('stroke-width') ?? 0) * 0.03
-  check(linkScreenWidth >= 1.35, `3% 전체 맞춤에서도 연결선이 화면상 1.4px 이상 보인다 (${linkScreenWidth.toFixed(1)}px)`)
-  check(linkHitScreenWidth >= 13.9, `3% 전체 맞춤에서도 연결선을 잡는 영역이 화면상 14px 이상이다 (${linkHitScreenWidth.toFixed(1)}px)`)
+  check(
+    linkScreenWidth >= 1.35,
+    `3% 전체 맞춤에서도 연결선이 화면상 1.4px 이상 보인다 (${linkScreenWidth.toFixed(1)}px)`,
+  )
+  check(
+    linkHitScreenWidth >= 13.9,
+    `3% 전체 맞춤에서도 연결선을 잡는 영역이 화면상 14px 이상이다 (${linkHitScreenWidth.toFixed(1)}px)`,
+  )
   const arrowMarker = document.getElementById('hn-arrow')
-  const arrowScreenWidth = Number(arrowMarker?.getAttribute('markerWidth') ?? arrowMarker?.getAttribute('marker-width') ?? 0) * 0.03
-  check(arrowScreenWidth >= 5.9, `3% 전체 맞춤에서도 화살촉이 화면상 6px 이상 보인다 (${arrowScreenWidth.toFixed(1)}px)`)
+  const arrowScreenWidth =
+    Number(
+      arrowMarker?.getAttribute('markerWidth') ?? arrowMarker?.getAttribute('marker-width') ?? 0,
+    ) * 0.03
+  check(
+    arrowScreenWidth >= 5.9,
+    `3% 전체 맞춤에서도 화살촉이 화면상 6px 이상 보인다 (${arrowScreenWidth.toFixed(1)}px)`,
+  )
   const chartSvg = document.getElementById('sequence-chart') as unknown as SVGSVGElement | null
   check(
     !chartSvg?.textContent?.includes('공종 / 마일스톤') &&
@@ -222,9 +271,11 @@ async function main() {
   ]
   const collisionLayout = arrangeLabelCenters(collisionLabels, collisionFont, 0, 400)
   const leftRight =
-    (collisionLayout.get('left') ?? 0) + estimateLabelWidth(collisionLabels[0].text, collisionFont) / 2
+    (collisionLayout.get('left') ?? 0) +
+    estimateLabelWidth(collisionLabels[0].text, collisionFont) / 2
   const rightLeft =
-    (collisionLayout.get('right') ?? 0) - estimateLabelWidth(collisionLabels[1].text, collisionFont) / 2
+    (collisionLayout.get('right') ?? 0) -
+    estimateLabelWidth(collisionLabels[1].text, collisionFont) / 2
   check(leftRight < rightLeft, '같은 행에서 가까운 공정명은 좌우로 벌려 서로 겹치지 않는다')
   const exportBaseSize = screenTaskText?.getAttribute('data-export-font-size')
   const exportSvg = chartSvg
@@ -296,7 +347,10 @@ async function main() {
     const fittedWidth = Number.parseFloat(paperScale?.style.width ?? 'Infinity')
     const fittedHeight = Number.parseFloat(paperScale?.style.height ?? 'Infinity')
     check(fitted < 1, `큰 시트는 100% 아래로 축소된다 (${Math.round(fitted * 100)}%)`)
-    check(fittedWidth <= 852.5 && fittedHeight <= 552.5, '현재 시트의 가로·세로 전체가 캔버스 안에 들어온다')
+    check(
+      fittedWidth <= 852.5 && fittedHeight <= 552.5,
+      '현재 시트의 가로·세로 전체가 캔버스 안에 들어온다',
+    )
     check(
       fittedWidth >= 852 * 0.85 && fittedHeight >= 552 * 0.85,
       `축 밀도 균형 조정으로 가로·세로를 함께 사용한다 (${Math.round(fittedWidth)}×${Math.round(fittedHeight)})`,
@@ -325,14 +379,18 @@ async function main() {
     await wait(180)
     const recovered = useEditor.getState()
     check(
-      monthWidthFromPxPerDay(recovered.project.view.pxPerDay) <= AUTO_FIT_LIMITS.maxMonthWidth + 0.01,
+      monthWidthFromPxPerDay(recovered.project.view.pxPerDay) <=
+        AUTO_FIT_LIMITS.maxMonthWidth + 0.01,
       `폭주한 월 폭을 화면에서 읽을 수 있는 범위로 복구한다 (${Math.round(monthWidthFromPxPerDay(recovered.project.view.pxPerDay))}px)`,
     )
     check(
       (recovered.project.view.fontScale ?? 1) <= AUTO_FIT_LIMITS.maxFontScale,
       `폭주한 글자 배율을 ${AUTO_FIT_LIMITS.maxFontScale * 100}% 이하로 복구한다`,
     )
-    check(recovered.zoom > 0.02, `복구 후 화면을 2% 보다 크게 다시 맞춘다 (${Math.round(recovered.zoom * 100)}%)`)
+    check(
+      recovered.zoom > 0.02,
+      `복구 후 화면을 2% 보다 크게 다시 맞춘다 (${Math.round(recovered.zoom * 100)}%)`,
+    )
   }
 
   console.log('\n[F11 키보드/모달]')

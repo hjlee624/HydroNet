@@ -28,6 +28,7 @@ import {
 import { exportPreflight } from '../src/export/preflight'
 import { buildReviewRequestMd } from '../src/export/reviewRequest'
 import { moveTaskFractionally, useEditor } from '../src/state/store'
+import { resolveRowLabelSizes, SCREEN_TEXT_MIN_PX, TEXT_BOX_RATIO } from '../src/styles/theme'
 import type { Link, Project, Task } from '../src/types/model'
 
 let failures = 0
@@ -697,9 +698,34 @@ console.log('')
     ...dd,
     categories: dd.categories.slice(0, 2),
     tasks: [
-      { id: 'parent', categoryId: cat, name: '상위 공정', start: 0, duration: 120, isMilestone: false },
-      { id: 'child-a', categoryId: cat, parentId: 'parent', name: '세부 A', start: 0, duration: 30, isMilestone: false, row: 0 },
-      { id: 'child-b', categoryId: cat, parentId: 'parent', name: '세부 B', start: 40, duration: 30, isMilestone: false, row: 0 },
+      {
+        id: 'parent',
+        categoryId: cat,
+        name: '상위 공정',
+        start: 0,
+        duration: 120,
+        isMilestone: false,
+      },
+      {
+        id: 'child-a',
+        categoryId: cat,
+        parentId: 'parent',
+        name: '세부 A',
+        start: 0,
+        duration: 30,
+        isMilestone: false,
+        row: 0,
+      },
+      {
+        id: 'child-b',
+        categoryId: cat,
+        parentId: 'parent',
+        name: '세부 B',
+        start: 40,
+        duration: 30,
+        isMilestone: false,
+        row: 0,
+      },
     ],
     links: [],
   }
@@ -709,10 +735,22 @@ console.log('')
     tasks: grouped.tasks.map((t) => (t.id === 'child-b' ? { ...t, row: 1 } : { ...t })),
   }
   const split = computeLayout(splitProject)
-  const togetherA = must(together.tasks.find((lt) => lt.task.id === 'child-a'), '같은 줄 세부 A')
-  const togetherB = must(together.tasks.find((lt) => lt.task.id === 'child-b'), '같은 줄 세부 B')
-  const splitA = must(split.tasks.find((lt) => lt.task.id === 'child-a'), '분리 줄 세부 A')
-  const splitB = must(split.tasks.find((lt) => lt.task.id === 'child-b'), '분리 줄 세부 B')
+  const togetherA = must(
+    together.tasks.find((lt) => lt.task.id === 'child-a'),
+    '같은 줄 세부 A',
+  )
+  const togetherB = must(
+    together.tasks.find((lt) => lt.task.id === 'child-b'),
+    '같은 줄 세부 B',
+  )
+  const splitA = must(
+    split.tasks.find((lt) => lt.task.id === 'child-a'),
+    '분리 줄 세부 A',
+  )
+  const splitB = must(
+    split.tasks.find((lt) => lt.task.id === 'child-b'),
+    '분리 줄 세부 B',
+  )
   check(togetherA.cy === togetherB.cy, '같은 row의 세부공정은 상위 공정 블록 한 줄에 배치된다')
   check(
     splitB.cy - splitA.cy === split.rowHeight,
@@ -725,7 +763,10 @@ console.log('')
   const moved = structuredClone(grouped)
   const otherCategory = dd.categories[1].id
   moveTaskFractionally(moved, 'child-b', otherCategory, null, 'below')
-  const movedChild = must(moved.tasks.find((t) => t.id === 'child-b'), '이동한 세부 B')
+  const movedChild = must(
+    moved.tasks.find((t) => t.id === 'child-b'),
+    '이동한 세부 B',
+  )
   check(
     movedChild.parentId === 'parent' && movedChild.categoryId === cat && movedChild.row === 1,
     '세부공정 세로 이동은 다른 공종에 놓아도 상위 공정 소속을 유지하고 그룹 안 새 줄을 만든다',
@@ -1362,6 +1403,70 @@ console.log('')
     !editImpactUndoable(cardImpact as EditImpact, 0),
     '봉인 깊이가 없는 카드(미기록)는 안전한 쪽 — 되돌리기 금지',
   )
+}
+
+// ── 행 라벨 띠 예산 — 저배율에서 공사일수(위 행)와 공정명(아래 행)이 겹치지 않는다 ──────
+// 회귀 배경: layout.ts 는 **확대 전** 글자 크기로 행 높이를 잡는데 화면은 minPx/zoom 으로
+// 글자를 키운다. 상한이 없던 시절 48% 배율 TBM 터널 프리셋에서 '30일' 라벨이 다음 행 공정명에
+// 9~12px 가려졌다(실제 브라우저 실측). 공정명 판독 크기(8.5px)는 지켜져야 한다.
+{
+  console.log('')
+  const NAME_MIN = SCREEN_TEXT_MIN_PX.taskName
+  const cases = [
+    { label: '기본 배율(여유 있음)', rowHeight: 46, barHeight: 15.6, zoom: 1 },
+    { label: '전체 맞춤 실측(48%)', rowHeight: 48, barHeight: 16, zoom: 0.48 },
+    { label: '극저배율(10%)', rowHeight: 40, barHeight: 13.6, zoom: 0.1 },
+    { label: '넉넉한 행(240px)', rowHeight: 240, barHeight: 16, zoom: 0.3 },
+  ]
+  for (const c of cases) {
+    const r = resolveRowLabelSizes({
+      rowHeight: c.rowHeight,
+      barHeight: c.barHeight,
+      nameBase: 11,
+      durationBase: 9,
+      zoom: c.zoom,
+    })
+    const budget = c.rowHeight - c.barHeight
+    const used = (r.nameSize + (r.showDuration ? r.durationSize : 0)) * TEXT_BOX_RATIO
+    check(
+      used <= budget + 1e-6,
+      `${c.label}: 라벨 띠가 행 예산을 넘지 않는다 (${used.toFixed(1)} ≤ ${budget.toFixed(1)})`,
+    )
+    check(
+      r.nameSize >= 11,
+      `${c.label}: 공정명이 도면 기본 크기 아래로 내려가지 않는다 (${r.nameSize.toFixed(1)} ≥ 11)`,
+    )
+    // 이름은 판독 크기를 지키거나, 못 지킬 만큼 행이 좁으면 예산을 전부 이름에 써야 한다.
+    const nameScreenPx = r.nameSize * c.zoom
+    check(
+      nameScreenPx >= NAME_MIN - 1e-6 || Math.abs(r.nameSize * TEXT_BOX_RATIO - budget) < 0.5,
+      `${c.label}: 공정명이 판독 크기(${NAME_MIN}px)를 지키거나 띠 전체를 쓴다 (${nameScreenPx.toFixed(2)}px)`,
+    )
+  }
+  // 핵심 회귀: 실측 조건에서 공사일수를 화면에 함께 띄우면 반드시 예산을 넘는다 = 감춰야 맞다.
+  const fit = resolveRowLabelSizes({
+    rowHeight: 48,
+    barHeight: 16,
+    nameBase: 11,
+    durationBase: 9,
+    zoom: 0.48,
+  })
+  check(
+    fit.showDuration === false,
+    '전체 맞춤 실측 조건에서는 공사일수를 화면에 띄우지 않는다(출력에는 남는다)',
+  )
+  check(
+    Math.abs(fit.nameSize * 0.48 - SCREEN_TEXT_MIN_PX.taskName) < 0.01,
+    `전체 맞춤에서도 공정명은 판독 크기 그대로 (${(fit.nameSize * 0.48).toFixed(2)}px)`,
+  )
+  const roomy = resolveRowLabelSizes({
+    rowHeight: 240,
+    barHeight: 16,
+    nameBase: 11,
+    durationBase: 9,
+    zoom: 0.3,
+  })
+  check(roomy.showDuration === true, '대조군: 행이 넉넉하면 공사일수를 그대로 띄운다')
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

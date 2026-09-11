@@ -2,7 +2,7 @@
 > sequence-client@0.1.0 smoke:schedule-import
 > tsx scripts/schedule-import-smoke.ts
 
-✓ schedule-import-smoke: 238 checks passed
+✓ schedule-import-smoke: 244 checks passed
 [Sequence] 불러온 파일을 현재 프로젝트에 적용했습니다. 
 [Sequence] 불러온 파일을 현재 프로젝트에 적용했습니다. 
 [Sequence] 불러온 파일을 현재 프로젝트에 적용했습니다. 

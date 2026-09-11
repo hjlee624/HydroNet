@@ -51,6 +51,8 @@ export function buildExportSvgString(
     ['stroke-dasharray', 'stroke-dasharray'],
     ['marker-width', 'markerWidth'],
     ['marker-height', 'markerHeight'],
+    // 화면에서만 감춘 라벨(저배율에서 행 높이가 모자라 숨긴 공사일수)을 출력물에서는 되살린다.
+    ['opacity', 'opacity'],
   ] as const
   for (const [dataName, svgName] of exportAttrs) {
     clone.querySelectorAll(`[data-export-${dataName}]`).forEach((el) => {
@@ -187,23 +189,73 @@ function rasterizePdfTile(
 
   // Body quadrant.
   if (sourceW > 0 && sourceH > 0)
-    ctx.drawImage(img, sourceX, sourceY, sourceW, sourceH, labelPx, headerPx, sourceW * scale, sourceH * scale)
+    ctx.drawImage(
+      img,
+      sourceX,
+      sourceY,
+      sourceW,
+      sourceH,
+      labelPx,
+      headerPx,
+      sourceW * scale,
+      sourceH * scale,
+    )
   // Timeline header for this horizontal slice.
   const axisSourceH = Math.max(0, frozen.headerHeight - frozen.titleHeight)
   if (sourceW > 0 && axisSourceH > 0)
-    ctx.drawImage(img, sourceX, frozen.titleHeight, sourceW, axisSourceH, labelPx, titlePx, sourceW * scale, axisSourceH * scale)
+    ctx.drawImage(
+      img,
+      sourceX,
+      frozen.titleHeight,
+      sourceW,
+      axisSourceH,
+      labelPx,
+      titlePx,
+      sourceW * scale,
+      axisSourceH * scale,
+    )
   // WBS column for this vertical slice.
   if (frozen.labelWidth > 0 && sourceH > 0)
-    ctx.drawImage(img, 0, sourceY, frozen.labelWidth, sourceH, 0, headerPx, labelPx, sourceH * scale)
+    ctx.drawImage(
+      img,
+      0,
+      sourceY,
+      frozen.labelWidth,
+      sourceH,
+      0,
+      headerPx,
+      labelPx,
+      sourceH * scale,
+    )
   // Top-left axis corner.
   if (frozen.labelWidth > 0 && axisSourceH > 0)
-    ctx.drawImage(img, 0, frozen.titleHeight, frozen.labelWidth, axisSourceH, 0, titlePx, labelPx, axisSourceH * scale)
+    ctx.drawImage(
+      img,
+      0,
+      frozen.titleHeight,
+      frozen.labelWidth,
+      axisSourceH,
+      0,
+      titlePx,
+      labelPx,
+      axisSourceH * scale,
+    )
   // Repeat the centered title band without distorting its text.
   if (frozen.titleHeight > 0 && titlePx > 0) {
     const titleSourceW = Math.min(content.width, pageW / scale)
     const titleSourceX = Math.max(0, (content.width - titleSourceW) / 2)
     const titleDestX = (pageW - titleSourceW * scale) / 2
-    ctx.drawImage(img, titleSourceX, 0, titleSourceW, frozen.titleHeight, titleDestX, 0, titleSourceW * scale, titlePx)
+    ctx.drawImage(
+      img,
+      titleSourceX,
+      0,
+      titleSourceW,
+      frozen.titleHeight,
+      titleDestX,
+      0,
+      titleSourceW * scale,
+      titlePx,
+    )
   }
   return canvas
 }
@@ -229,7 +281,9 @@ export interface ExportOptions {
   }
 }
 
-export async function exportChart(opts: ExportOptions): Promise<{ clamped: boolean; pages: number }> {
+export async function exportChart(
+  opts: ExportOptions,
+): Promise<{ clamped: boolean; pages: number }> {
   const { svg, content, paper, filename, format } = opts
   try {
     if (format === 'svg') {
@@ -287,7 +341,16 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
     const pages = cols * rows
     if (pages === 1) {
       const canvas = await rasterize(svgString, content, px.wPx, px.hPx, bg)
-      pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
+      pdf.addImage(
+        canvas.toDataURL('image/jpeg', 0.94),
+        'JPEG',
+        0,
+        0,
+        px.wMm,
+        px.hMm,
+        undefined,
+        'FAST',
+      )
     } else {
       const img = await loadSvgImage(svgString)
       const scale = Math.max(0.01, tilePlan?.scale ?? 1)
@@ -300,7 +363,16 @@ export async function exportChart(opts: ExportOptions): Promise<{ clamped: boole
             headerHeight: tilePlan?.headerHeight ?? 0,
             titleHeight: tilePlan?.titleHeight ?? 0,
           })
-          pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
+          pdf.addImage(
+            canvas.toDataURL('image/jpeg', 0.94),
+            'JPEG',
+            0,
+            0,
+            px.wMm,
+            px.hMm,
+            undefined,
+            'FAST',
+          )
           pageIndex++
         }
       }

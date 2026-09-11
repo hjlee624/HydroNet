@@ -16,7 +16,13 @@ import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
 import { createProcessColorMap } from '../engine/taskColor'
 import type { RemotePresence } from '../state/collaboration'
-import { colors, fonts, readableScreenTextSize, resolveTextStyle } from '../styles/theme'
+import {
+  colors,
+  fonts,
+  readableScreenTextSize,
+  resolveRowLabelSizes,
+  resolveTextStyle,
+} from '../styles/theme'
 import type { Project, TextRole } from '../types/model'
 
 export interface LinkingGhost {
@@ -195,13 +201,18 @@ function ChartSvgBase({
   // taskCol(기본 ON)은 공종명을 레인 상단 헤더로 올릴지(WBS 정렬)만 결정한다.
   const taskCol = project.view.taskColumn !== false
 
+  // 행 높이 예산에 맞춰 상한을 건 화면 글자 크기(아래에서 채운다). **라벨 배치(arrangeLabelCenters)와
+  // 실제 렌더가 반드시 같은 크기를 써야 한다** — 배치는 작은 크기로 계산하고 렌더는 큰 크기로
+  // 그리면 같은 행의 공정명끼리 겹친다(실측 확인).
+  const screenFontOverride: Partial<Record<TextRole, number>> = {}
+
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
   function roleAttrs(role: TextRole) {
     const s = resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1)
     const style: CSSProperties = { fontFamily: s.fontFamily, cursor: 'pointer' }
     return {
-      fontSize: readableScreenTextSize(role, s.fontSize, screenScale),
+      fontSize: screenFontOverride[role] ?? readableScreenTextSize(role, s.fontSize, screenScale),
       fontWeight: s.fontWeight,
       fill: s.fill,
       style,
@@ -224,11 +235,31 @@ function ChartSvgBase({
     project.view.textStyles,
     project.view.fontScale ?? 1,
   )
-  const screenTaskNameSize = readableScreenTextSize(
-    'taskName',
-    taskNameStyle.fontSize,
-    screenScale,
+  // ── 행 사이 라벨 띠 예산 ────────────────────────────────────────────────────
+  // 공정명은 막대 **위**, 공사일수는 막대 **아래**에 놓인다. 그래서 이웃한 두 행 사이의 띠에는
+  // "위 행의 공사일수 + 아래 행의 공정명"이 함께 들어간다. layout.ts 는 확대 전 글자 크기로
+  // 행 높이를 잡는데(engine/layout.ts rowHeight), readableScreenTextSize 는 저배율에서 글자를
+  // minPx/zoom 으로 키우므로 그대로 두면 둘이 겹친다(실측: 48.8% 배율에서 9~12px 겹침).
+  // 이름이 공정을 식별하는 1순위라 이름부터 채우고, 남는 자리에 맞춰 공사일수를 제한한다.
+  const durationStyle = resolveTextStyle(
+    'taskDuration',
+    project.view.textStyles,
+    project.view.fontScale ?? 1,
   )
+  const {
+    nameSize: screenTaskNameSize,
+    durationSize: screenDurationSize,
+    showDuration: showScreenDuration,
+  } = resolveRowLabelSizes({
+    rowHeight: model.rowHeight,
+    barHeight: model.barHeight,
+    nameBase: taskNameStyle.fontSize,
+    durationBase: durationStyle.fontSize,
+    zoom: screenScale,
+  })
+  // 배치 계산과 렌더가 같은 크기를 쓰도록 roleAttrs 에 주입한다(위 주석 참조).
+  screenFontOverride.taskName = screenTaskNameSize
+  screenFontOverride.taskDuration = screenDurationSize
   const screenTaskLabelX = new Map<string, number>()
   const exportTaskLabelX = new Map<string, number>()
   const barsByRow = new Map<string, LaidTask[]>()
@@ -299,7 +330,12 @@ function ChartSvgBase({
           <path d="M1,1 L9,5 L1,9 Z" fill={colors.critical} />
         </marker>
         <clipPath id="hn-label-column-clip">
-          <rect x={0} y={titleHeight} width={Math.max(0, labelWidth - 2)} height={contentHeight - titleHeight} />
+          <rect
+            x={0}
+            y={titleHeight}
+            width={Math.max(0, labelWidth - 2)}
+            height={contentHeight - titleHeight}
+          />
         </clipPath>
       </defs>
 
@@ -550,24 +586,24 @@ function ChartSvgBase({
             시간축으로 침범하지 않는다. 전체 이름은 사이드바와 호버/선택 속성에서 확인한다. */}
         <g clipPath="url(#hn-label-column-clip)" data-label-column-content="1">
           {model.categories.map((c) => {
-          const hasSubs = c.subGroups.length > 0
-          // 공정명을 왼쪽에 나열하면 공종명은 레인 상단 헤더로 올린다(공정 줄과 겹치지 않게).
-          const topAlign = hasSubs || taskCol
-          // 공종명 배치는 글자 크기(fontScale)에 연동해야 한다. 고정 오프셋이면 fit-to-paper로
-          // 폰트가 커질 때(A3 등 작은 용지) 글자가 baseline 위로 넘쳐 위 레인/헤더 밴드와 겹친다.
-          // 레인 상단 인셋(layout.ts headerInset = max(20, ceil(fs*1.4)) 안에 들어오도록 스케일.
-          const catFs = roleAttrs('categoryLabel').fontSize
-          const swH = Math.max(14, Math.round(catFs))
-          const swatchY = topAlign ? c.y + 4 : c.y + c.height / 2 - swH / 2
-          const nameY = topAlign ? c.y + Math.max(15, catFs + 4) : c.y + c.height / 2 + 4
-          return (
-            <g key={`lbl-${c.id}`}>
-              <rect x={6} y={swatchY} width={4} height={swH} rx={2} fill={c.color} />
-              <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
-                {c.name}
-              </text>
-            </g>
-          )
+            const hasSubs = c.subGroups.length > 0
+            // 공정명을 왼쪽에 나열하면 공종명은 레인 상단 헤더로 올린다(공정 줄과 겹치지 않게).
+            const topAlign = hasSubs || taskCol
+            // 공종명 배치는 글자 크기(fontScale)에 연동해야 한다. 고정 오프셋이면 fit-to-paper로
+            // 폰트가 커질 때(A3 등 작은 용지) 글자가 baseline 위로 넘쳐 위 레인/헤더 밴드와 겹친다.
+            // 레인 상단 인셋(layout.ts headerInset = max(20, ceil(fs*1.4)) 안에 들어오도록 스케일.
+            const catFs = roleAttrs('categoryLabel').fontSize
+            const swH = Math.max(14, Math.round(catFs))
+            const swatchY = topAlign ? c.y + 4 : c.y + c.height / 2 - swH / 2
+            const nameY = topAlign ? c.y + Math.max(15, catFs + 4) : c.y + c.height / 2 + 4
+            return (
+              <g key={`lbl-${c.id}`}>
+                <rect x={6} y={swatchY} width={4} height={swH} rx={2} fill={c.color} />
+                <text x={18} y={nameY} {...roleAttrs('categoryLabel')}>
+                  {c.name}
+                </text>
+              </g>
+            )
           })}
           {model.categories.flatMap((c) =>
             c.subGroups.map((sg, i) => (
@@ -812,10 +848,7 @@ function ChartSvgBase({
               </g>
             )
           }
-          const visibleHeight = Math.min(
-            model.rowHeight * 0.8,
-            Math.max(lt.h, 6 / screenScale),
-          )
+          const visibleHeight = Math.min(model.rowHeight * 0.8, Math.max(lt.h, 6 / screenScale))
           const visibleY = lt.cy - visibleHeight / 2
           const taskMidX = (lt.startX + lt.endX) / 2
           const visibleWidth = Math.max(lt.w, 5 / screenScale)
@@ -929,10 +962,13 @@ function ChartSvgBase({
               </rect>
               <text
                 x={visibleX}
-                y={visibleY + visibleHeight + roleAttrs('taskDuration').fontSize * 0.85 + 3}
+                y={visibleY + visibleHeight + screenDurationSize * 0.85 + 3}
                 data-export-x={lt.x}
-                data-export-y={lt.y + lt.h + resolveTextStyle('taskDuration', project.view.textStyles, project.view.fontScale ?? 1).fontSize * 0.85 + 3}
+                data-export-y={lt.y + lt.h + durationStyle.fontSize * 0.85 + 3}
                 {...roleAttrs('taskDuration')}
+                fontSize={screenDurationSize}
+                opacity={showScreenDuration ? undefined : 0}
+                data-export-opacity="1"
                 style={{ ...roleAttrs('taskDuration').style, pointerEvents: 'none' }}
               >
                 {t.durationLabel && t.durationLabel.trim() ? t.durationLabel : `${t.duration}일`}
@@ -987,32 +1023,32 @@ function ChartSvgBase({
                     const gripWidth = Math.max(6, 10 / screenScale)
                     return (
                       <>
-                  <rect
-                    data-export-hide="1"
-                    x={lt.startX - gripWidth / 2}
-                    y={hitY}
-                    width={gripWidth}
-                    height={hitHeight}
-                    rx={1.5}
-                    fill={colors.primary}
-                    stroke={colors.canvas}
-                    strokeWidth={0.75}
-                    style={{ cursor: 'ew-resize' }}
-                    onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'start')}
-                  />
-                  <rect
-                    data-export-hide="1"
-                    x={lt.endX - gripWidth / 2}
-                    y={hitY}
-                    width={gripWidth}
-                    height={hitHeight}
-                    rx={1.5}
-                    fill={colors.primary}
-                    stroke={colors.canvas}
-                    strokeWidth={0.75}
-                    style={{ cursor: 'ew-resize' }}
-                    onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'end')}
-                  />
+                        <rect
+                          data-export-hide="1"
+                          x={lt.startX - gripWidth / 2}
+                          y={hitY}
+                          width={gripWidth}
+                          height={hitHeight}
+                          rx={1.5}
+                          fill={colors.primary}
+                          stroke={colors.canvas}
+                          strokeWidth={0.75}
+                          style={{ cursor: 'ew-resize' }}
+                          onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'start')}
+                        />
+                        <rect
+                          data-export-hide="1"
+                          x={lt.endX - gripWidth / 2}
+                          y={hitY}
+                          width={gripWidth}
+                          height={hitHeight}
+                          rx={1.5}
+                          fill={colors.primary}
+                          stroke={colors.canvas}
+                          strokeWidth={0.75}
+                          style={{ cursor: 'ew-resize' }}
+                          onPointerDown={(e) => onBarResizePointerDown(e, t.id, 'end')}
+                        />
                       </>
                     )
                   })()}
