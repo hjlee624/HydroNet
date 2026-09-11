@@ -8,6 +8,7 @@
     "start": "node --env-file-if-exists=.env src/index.js",
     "dev": "node --watch --env-file-if-exists=.env src/index.js",
     "auth-smoke": "node scripts/auth-smoke.mjs",
+    "documents-smoke": "node scripts/documents-smoke.mjs",
     "collab-smoke": "node scripts/collab-smoke.mjs",
     "works-smoke": "node scripts/works-smoke.mjs",
     "llm-smoke": "node scripts/llm-smoke.mjs",

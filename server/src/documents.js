@@ -5,8 +5,17 @@ import { randomUUID } from 'node:crypto'
 const MAX_BYTES = 8 * 1024 * 1024
 const ID_RE = /^[A-Za-z0-9_-]{1,100}$/
 
+export class DocumentInputError extends Error {
+  constructor(message, status = 400) {
+    super(message)
+    this.name = 'DocumentInputError'
+    this.status = status
+  }
+}
+
 const safeName = (value) =>
   String(value || 'document')
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: Strip control characters from uploaded filenames.
     .replace(/[\\/:*?"<>|\u0000-\u001f]/g, '_')
     .slice(0, 180)
 
@@ -37,9 +46,9 @@ export function createDocumentStore(rootDir) {
   async function put(projectId, input) {
     const raw = String(input?.base64 || '').replace(/^data:[^;]+;base64,/, '')
     const bytes = Buffer.from(raw, 'base64')
-    if (!bytes.length) throw Object.assign(new Error('파일 내용이 비어 있습니다.'), { status: 400 })
+    if (!bytes.length) throw new DocumentInputError('파일 내용이 비어 있습니다.')
     if (bytes.length > MAX_BYTES)
-      throw Object.assign(new Error('문서는 파일당 8MB까지 업로드할 수 있습니다.'), { status: 413 })
+      throw new DocumentInputError('문서는 파일당 8MB까지 업로드할 수 있습니다.', 413)
     const id = randomUUID()
     const meta = {
       id,
@@ -53,7 +62,7 @@ export function createDocumentStore(rootDir) {
       status: String(input?.status || '').slice(0, 40),
     }
     if (!ID_RE.test(meta.moduleId))
-      throw Object.assign(new Error('올바른 문서 모듈이 아닙니다.'), { status: 400 })
+      throw new DocumentInputError('올바른 문서 모듈이 아닙니다.')
     await fs.mkdir(projectDir(projectId), { recursive: true })
     await fs.writeFile(blobFile(projectId, id), bytes, { flag: 'wx' })
     await fs.writeFile(metaFile(projectId, id), JSON.stringify(meta, null, 2), { flag: 'wx' })

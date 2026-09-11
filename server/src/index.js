@@ -23,7 +23,7 @@ import { bootstrapSampleProjects } from './auth/sampleProjects.js'
 import { attachCollaborationServer } from './collab/index.js'
 import { decodeProjectFromState } from './collab/seed.js'
 import { reviewProviderStatus, runReview } from './llm/review.js'
-import { createDocumentStore } from './documents.js'
+import { createDocumentStore, DocumentInputError } from './documents.js'
 import {
   createBoundedRateLimiter,
   createHttpOriginPolicy,
@@ -399,8 +399,14 @@ app.post(
   projectGate,
   projectEditGate,
   asyncRoute(async (req, res) => {
-    const item = await documentStore.put(req.params.id, req.body)
-    res.status(201).json(item)
+    try {
+      const item = await documentStore.put(req.params.id, req.body)
+      res.status(201).json(item)
+    } catch (error) {
+      if (error instanceof DocumentInputError)
+        return res.status(error.status).json({ error: error.message })
+      throw error
+    }
   }),
 )
 app.get(
