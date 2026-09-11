@@ -42,7 +42,7 @@ const VERDICT_COLOR: Record<string, string> = {
   판정불가: '#8a94a0',
 }
 
-export function Inspector({ width }: { width: number }) {
+export function Inspector({ width, onFitChart }: { width: number; onFitChart?: () => void }) {
   const tab = useEditor((s) => s.inspectorTab)
   const selectedTaskId = useEditor((s) => s.selectedTaskId)
   const selectedLinkId = useEditor((s) => s.selectedLinkId)
@@ -67,7 +67,7 @@ export function Inspector({ width }: { width: number }) {
       </div>
       <div className="panel__scroll">
         {tab === 'project' ? (
-          <ProjectInspector />
+          <ProjectInspector onFitChart={onFitChart} />
         ) : tab === 'text' ? (
           selectedTextRole ? (
             <TextStyleInspector role={selectedTextRole} />
@@ -889,7 +889,7 @@ function LinkInspector({ id }: { id: string }) {
   )
 }
 
-function ProjectInspector() {
+function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
   const project = useEditor((s) => s.project)
   const a = useEditor.getState
   const fontScale = project.view.fontScale ?? 1
@@ -1225,14 +1225,15 @@ function ProjectInspector() {
           <button
             className="btn btn--sm"
             style={{ width: '100%' }}
-            title="도면 비율을 용지에 맞춰 여백 없이 채우고 글자 크기를 조정"
+            title="도면 비율을 용지에 맞추고 작업 화면 전체를 다시 표시"
             onClick={() => {
               a().beginGesture()
               a().fitToPaper()
               a().endGesture()
+              onFitChart?.()
             }}
           >
-            ⤢ 여백 없이 시트에 맞추기
+            ⤢ 용지 비율 + 화면 전체 맞춤
             {fitState.offPct > 1 ? ` (현재 여백 약 ${fitState.offPct}%)` : ''}
           </button>
         </div>

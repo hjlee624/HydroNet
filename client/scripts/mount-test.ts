@@ -115,7 +115,7 @@ async function main() {
 
   const { useEditor } = await import('../src/state/store')
   const { fitChartZoom, fitOverviewDensity } = await import('../src/components/ChartCanvas')
-  const { monthWidthFromPxPerDay, pxPerDayFromMonthWidth } = await import('../src/engine/layout')
+  const { AUTO_FIT_LIMITS, monthWidthFromPxPerDay, pxPerDayFromMonthWidth } = await import('../src/engine/layout')
   const { SCREEN_TEXT_MIN_PX } = await import('../src/styles/theme')
   const { buildExportSvgString } = await import('../src/export/exporter')
   const { ALL_SHORTCUTS } = await import('../src/state/keymap')
@@ -307,10 +307,32 @@ async function main() {
     }
     const densityPatch = fitOverviewDensity(wideProject, 900, 600)
     check(
-      (densityPatch.rowHeight ?? 46) > 46,
-      '시간축이 과도하게 넓으면 월 폭을 줄이지 않고 행 높이를 늘려 판독 공간을 확보한다',
+      monthWidthFromPxPerDay(densityPatch.pxPerDay ?? wideProject.view.pxPerDay) <=
+        AUTO_FIT_LIMITS.maxMonthWidth,
+      '시간축이 과도하게 넓으면 전체 맞춤이 월 폭을 판독 범위로 복구한다',
     )
     check(fitChartZoom(100_000, 50_000, 900, 600) === 0.02, '매우 큰 표도 2%까지 축소할 수 있다')
+
+    // 용지 맞춤으로 깨진 자동 배치 값을 복구한 뒤 현재 화면에 전체 표시한다.
+    useEditor.getState().setView({ pxPerDay: 400, rowHeight: 46, fontScale: 884.3 })
+    useEditor.getState().setZoom(0.02)
+    await wait(120)
+    const sheetFitButton = document.querySelector<HTMLButtonElement>(
+      '.panel--right button[title="도면 비율을 용지에 맞추고 작업 화면 전체를 다시 표시"]',
+    )
+    check(!!sheetFitButton, '용지 비율과 화면 전체를 함께 맞추는 버튼이 렌더된다')
+    sheetFitButton?.click()
+    await wait(180)
+    const recovered = useEditor.getState()
+    check(
+      monthWidthFromPxPerDay(recovered.project.view.pxPerDay) <= AUTO_FIT_LIMITS.maxMonthWidth + 0.01,
+      `폭주한 월 폭을 화면에서 읽을 수 있는 범위로 복구한다 (${Math.round(monthWidthFromPxPerDay(recovered.project.view.pxPerDay))}px)`,
+    )
+    check(
+      (recovered.project.view.fontScale ?? 1) <= AUTO_FIT_LIMITS.maxFontScale,
+      `폭주한 글자 배율을 ${AUTO_FIT_LIMITS.maxFontScale * 100}% 이하로 복구한다`,
+    )
+    check(recovered.zoom > 0.02, `복구 후 화면을 2% 보다 크게 다시 맞춘다 (${Math.round(recovered.zoom * 100)}%)`)
   }
 
   console.log('\n[F11 키보드/모달]')

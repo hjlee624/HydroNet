@@ -1852,7 +1852,7 @@ export const useEditor = create<EditorState>()((set, get) => {
       )
       // '여백 없이 채웠다'고 단정하지 않는다 — 실제 여백은 호출한 화면이 출력 사전 점검으로
       // 다시 계산해 말한다(ExportDialog). 여기서는 무엇을 바꿨는지만 남긴다.
-      logInfo('용지 비율에 맞춰 배율(시간축·행 높이·글자 크기)을 조정했습니다.')
+      logInfo('용지 비율에 맞춰 읽기 좋은 범위에서 시간축·행 높이·글자 크기를 조정했습니다.')
     },
     // history:false — 이름/시작일은 자유텍스트 입력(키 입력마다 undo 누적 방지, subName/색
     // 편집과 동일 정책). startDate는 day-offset 기준이라 CPM에 영향 없음.

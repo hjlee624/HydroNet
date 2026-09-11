@@ -40,6 +40,7 @@ const lsSet = (key: string, value: string) => {
 export function ScheduleModule() {
   const [exportOpen, setExportOpen] = useState(false)
   const [fitRequest, setFitRequest] = useState(0)
+  const [fitViewRequest, setFitViewRequest] = useState(0)
   const [leftWidth, setLeftWidth] = useState(() => lsNum('sequence:leftW', 288))
   const [rightWidth, setRightWidth] = useState(() => lsNum('sequence:rightW', 300))
   // Fullscreen preview hides the side panels so the chart can be checked
@@ -246,7 +247,7 @@ export function ScheduleModule() {
             </div>
           )}
           {!presentation && <ViewBar />}
-          <ChartCanvas fitRequest={fitRequest} />
+          <ChartCanvas fitRequest={fitRequest} fitViewRequest={fitViewRequest} />
           {/* 문제 목록 팝오버는 상태바 바로 위에 뜬다(상태바의 ⚠ 버튼으로 토글). */}
           <ProblemList />
           <StatusBar />
@@ -254,7 +255,12 @@ export function ScheduleModule() {
         {!presentation && !narrow && (
           <Resizer side="right" width={rightWidth} setWidth={setRightWidth} />
         )}
-        {!presentation && !narrow && <Inspector width={rightWidth} />}
+        {!presentation && !narrow && (
+          <Inspector
+            width={rightWidth}
+            onFitChart={() => setFitViewRequest((request) => request + 1)}
+          />
+        )}
         {/* 서랍(좁은 화면 전용) — 도면 위에 겹쳐 뜨므로 차트 폭을 갉아먹지 않는다. */}
         {!presentation && narrow && drawer && (
           <>
@@ -276,13 +282,18 @@ export function ScheduleModule() {
               {drawer === 'left' ? (
                 <Sidebar width={Math.min(leftWidth, 320)} />
               ) : (
-                <Inspector width={Math.min(rightWidth, 320)} />
+                <Inspector
+                  width={Math.min(rightWidth, 320)}
+                  onFitChart={() => setFitViewRequest((request) => request + 1)}
+                />
               )}
             </div>
           </>
         )}
       </div>
-      {exportOpen && <ExportDialog onClose={() => setExportOpen(false)} />}
+      {exportOpen && (
+        <ExportDialog onClose={() => setExportOpen(false)} />
+      )}
       <RecalcModal />
     </div>
   )

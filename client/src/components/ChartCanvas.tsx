@@ -11,7 +11,13 @@ import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } fr
 import { standardDurationIndex } from '../data/facilities'
 import { type AdequacyResult, assessTasks } from '../engine/adequacy'
 import { dateToDay, daysInMonth, dayToDate, toISO } from '../engine/dates'
-import { computeLayout, type LayoutFilter, type LayoutModel } from '../engine/layout'
+import {
+  AUTO_FIT_LIMITS,
+  computeLayout,
+  type LayoutFilter,
+  type LayoutModel,
+  pxPerDayFromMonthWidth,
+} from '../engine/layout'
 import { augmentForMirror } from '../engine/mirror'
 import { routeLinks } from '../engine/routing'
 import { type EditImpact, editImpactUndoable, previewEdit } from '../engine/scheduling'
@@ -69,9 +75,9 @@ export function fitChartZoom(
 }
 
 /**
- * 전체 맞춤에서 시간축과 행축 중 한쪽만 과도하게 길면, 짧은 축의 밀도를 늘려
- * 캔버스 종횡비에 가깝게 만든다. 사용자가 정한 월 폭/행 높이는 줄이지 않으며
- * 도면이 화면의 가로·세로를 함께 사용하므로 같은 전체 표시에서도 글자가 더 크게 보인다.
+ * 전체 맞춤에서 비정상적으로 큰 자동 배치 값을 먼저 정상화하고, 짧은 축의 밀도를
+ * 제한된 범위에서 늘려 캔버스 종횡비에 가깝게 만든다. 수동 설정은 유지되지만 사용자가
+ * 전체 맞춤을 요청한 순간에는 한눈에 읽을 수 있는 편집 밀도가 우선한다.
  */
 export function fitOverviewDensity(
   project: Project,
@@ -79,35 +85,78 @@ export function fitOverviewDensity(
   viewportHeight: number,
   filter?: LayoutFilter,
   padding = 48,
-): { pxPerDay?: number; rowHeight?: number } {
+): { pxPerDay?: number; rowHeight?: number; fontScale?: number } {
   const availableWidth = Math.max(1, viewportWidth - padding)
   const availableHeight = Math.max(1, viewportHeight - padding)
   const targetAspect = availableWidth / availableHeight
-  const model = computeLayout(project, filter)
+  const minPxPerDay = pxPerDayFromMonthWidth(AUTO_FIT_LIMITS.minMonthWidth)
+  const maxPxPerDay = pxPerDayFromMonthWidth(AUTO_FIT_LIMITS.maxMonthWidth)
+  const normalize = (value: number, min: number, max: number, fallback: number) =>
+    Number.isFinite(value) && value >= min && value <= max ? value : fallback
+  const normalizedView = {
+    ...project.view,
+    pxPerDay: normalize(
+      project.view.pxPerDay,
+      minPxPerDay,
+      maxPxPerDay,
+      pxPerDayFromMonthWidth(AUTO_FIT_LIMITS.defaultMonthWidth),
+    ),
+    rowHeight: normalize(
+      project.view.rowHeight,
+      AUTO_FIT_LIMITS.minRowHeight,
+      AUTO_FIT_LIMITS.maxRowHeight,
+      AUTO_FIT_LIMITS.defaultRowHeight,
+    ),
+    fontScale: normalize(
+      project.view.fontScale ?? 1,
+      AUTO_FIT_LIMITS.minFontScale,
+      AUTO_FIT_LIMITS.maxFontScale,
+      AUTO_FIT_LIMITS.defaultFontScale,
+    ),
+  }
+  const model = computeLayout({ ...project, view: normalizedView }, filter)
   const currentAspect = model.contentWidth / Math.max(1, model.contentHeight)
   if (!Number.isFinite(currentAspect) || !Number.isFinite(targetAspect)) return {}
+
+  const patch: { pxPerDay?: number; rowHeight?: number; fontScale?: number } = {}
+  if (Math.abs(normalizedView.pxPerDay - project.view.pxPerDay) > 1e-3)
+    patch.pxPerDay = Number(normalizedView.pxPerDay.toFixed(4))
+  if (Math.abs(normalizedView.rowHeight - project.view.rowHeight) > 0.5)
+    patch.rowHeight = Math.round(normalizedView.rowHeight)
+  if (Math.abs(normalizedView.fontScale - (project.view.fontScale ?? 1)) > 1e-3)
+    patch.fontScale = Number(normalizedView.fontScale.toFixed(3))
 
   if (currentAspect > targetAspect * 1.02) {
     const totalRows = Math.max(1, model.categories.reduce((sum, c) => sum + c.subRows, 0))
     const fixedHeight = model.contentHeight - totalRows * model.rowHeight
     const needed = (model.contentWidth / targetAspect - fixedHeight) / totalRows
-    const rowHeight = Math.min(2000, Math.max(model.rowHeight, needed))
-    return rowHeight > model.rowHeight + 0.5 ? { rowHeight: Math.ceil(rowHeight) } : {}
+    const rowHeight = Math.min(
+      AUTO_FIT_LIMITS.maxRowHeight,
+      Math.max(model.rowHeight, needed),
+    )
+    if (rowHeight > normalizedView.rowHeight + 0.5) patch.rowHeight = Math.ceil(rowHeight)
+    return patch
   }
 
   if (currentAspect < targetAspect / 1.02) {
     const domainDays = Math.max(1, model.domainEndDay - model.domainStartDay)
     const needed = (targetAspect * model.contentHeight - model.labelWidth) / domainDays
-    const pxPerDay = Math.min(400, Math.max(model.pxPerDay, needed))
-    return pxPerDay > model.pxPerDay + 0.001
-      ? { pxPerDay: Number(pxPerDay.toFixed(4)) }
-      : {}
+    const pxPerDay = Math.min(maxPxPerDay, Math.max(model.pxPerDay, needed))
+    if (pxPerDay > normalizedView.pxPerDay + 0.001)
+      patch.pxPerDay = Number(pxPerDay.toFixed(4))
+    return patch
   }
 
-  return {}
+  return patch
 }
 
-export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
+export function ChartCanvas({
+  fitRequest = 0,
+  fitViewRequest = 0,
+}: {
+  fitRequest?: number
+  fitViewRequest?: number
+}) {
   const project = useEditor((s) => s.project)
   const zoom = useEditor((s) => s.zoom)
   const navMode = useEditor((s) => s.navMode)
@@ -128,6 +177,7 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
   const wrapRef = useRef<HTMLDivElement>(null)
   const paperRef = useRef<HTMLDivElement>(null)
   const handledFitRequest = useRef(0)
+  const handledFitViewRequest = useRef(0)
   const dragRef = useRef<Drag>(null)
   const panRef = useRef<{ x: number; y: number; sl: number; st: number } | null>(null)
   const zoomAnchor = useRef<{
@@ -337,6 +387,20 @@ export function ChartCanvas({ fitRequest = 0 }: { fitRequest?: number }) {
     wrap.scrollLeft = 0
     wrap.scrollTop = 0
   }, [augmented, filter, fitRequest, model])
+
+  // 용지 비율 맞춤 뒤에는 배치 값을 다시 바꾸지 않고, 완성된 시트만 현재 캔버스에
+  // 꽉 보이게 축소한다. 출력 종횡비와 화면 전체 표시가 서로 덮어쓰지 않게 한다.
+  useLayoutEffect(() => {
+    if (fitViewRequest === 0 || handledFitViewRequest.current === fitViewRequest) return
+    const wrap = wrapRef.current
+    if (!wrap) return
+    handledFitViewRequest.current = fitViewRequest
+    useEditor.getState().setZoom(
+      fitChartZoom(model.contentWidth, model.contentHeight, wrap.clientWidth, wrap.clientHeight),
+    )
+    wrap.scrollLeft = 0
+    wrap.scrollTop = 0
+  }, [fitViewRequest, model])
 
   // Native (non-passive) wheel listener so we can preventDefault while zooming.
   useEffect(() => {

@@ -149,6 +149,19 @@ export function pxPerDayFromMonthWidth(monthWidth: number): number {
   return Math.min(400, Math.max(0.05, monthWidth / AVERAGE_DAYS_PER_MONTH))
 }
 
+/** Automatic fit keeps the editor readable; manual controls may exceed these values. */
+export const AUTO_FIT_LIMITS = {
+  minMonthWidth: 8,
+  maxMonthWidth: 120,
+  defaultMonthWidth: 46,
+  minRowHeight: 32,
+  maxRowHeight: 240,
+  defaultRowHeight: 46,
+  minFontScale: 0.5,
+  maxFontScale: 3,
+  defaultFontScale: 1,
+} as const
+
 function matchesFilter(t: Task, f?: LayoutFilter): boolean {
   if (!f) return true
   if (f.critical && !t.critical) return false
@@ -538,10 +551,9 @@ export function categoryOf(categories: Category[], id: string): Category | undef
  * The export rasterizer scales content into the page preserving aspect ratio, so
  * the margin is zero exactly when contentWidth/contentHeight === paperW/paperH.
  * The two axes are independent layout knobs (pxPerDay = time density, rowHeight =
- * row density), so we only ever STRETCH the deficient axis UP — never compress —
- * which keeps text and bars readable (the time axis carries no inherent aspect,
- * and rows just get taller). Both inversions are exact because content size is
- * affine in each knob. Returns the view param(s) to apply ({} when already fit).
+ * row density). Automatic fitting first normalises values to an ergonomic range,
+ * then solves one axis without deriving font size from canvas size. Manual controls
+ * remain unrestricted. Returns the view param(s) to apply ({} when already fit).
  */
 export function fitToPaperView(
   project: Project,
@@ -551,64 +563,55 @@ export function fitToPaperView(
   const target = paperWmm / paperHmm
   if (!Number.isFinite(target) || target <= 0) return {}
   const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
-  const REF_PX = 10.5 // taskName default — the reference annotation
-  const TARGET_MM = 3.5 // legible printed height for that reference
-
-  // The legibility fontScale changes labelWidth / rowHeight-floor / band heights,
-  // which feed back into the very content size we solve against — so a single pass
-  // leaves a residual margin on non-landscape sheets. Iterate to a fixed point
-  // (the coupling is weak & contractive, so a few passes converge). Each pass
-  // exactly hits the aspect for the CURRENT geometry, then re-derives fontScale.
-  let view = project.view
-  for (let i = 0; i < 4; i++) {
-    const m = computeLayout({ ...project, view })
-    const current = m.contentWidth / m.contentHeight
-    let { pxPerDay, rowHeight } = view
-    let contentWidthAfter = m.contentWidth
-    if (Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
-      if (current < target) {
-        // Too narrow → widen the time axis so contentWidth = target × H.
-        const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
-        pxPerDay = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
-        contentWidthAfter = m.labelWidth + domainDays * pxPerDay
-      } else {
-        // Too short → taller rows so contentHeight = contentWidth / target.
-        const totalRows = Math.max(
-          1,
-          m.categories.reduce((s, c) => s + c.subRows, 0),
-        )
-        const fixedV = m.contentHeight - totalRows * m.rowHeight // title+header+footer+insets
-        rowHeight = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
-      }
-    }
-    // Text legibility: size REF_PX to TARGET_MM on the sheet; only ever ENLARGE.
-    const computedFontScale = (TARGET_MM * (contentWidthAfter / paperWmm)) / REF_PX
-    const fontScale = Number.isFinite(computedFontScale) ? Math.max(1, computedFontScale) : 1
-    view = { ...view, pxPerDay, rowHeight, fontScale }
+  const minPxPerDay = pxPerDayFromMonthWidth(AUTO_FIT_LIMITS.minMonthWidth)
+  const maxPxPerDay = pxPerDayFromMonthWidth(AUTO_FIT_LIMITS.maxMonthWidth)
+  const normalize = (value: number, min: number, max: number, fallback: number) =>
+    Number.isFinite(value) && value >= min && value <= max ? value : fallback
+  const view = {
+    ...project.view,
+    pxPerDay: normalize(
+      project.view.pxPerDay,
+      minPxPerDay,
+      maxPxPerDay,
+      pxPerDayFromMonthWidth(AUTO_FIT_LIMITS.defaultMonthWidth),
+    ),
+    rowHeight: normalize(
+      project.view.rowHeight,
+      AUTO_FIT_LIMITS.minRowHeight,
+      AUTO_FIT_LIMITS.maxRowHeight,
+      AUTO_FIT_LIMITS.defaultRowHeight,
+    ),
+    fontScale: normalize(
+      project.view.fontScale ?? 1,
+      AUTO_FIT_LIMITS.minFontScale,
+      AUTO_FIT_LIMITS.maxFontScale,
+      AUTO_FIT_LIMITS.defaultFontScale,
+    ),
   }
 
-  // Final aspect-only pass: fontScale has stabilised, so fix the deficient axis once
-  // more WITHOUT re-bumping fontScale. With fontScale frozen, labelWidth & band/header
-  // insets are constants, so content size is exactly affine in pxPerDay (or rowHeight)
-  // → this lands the aspect precisely even when fontScale-coupled insets (e.g. the
-  // per-lane 공종 header for the 왼쪽 공정 표) slowed the iteration's convergence.
-  {
-    const m = computeLayout({ ...project, view })
-    const current = m.contentWidth / m.contentHeight
-    if (Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
-      let { pxPerDay, rowHeight } = view
-      if (current < target) {
-        const domainDays = Math.max(1, m.domainEndDay - m.domainStartDay)
-        pxPerDay = clamp((target * m.contentHeight - m.labelWidth) / domainDays, 0.05, 400)
-      } else {
-        const totalRows = Math.max(
-          1,
-          m.categories.reduce((s, c) => s + c.subRows, 0),
-        )
-        const fixedV = m.contentHeight - totalRows * m.rowHeight
-        rowHeight = clamp((m.contentWidth / target - fixedV) / totalRows, 16, 2000)
-      }
-      view = { ...view, pxPerDay, rowHeight }
+  // Font size is never derived from the resulting canvas width. That old feedback
+  // loop could turn a normal A3 fit into 88430% text and a 12175px month.
+  const model = computeLayout({ ...project, view })
+  const current = model.contentWidth / Math.max(1, model.contentHeight)
+  if (Number.isFinite(current) && Math.abs(current - target) >= 1e-3) {
+    if (current < target) {
+      const domainDays = Math.max(1, model.domainEndDay - model.domainStartDay)
+      view.pxPerDay = clamp(
+        (target * model.contentHeight - model.labelWidth) / domainDays,
+        minPxPerDay,
+        maxPxPerDay,
+      )
+    } else {
+      const totalRows = Math.max(
+        1,
+        model.categories.reduce((sum, category) => sum + category.subRows, 0),
+      )
+      const fixedHeight = model.contentHeight - totalRows * model.rowHeight
+      view.rowHeight = clamp(
+        (model.contentWidth / target - fixedHeight) / totalRows,
+        AUTO_FIT_LIMITS.minRowHeight,
+        AUTO_FIT_LIMITS.maxRowHeight,
+      )
     }
   }
 

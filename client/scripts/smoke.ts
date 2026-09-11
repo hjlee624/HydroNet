@@ -5,7 +5,12 @@
 import { FACILITY_TYPES, facilitySchedule } from '../src/data/facilities'
 import { createSampleProject } from '../src/data/sampleProject'
 import { makeProject, PROJECT_TYPES } from '../src/data/templates'
-import { computeLayout, fitToPaperView } from '../src/engine/layout'
+import {
+  AUTO_FIT_LIMITS,
+  computeLayout,
+  fitToPaperView,
+  monthWidthFromPxPerDay,
+} from '../src/engine/layout'
 import { augmentForMirror, mirrorActive, planMirrorView } from '../src/engine/mirror'
 import { fitToPaperScopedView, paperMm, paperPx } from '../src/engine/paper'
 import { routeLinks } from '../src/engine/routing'
@@ -120,6 +125,27 @@ console.log(
 check(
   Math.abs(portraitAspect - portraitTarget) / portraitTarget < 0.03,
   `세로 용지도 맞춤이 수렴(여백≈0) (${portraitAspect.toFixed(3)} ≈ ${portraitTarget.toFixed(3)})`,
+)
+
+// 3b-ii-a. Legacy/runaway values must be repaired by automatic fitting. This
+// reproduces the reported A3 state: 12175px/month and 88430% text at 2% zoom.
+const runawayProject = {
+  ...scheduledProject,
+  view: { ...scheduledProject.view, pxPerDay: 400, rowHeight: 46, fontScale: 884.3 },
+}
+const recoveredPatch = fitToPaperView(runawayProject, 420, 297)
+const recoveredView = { ...runawayProject.view, ...recoveredPatch }
+check(
+  monthWidthFromPxPerDay(recoveredView.pxPerDay) <= AUTO_FIT_LIMITS.maxMonthWidth + 0.01,
+  `자동 맞춤이 12175px 월 폭을 ${AUTO_FIT_LIMITS.maxMonthWidth}px 이하로 복구한다`,
+)
+check(
+  recoveredView.fontScale <= AUTO_FIT_LIMITS.maxFontScale,
+  `자동 맞춤이 88430% 글자를 ${AUTO_FIT_LIMITS.maxFontScale * 100}% 이하로 복구한다`,
+)
+check(
+  recoveredView.rowHeight <= AUTO_FIT_LIMITS.maxRowHeight,
+  `자동 맞춤 행 높이는 ${AUTO_FIT_LIMITS.maxRowHeight}px을 넘지 않는다`,
 )
 
 // 3b-iii. [여백 없이 시트에 맞추기]가 **출력될 범위**에 맞는가(H2).
