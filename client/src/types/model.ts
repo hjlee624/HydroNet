@@ -257,11 +257,38 @@ export interface Sheet {
   displayEnd?: string
 }
 
+/**
+ * 관리 레코드가 **공정 백본의 어디에 걸려 있는지**. 이게 있어야 "이 공정의 NCR/예산/인허가"를
+ * 물을 수 있다(없으면 모듈은 공정표와 문자열로만 이어진 별도 목록이다).
+ *
+ * 불변식 3가지:
+ * 1. `sheetId` 미지정 = **활성 시트**(시트 개념이 없는 구버전 단일 공정표는 최상위 tasks).
+ *    필수로 둘 수 없다 — `Project.activeSheet` 자체가 optional 이고 기본 샘플·구버전 파일에는
+ *    없다. 필수로 두면 위조값을 넣게 되고 그 위조값이 전부 고아로 판정된다.
+ * 2. `taskId` 와 `categoryId` 가 모두 있으면 **taskId 우선**(공정이 공종보다 구체적이다).
+ * 3. `stamp` 는 생성 시점의 정규화 공정명(또는 공종명)이며 **판정용 힌트일 뿐 식별자가 아니다**.
+ *    프리셋 공정 id 가 위치 인덱스(`ft-{ci}-{ri}-{si}`, data/facilities.ts)라 다른 시설물
+ *    템플릿으로 바꿔도 id 가 그대로 맞아떨어져 '조용한 오연결'이 생긴다 — stamp 불일치는
+ *    그걸 잡는 신호다. 불일치해도 '확인 필요'로만 강등하고 **절대 자동 해제하지 않는다**.
+ *
+ * CRDT: 레코드 Y.Map 의 예약키 `$anchor` 에 **JSON 문자열 하나**로 원자 저장된다
+ * (state/crdt.ts encodeAnchor/decodeAnchor). 필드별로 쪼개 저장하면 두 사람이 각각 시트와
+ * 공정을 바꿨을 때 '다른 시트의 공정을 가리키는' 뒤섞인 앵커가 만들어지기 때문이다.
+ */
+export interface RecordAnchor {
+  sheetId?: ID
+  taskId?: ID
+  categoryId?: ID
+  stamp?: string
+}
+
 /** 건설사업관리 기록형 모듈(예산·공사비·자원·품질·안전·문서·인허가·시운전·리스크)의 한 행.
  *  values 키는 해당 모듈의 필드 스키마(data/modules.ts ModuleField[])를 따른다. */
 export interface ModuleRecord {
   id: ID
   values: Record<string, string>
+  /** 공정 백본 앵커. 없으면 사업 단위 레코드(기존 동작 그대로 — 합계·보고서는 앵커와 무관). */
+  anchor?: RecordAnchor
 }
 
 /** 기준선(베이스라인) 스냅샷의 한 공정(계획 시작·기간 박제). */
@@ -397,4 +424,8 @@ export const PALETTE_MAX = 10
 // v4: Task에 extId·owner·actualStart·actualFinish, Project에 changeLog·baselineVersions 추가
 //     (F12 일정표 취입 · F13 변경이력/확정본 · F16 주간 집계). 전부 optional 이라 마이그레이션 불요 —
 //     구버전 파일은 필드 부재로 로드되고, 신버전 파일은 구버전 리더가 모르는 키를 무시한다.
-export const SCHEMA_VERSION = 4
+// v5: ModuleRecord에 anchor(RecordAnchor) 추가 — 관리 레코드를 공정/공종에 건다. optional 이라
+//     마이그레이션 불요. 다만 **구버전 클라이언트는 이 값을 values['$anchor'] 문자열로 읽어**
+//     그대로 보존하므로(삭제하지 않는다), 구버전이 저장한 파일을 신버전이 열 때 migrateProject
+//     가 values['$anchor'] → anchor 로 승격한다(state/store.ts migrateModuleAnchors).
+export const SCHEMA_VERSION = 5

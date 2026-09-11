@@ -12,6 +12,7 @@ import type {
   PeriodInputs,
   Project,
   RainySeason,
+  RecordAnchor,
   Sheet,
   Task,
 } from '../types/model'
@@ -26,6 +27,19 @@ export const SEED_ORIGIN = Object.freeze({ kind: 'sequence-seed' })
 
 const DERIVED_TASK_FIELDS = new Set(['es', 'ef', 'ls', 'lf', 'totalFloat', 'critical', '__mirror'])
 const POSITION_KEY = '$position'
+/**
+ * 관리 레코드의 공정 앵커 예약키. **JSON 문자열 하나로 원자 저장**한다 —
+ * sheetId/taskId/categoryId 를 각각 별도 키로 쪼개면 두 사람이 각각 시트와 공정을 바꿨을 때
+ * 필드별로 병합되어 '다른 시트의 공정을 가리키는' 뒤섞인 앵커가 만들어진다. 앵커는 하나의
+ * 원자적 결정이므로 통값 교체(LWW)가 오히려 올바른 의미다.
+ *
+ * ⚠️ 이 키를 syncPlainMap 의 reserved Set 에 **넣지 말 것**. reserved 는 삭제뿐 아니라
+ * 쓰기까지 건너뛰므로(아래 syncPlainMap 참조) 앵커가 최초 값에 영구 고정된다. 보호는
+ * '직렬화기가 매번 값 또는 undefined 를 명시적으로 실어 보내는' 방식으로 한다.
+ */
+const ANCHOR_KEY = '$anchor'
+/** 레코드 Y.Map 에서 values 로 새어나가면 안 되는 예약키 전부. 서버 seed.js 와 대칭. */
+const MODULE_RESERVED_KEYS = new Set([POSITION_KEY, ANCHOR_KEY])
 const EPSILON = 1e-9
 
 type JsonRecord = Record<string, unknown>
@@ -376,6 +390,50 @@ export function canonicalProjectSnapshot(project: Project): Project {
   }
 }
 
+/** 앵커 → Y.Map 저장 문자열. 값이 하나도 없으면 undefined(= 키를 지운다). */
+export function encodeAnchor(anchor: RecordAnchor | undefined): string | undefined {
+  if (!anchor) return undefined
+  const compact: Record<string, string> = {}
+  for (const key of ['sheetId', 'taskId', 'categoryId', 'stamp'] as const) {
+    const value = anchor[key]
+    if (typeof value === 'string' && value) compact[key] = value
+  }
+  return Object.keys(compact).length ? JSON.stringify(compact) : undefined
+}
+
+/**
+ * Y.Map 저장값 → 앵커. 손으로 고친 .json·다른 클라이언트가 심은 쓰레기 값이 앵커로 승격되지
+ * 않도록 **문자열 필드만** 채택한다. 파싱 실패·비객체·빈 결과는 전부 undefined.
+ */
+export function decodeAnchor(raw: unknown): RecordAnchor | undefined {
+  if (typeof raw !== 'string' || !raw) return undefined
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+  const source = parsed as Record<string, unknown>
+  const anchor: RecordAnchor = {}
+  for (const key of ['sheetId', 'taskId', 'categoryId', 'stamp'] as const) {
+    const value = source[key]
+    if (typeof value === 'string' && value) anchor[key] = value
+  }
+  return Object.keys(anchor).length ? anchor : undefined
+}
+
+/** 레코드 values 에 섞여 들어온 예약키를 걷어낸다(구버전 파일·수기 편집 방어). */
+function withoutReservedKeys(values: Record<string, string>): Record<string, string> {
+  let clean: Record<string, string> | null = null
+  for (const key of Object.keys(values)) {
+    if (!MODULE_RESERVED_KEYS.has(key)) continue
+    if (!clean) clean = { ...values }
+    delete clean[key]
+  }
+  return clean ?? values
+}
+
 /** 모듈 데이터(moduleId → ModuleRecord[])를 root/modules 로 diff 동기화(빈 모듈은 제거). */
 function syncModuleCollections(
   target: Y.Map<RecordMap>,
@@ -390,7 +448,12 @@ function syncModuleCollections(
       collection = new Y.Map<Y.Map<unknown>>()
       target.set(moduleId, collection)
     }
-    syncRecordCollection(collection, map[moduleId], (record) => ({ ...record.values }))
+    // 앵커는 **매번** 실어 보낸다(없으면 undefined) — syncPlainMap 이 undefined 를 받아야
+    // 키를 지운다. 여기서 빼면 '한 번 걸린 앵커를 해제할 수 없는' 상태가 된다.
+    syncRecordCollection(collection, map[moduleId], (record) => ({
+      ...withoutReservedKeys(record.values),
+      [ANCHOR_KEY]: encodeAnchor(record.anchor),
+    }))
   }
 }
 
@@ -590,8 +653,15 @@ function orderedModuleRecords(collection: RecordMap): ModuleRecord[] {
     .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
     .map(({ id, record }) => {
       const values = record.toJSON() as JsonRecord
-      delete values[POSITION_KEY]
-      return { id, values: values as Record<string, string> }
+      const anchor = decodeAnchor(values[ANCHOR_KEY])
+      // 예약키는 values 로 절대 새지 않는다 — 새면 RecordModule 이 렌더하지 않아 화면엔
+      // 안 보이면서 내보내기·AI검토 .md·서버 스냅샷에만 정체불명 컬럼으로 나타난다.
+      for (const key of MODULE_RESERVED_KEYS) delete values[key]
+      return {
+        id,
+        values: values as Record<string, string>,
+        ...(anchor ? { anchor } : {}),
+      }
     })
 }
 

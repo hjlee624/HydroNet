@@ -58,6 +58,43 @@ const PERIOD_INPUT_KEYS = {
   tolerancePct: 'piTolerancePct',
 }
 
+/**
+ * 관리 레코드의 공정 앵커 예약키. client/src/state/crdt.ts 의 ANCHOR_KEY 와 **같은 키·같은
+ * 인코딩(JSON 문자열 하나)** 이어야 한다 — 여기서 빠뜨리면 스냅샷·서버 시드가 앵커를 지운다.
+ */
+const ANCHOR_KEY = '$anchor'
+const MODULE_RESERVED_KEYS = [POSITION_KEY, ANCHOR_KEY]
+const ANCHOR_FIELDS = ['sheetId', 'taskId', 'categoryId', 'stamp']
+
+/** 앵커 → 저장 문자열. client crdt.ts encodeAnchor 대칭. */
+function encodeAnchor(anchor) {
+  if (!anchor || typeof anchor !== 'object') return undefined
+  const compact = {}
+  for (const key of ANCHOR_FIELDS) {
+    const value = anchor[key]
+    if (typeof value === 'string' && value) compact[key] = value
+  }
+  return Object.keys(compact).length ? JSON.stringify(compact) : undefined
+}
+
+/** 저장 문자열 → 앵커. client crdt.ts decodeAnchor 대칭(문자열 필드만 채택). */
+function decodeAnchor(raw) {
+  if (typeof raw !== 'string' || !raw) return undefined
+  let parsed
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return undefined
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return undefined
+  const anchor = {}
+  for (const key of ANCHOR_FIELDS) {
+    const value = parsed[key]
+    if (typeof value === 'string' && value) anchor[key] = value
+  }
+  return Object.keys(anchor).length ? anchor : undefined
+}
+
 /** PeriodInputs → meta 스칼라 키. 미입력 필드는 undefined 라 setPlainMap 이 아예 쓰지 않는다. */
 function periodInputsToMeta(inputs) {
   const out = {}
@@ -160,7 +197,12 @@ function residentSheets(project) {
 function setModuleRecords(target, modules) {
   for (const [moduleId, records] of Object.entries(modules || {})) {
     if (!records?.length) continue
-    setRecords(ensureMap(target, moduleId), records, (record) => ({ ...record.values }))
+    setRecords(ensureMap(target, moduleId), records, (record) => {
+      const values = { ...record.values }
+      for (const key of MODULE_RESERVED_KEYS) delete values[key]
+      const anchor = encodeAnchor(record.anchor)
+      return anchor ? { ...values, [ANCHOR_KEY]: anchor } : values
+    })
   }
 }
 
@@ -326,15 +368,16 @@ function readSheetRecord(record) {
   }
 }
 
-/** 모듈 RecordMap → [{id, values}] (id 보존). client crdt.ts orderedModuleRecords 대칭. */
+/** 모듈 RecordMap → [{id, values, anchor?}] (id 보존). client crdt.ts orderedModuleRecords 대칭. */
 function orderedModuleRecords(collection) {
   return [...collection.entries()]
     .map(([id, record]) => ({ id, position: positionOf(record), record }))
     .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id))
     .map(({ id, record }) => {
       const values = record.toJSON()
-      delete values[POSITION_KEY]
-      return { id, values }
+      const anchor = decodeAnchor(values[ANCHOR_KEY])
+      for (const key of MODULE_RESERVED_KEYS) delete values[key]
+      return anchor ? { id, values, anchor } : { id, values }
     })
 }
 

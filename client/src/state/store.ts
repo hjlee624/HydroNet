@@ -33,9 +33,11 @@ import type {
   Link,
   LinkType,
   LogoItem,
+  ModuleRecord,
   PaperSettings,
   Project,
   RainySeason,
+  RecordAnchor,
   Task,
   TextRole,
   TextStyle,
@@ -47,6 +49,7 @@ import {
   applyProjectToYDoc,
   createProjectCrdtRuntime,
   createUnseededProjectCrdtRuntime,
+  decodeAnchor,
   LOCAL_ORIGIN,
   type ProjectCrdtRuntime,
   projectFromYDoc,
@@ -358,11 +361,16 @@ export interface EditorState {
   /** 현재 일정을 **이름 있는 확정본**으로 박제하고 비교 기준선(project.baseline)도 갱신. 새 id 반환. */
   saveBaselineVersion: (name: string, note?: string) => ID
   /** 기록형 모듈에 빈 행 추가 → 새 레코드 id 반환. */
-  addModuleRecord: (moduleId: string, values?: Record<string, string>) => ID
+  /** 조회 전용이거나 만들지 못하면 **빈 문자열**을 돌려준다(호출부가 포커스를 옮기기 전에 확인할 것). */
+  addModuleRecord: (moduleId: string, values?: Record<string, string>, anchor?: RecordAnchor) => ID
   /** 기록형 모듈 레코드의 필드 병합 수정. */
   updateModuleRecord: (moduleId: string, id: ID, patch: Record<string, string>) => void
   /** 기록형 모듈 레코드 삭제. */
   deleteModuleRecord: (moduleId: string, id: ID) => void
+  /** 관리 레코드를 공정/공종에 건다. anchor 를 비우면 해제(사업 단위 레코드로 되돌림). */
+  setRecordAnchor: (moduleId: string, id: ID, anchor?: RecordAnchor) => void
+  /** 앵커 해제 — setRecordAnchor(moduleId, id, undefined) 의 의도를 드러낸 별칭. */
+  clearRecordAnchor: (moduleId: string, id: ID) => void
   /** 현재 일정을 기준선으로 박제(대시보드 표류/EVM 연계). */
   captureBaseline: () => void
   clearBaseline: () => void
@@ -526,10 +534,67 @@ export function migrateSubNameToParentId(tasks: Task[]): Task[] {
  * document would never converge. `layout.ts` renders raw `subName` natively, so leaving
  * server-authoritative tasks unmigrated is safe.
  */
+/**
+ * 구버전 클라이언트가 저장한 파일의 앵커 복원. 앵커를 모르는 버전은 `$anchor` 를 레코드
+ * values 안의 평범한 문자열 키로 읽어 **지우지 않고 그대로 되쓴다**. 그 파일을 신버전이 열면
+ * 앵커가 `values['$anchor']` 에 갇혀 있으므로 여기서 `record.anchor` 로 승격하고 values 에서
+ * 걷어낸다(crdt.ts periodInputsFromMeta 의 '구버전 중첩 객체 폴백' 과 같은 방식).
+ * 이 한 곳만 고치면 setProject·importProjectContent·버전 복구·.json 열기 네 경로가 모두 덮인다.
+ */
+/** 구버전 파일에서 앵커가 갇혀 오는 자리 — crdt.ts ANCHOR_KEY 와 같은 값. */
+const ANCHOR_VALUE_KEY = '$anchor'
+
+function migrateModuleAnchors(project: Project): Project {
+  const modules = project.modules
+  if (!modules) return project
+  let changed = false
+  const next: Record<string, ModuleRecord[]> = {}
+  for (const [moduleId, records] of Object.entries(modules)) {
+    next[moduleId] = (records ?? []).map((record) => {
+      if (!(ANCHOR_VALUE_KEY in (record.values ?? {}))) return record
+      changed = true
+      const { [ANCHOR_VALUE_KEY]: raw, ...values } = record.values
+      const anchor = record.anchor ?? decodeAnchor(raw)
+      return anchor ? { ...record, values, anchor } : { ...record, values }
+    })
+  }
+  return changed ? { ...project, modules: next } : project
+}
+
 function migrateProject(project: Project): Project {
   const input = project.tasks ?? []
   const tasks = migrateSubNameToParentId(input)
-  return tasks === input ? project : { ...project, tasks }
+  const withTasks = tasks === input ? project : { ...project, tasks }
+  return migrateModuleAnchors(withTasks)
+}
+
+/**
+ * 관리 레코드 합집합(모듈별·id 기준) — 감사기록과 **같은 규칙**이다. 이게 없으면 템플릿 적용
+ * ·다른 .json 열기·옛 버전 복구가 예산·NCR·인허가를 통째로 지운다(들어온 목록에 없는 id 를
+ * applyProjectToYDoc 이 삭제하기 때문). 모듈 레코드는 undo 스코프 밖이라 한 번 지워지면
+ * 되돌릴 수단이 0 이다.
+ *
+ * 정렬 기준이 없는 점만 감사기록과 다르다 — ModuleRecord 에는 시각 필드가 없으므로
+ * '기존 순서 유지 + 새 id 를 뒤에 append' 로 고정한다($position 순서 규칙과 일치).
+ */
+function mergeModuleRecords(
+  existing: Record<string, ModuleRecord[]> | undefined,
+  incoming: Record<string, ModuleRecord[]> | undefined,
+): Record<string, ModuleRecord[]> | undefined {
+  if (!existing) return incoming
+  if (!incoming) return existing
+  const merged: Record<string, ModuleRecord[]> = {}
+  for (const moduleId of new Set([...Object.keys(existing), ...Object.keys(incoming)])) {
+    const kept = [...(existing[moduleId] ?? [])]
+    const seen = new Set(kept.map((record) => record.id))
+    for (const record of incoming[moduleId] ?? []) {
+      if (seen.has(record.id)) continue
+      seen.add(record.id)
+      kept.push(record)
+    }
+    if (kept.length) merged[moduleId] = kept
+  }
+  return Object.keys(merged).length ? merged : undefined
 }
 
 /**
@@ -978,6 +1043,13 @@ export const useEditor = create<EditorState>()((set, get) => {
     const listener = (): void => {
       syncDerivedView(true)
     }
+    // 여기 빠진 컨테이너는 화면 갱신만 늦는 게 아니라 **원격 데이터가 삭제된다**.
+    // authoritativeShadow 는 readRuntimeProject() 에서만 갱신되고, 그건 이 관찰자에서만
+    // 불린다. commit() 은 그 shadow 를 정본으로 삼아 applyProjectToYDoc 에 통째로 넘기는데,
+    // 레코드 diff 는 '들어온 목록에 없는 id' 를 지운다(crdt.ts syncRecordCollection /
+    // syncModuleCollections). 즉 관찰되지 않는 컨테이너에 원격 피어가 남긴 기록은 이쪽의
+    // 다음 로컬 편집 한 번에 조용히 사라진다. 지금 사고가 안 나는 것은 commit 이 거의 항상
+    // meta.updatedAt 을 함께 써서 meta 관찰자가 대신 깨워주는 **우연한 결합** 덕분이다.
     const observed = [
       runtime.types.meta,
       runtime.types.view,
@@ -989,6 +1061,10 @@ export const useEditor = create<EditorState>()((set, get) => {
       runtime.types.links,
       runtime.types.rainySeasons,
       runtime.types.sheets,
+      runtime.types.modules,
+      runtime.types.baseline,
+      runtime.types.changeLog,
+      runtime.types.baselineVersions,
     ]
     observed.forEach((type) => {
       type.observeDeep(listener)
@@ -1087,6 +1163,9 @@ export const useEditor = create<EditorState>()((set, get) => {
         prior.baselineVersions,
         normalized.baselineVersions,
       )
+      // 관리 기록(예산·공사비·NCR·인허가…)도 같은 이유로 보호한다 — 이력과 마찬가지로
+      // undo 스코프 밖이라 한 번 지워지면 되돌릴 수단이 없다.
+      normalized.modules = mergeModuleRecords(prior.modules, normalized.modules)
     }
     const previous = runtime
     observing = false
@@ -1204,6 +1283,10 @@ export const useEditor = create<EditorState>()((set, get) => {
         current.baselineVersions,
         incoming.baselineVersions,
       )
+      // 관리 기록도 같은 이유로 합집합이다. 이 보호가 없으면 **시설물 템플릿을 한 번 바꾸는
+      // 것만으로** 예산·NCR·인허가가 전부 사라진다 — templates.ts 의 makeProject 결과에는
+      // modules 키 자체가 없어 '들어온 목록이 빈 목록'이 되기 때문이다.
+      incoming.modules = mergeModuleRecords(current.modules, incoming.modules)
       activeSheetId = incoming.activeSheet?.id
       runtime.undoManager.stopCapturing()
       gestureActive = false
@@ -1962,17 +2045,44 @@ export const useEditor = create<EditorState>()((set, get) => {
       })
       return id
     },
-    addModuleRecord: (moduleId, values = {}) => {
+    addModuleRecord: (moduleId, values = {}, anchor) => {
+      // 조회 전용은 여기서 끊는다 — commit 이 어차피 막지만, 그 경우 호출부가 '존재하지 않는
+      // 레코드 id' 를 받아 포커스를 옮기려다 헛돈다. 빈 문자열 = 만들지 못했다는 뜻.
+      if (get().readOnly) return ''
       const id = `mr-${nanoid(8)}`
       commit(
         (p) => {
           if (!p.modules) p.modules = {}
-          p.modules[moduleId] = [...(p.modules[moduleId] ?? []), { id, values: { ...values } }]
+          p.modules[moduleId] = [
+            ...(p.modules[moduleId] ?? []),
+            { id, values: { ...values }, ...(anchor ? { anchor } : {}) },
+          ]
         },
         { history: false },
       )
       return id
     },
+    // 앵커는 **values 에 절대 넣지 않는다**. values 에 몰래 넣으면 RecordModule 이 선언된
+    // 스키마 키만 렌더하므로 화면에는 안 보이고 tsc 도 통과해 '되는 것처럼' 보이지만,
+    // 내보내기·AI검토 .md·서버 스냅샷에는 정체불명 컬럼으로 새어 나간다.
+    setRecordAnchor: (moduleId, id, anchor) =>
+      commit(
+        (p) => {
+          const rec = p.modules?.[moduleId]?.find((r) => r.id === id)
+          if (!rec) return
+          if (anchor) rec.anchor = { ...anchor }
+          else delete rec.anchor
+        },
+        { history: false },
+      ),
+    clearRecordAnchor: (moduleId, id) =>
+      commit(
+        (p) => {
+          const rec = p.modules?.[moduleId]?.find((r) => r.id === id)
+          if (rec) delete rec.anchor
+        },
+        { history: false },
+      ),
     updateModuleRecord: (moduleId, id, patch) =>
       commit(
         (p) => {

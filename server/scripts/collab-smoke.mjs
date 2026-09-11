@@ -630,6 +630,46 @@ try {
     '모듈이 서버 스냅샷(decodeProjectFromState)에 반영',
   )
 
+  // 공정 앵커($anchor): 클라이언트가 쓰는 저장 형태(JSON 문자열 1개)를 서버가 그대로 해독해
+  // 스냅샷에 record.anchor 로 복원해야 한다. 여기가 어긋나면 스냅샷을 되돌린 순간 모든
+  // 관리 기록이 공정과의 연결을 잃는다(클·서 대칭이 이 기능의 최대 리스크).
+  first.document.transact(() => {
+    const rec = first.document.getMap('root/modules').get('cost')?.get('mr-smoke')
+    rec?.set('$anchor', JSON.stringify({ taskId: 'ft-0-0-0', stamp: '터널 굴착' }))
+  })
+  await waitFor(
+    () =>
+      typeof second.document.getMap('root/modules').get('cost')?.get('mr-smoke')?.get('$anchor') ===
+      'string',
+    'module anchor convergence',
+  )
+  const anchorSnap = await call(base, 'GET', '/api/projects/projA/snapshot', projectGrant)
+  const anchoredRecord = anchorSnap.data?.modules?.cost?.[0]
+  ok(
+    anchoredRecord?.anchor?.taskId === 'ft-0-0-0' &&
+      anchoredRecord?.anchor?.stamp === '터널 굴착' &&
+      !('$anchor' in (anchoredRecord?.values ?? {})) &&
+      anchoredRecord?.values?.budget === '1000',
+    '공정 앵커가 서버 스냅샷에 anchor 로 복원되고 values 로 새지 않는다',
+  )
+
+  // 쓰레기 앵커 값은 승격되지 않는다(손으로 고친 JSON·타 클라이언트 방어).
+  first.document.transact(() => {
+    first.document.getMap('root/modules').get('cost')?.get('mr-smoke')?.set('$anchor', 'not json')
+  })
+  await waitFor(
+    () =>
+      second.document.getMap('root/modules').get('cost')?.get('mr-smoke')?.get('$anchor') ===
+      'not json',
+    'module anchor junk convergence',
+  )
+  const junkSnap = await call(base, 'GET', '/api/projects/projA/snapshot', projectGrant)
+  ok(
+    junkSnap.data?.modules?.cost?.[0]?.anchor === undefined &&
+      !('$anchor' in (junkSnap.data?.modules?.cost?.[0]?.values ?? {})),
+    '해독 불가한 앵커 값은 무시되고 values 도 오염되지 않는다',
+  )
+
   // ── F01 영속 확정 브로드캐스트 / F15 ID 기준 버전 보관 ──────────────────────
   const versionFiles = async (id) =>
     (await fs.readdir(path.join(autosaveDir, id)).catch(() => [])).filter((f) =>

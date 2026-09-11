@@ -15,6 +15,9 @@ import {
 import { useEditor } from '../src/state/store'
 import type { Project } from '../src/types/model'
 
+/** crdt.ts ANCHOR_KEY 와 같은 값 — 스모크가 저장 레이아웃을 직접 들여다보기 위한 리터럴. */
+const ANCHOR_SMOKE_KEY = '$anchor'
+
 function clone<T>(value: T): T {
   return structuredClone(value)
 }
@@ -562,6 +565,205 @@ assert.deepEqual(
   assert.equal(legacyRead.baselineVersions, undefined, '확정본 없는 문서는 키 자체가 없다')
 }
 
+// ── 건설사업관리 모듈 — 레코드 왕복 기준선 ───────────────────────────────────────
+// 지금까지 모듈 레코드는 클라이언트 왕복 검증이 한 건도 없었다(서버 collab-smoke 는 Y.Map 에
+// 원시 키를 직접 써서 클라 직렬화기를 타지 않는다). 앵커를 얹기 **전에** 현재 규약을 박제해
+// 둬야 이후 변경이 무엇을 깨뜨리는지 이 블록이 말해준다.
+{
+  const modBase = createSampleProject()
+  modBase.modules = {
+    quality: [
+      { id: 'mr-q1', values: { type: '검측요청(WIR)', target: '기초 배근', status: '합격' } },
+      { id: 'mr-q2', values: { type: '부적합(NCR)', target: '거푸집 단차', status: '재검' } },
+    ],
+    cost: [{ id: 'mr-c1', values: { group: '공사비', item: '토공', budget: '120000' } }],
+  }
+  const modDoc = new Y.Doc()
+  applyProjectToYDoc(modDoc, modBase)
+  const modRead = projectFromYDoc(modDoc)
+
+  assert.deepEqual(
+    modRead.modules?.quality?.map((r) => r.id),
+    ['mr-q1', 'mr-q2'],
+    '모듈 레코드는 id 와 입력 순서가 보존된다',
+  )
+  assert.deepEqual(
+    modRead.modules?.quality?.[1].values,
+    { type: '부적합(NCR)', target: '거푸집 단차', status: '재검' },
+    '레코드 values 가 통째로 왕복된다',
+  )
+  assert.equal(
+    '$position' in (modRead.modules?.cost?.[0].values ?? {}),
+    false,
+    '순서 예약키($position)는 values 로 새지 않는다',
+  )
+
+  // 빈 컬렉션은 moduleId 키 자체가 사라진다(crdt.ts syncModuleCollections 의 desired 필터).
+  const emptied = clone(modRead)
+  emptied.modules = { ...(emptied.modules ?? {}), cost: [] }
+  applyProjectToYDoc(modDoc, emptied, LOCAL_ORIGIN)
+  assert.equal(
+    'cost' in (projectFromYDoc(modDoc).modules ?? {}),
+    false,
+    '빈 모듈은 결과에서 키 자체가 없다(빈 배열이 아니라 부재)',
+  )
+
+  // JSON 스냅샷(파일 저장·서버 버전) 왕복에서도 레코드가 보존되어야 한다.
+  const modJson = JSON.parse(JSON.stringify(canonicalProjectSnapshot(modBase))) as Project
+  const modJsonDoc = new Y.Doc()
+  applyProjectToYDoc(modJsonDoc, modJson)
+  assert.deepEqual(
+    projectFromYDoc(modJsonDoc).modules?.quality?.map((r) => r.values.target),
+    ['기초 배근', '거푸집 단차'],
+    'JSON 스냅샷 왕복에서 모듈 레코드가 보존된다',
+  )
+
+  // **이미 존재하는** 모듈 컬렉션에 두 사람이 동시에 추가하면 레코드 단위로 병합된다.
+  const mLeft = new Y.Doc()
+  applyProjectToYDoc(mLeft, modBase)
+  const mRight = new Y.Doc()
+  Y.applyUpdate(mRight, Y.encodeStateAsUpdate(mLeft))
+  edit(mLeft, (project) => {
+    project.modules = {
+      ...(project.modules ?? {}),
+      quality: [
+        ...(project.modules?.quality ?? []),
+        { id: 'mr-A', values: { type: '부적합(NCR)', target: 'A가 발견' } },
+      ],
+    }
+  })
+  edit(mRight, (project) => {
+    project.modules = {
+      ...(project.modules ?? {}),
+      quality: [
+        ...(project.modules?.quality ?? []),
+        { id: 'mr-B', values: { type: '부적합(NCR)', target: 'B가 발견' } },
+      ],
+    }
+  })
+  sync(mLeft, mRight)
+  for (const doc of [mLeft, mRight]) {
+    const quality = projectFromYDoc(doc).modules?.quality ?? []
+    assert.deepEqual(
+      quality.map((r) => r.id).sort(),
+      ['mr-A', 'mr-B', 'mr-q1', 'mr-q2'],
+      '기존 컬렉션에 동시 추가한 레코드는 모두 살아남는다',
+    )
+  }
+
+  // ⚠️ 알려진 결함(특성화 테스트) — **아직 없는** 모듈 컬렉션을 두 피어가 동시에 처음 만들면
+  // 한쪽 기록이 통째로 사라진다. root/modules 안의 모듈 컬렉션은 중첩 Y.Map 이라 키 단위
+  // LWW 로 컨테이너 자체가 교체되기 때문이다 — bootstrapProjectYTypes(crdt.ts) 주석이 말하는
+  // "nested-type replacement trap" 이 최상위 컨테이너에서만 해결되어 있고 여기엔 적용되지 않았다.
+  // 근본 수정(모듈별 최상위 named type 또는 복합키 평탄화)은 저장 레이아웃 변경이라 구·신
+  // 클라이언트가 섞이는 배포 구간에서 데이터가 갈린다 → 마이그레이션 계획이 붙은 별도 슬라이스.
+  // 그때까지 이 단언이 **현재 동작을 고정**해 조용한 변화를 막는다(통과 = 아직 안 고쳐짐).
+  const rLeft = new Y.Doc()
+  applyProjectToYDoc(rLeft, modBase)
+  const rRight = new Y.Doc()
+  Y.applyUpdate(rRight, Y.encodeStateAsUpdate(rLeft))
+  edit(rLeft, (project) => {
+    project.modules = {
+      ...(project.modules ?? {}),
+      risk: [{ id: 'mr-A', values: { type: '리스크', content: '지반 불량' } }],
+    }
+  })
+  edit(rRight, (project) => {
+    project.modules = {
+      ...(project.modules ?? {}),
+      risk: [{ id: 'mr-B', values: { type: '이슈', content: '자재 지연' } }],
+    }
+  })
+  sync(rLeft, rRight)
+  assert.equal(
+    (projectFromYDoc(rLeft).modules?.risk ?? []).length,
+    1,
+    '알려진 결함: 신규 모듈 컬렉션 동시 생성은 한쪽만 남는다(고쳐지면 이 단언이 실패해 알려준다)',
+  )
+}
+
+// ── 공정 앵커($anchor) — 왕복·해제·보존·방어 ──────────────────────────────────────
+{
+  const anchorBase = createSampleProject()
+  const anchoredTask = anchorBase.tasks[0]
+  anchorBase.modules = {
+    quality: [
+      {
+        id: 'mr-anchored',
+        values: { type: '부적합(NCR)', target: '거푸집 단차' },
+        anchor: { taskId: anchoredTask.id, stamp: anchoredTask.name },
+      },
+      { id: 'mr-plain', values: { type: '검측요청(WIR)', target: '기초 배근' } },
+    ],
+  }
+  const aDoc = new Y.Doc()
+  applyProjectToYDoc(aDoc, anchorBase)
+
+  const readBack = projectFromYDoc(aDoc).modules?.quality ?? []
+  assert.deepEqual(
+    readBack[0].anchor,
+    { taskId: anchoredTask.id, stamp: anchoredTask.name },
+    '앵커가 왕복에서 그대로 보존된다',
+  )
+  assert.equal(
+    ANCHOR_SMOKE_KEY in readBack[0].values,
+    false,
+    '예약키가 values 로 새지 않는다(내보내기·AI검토 .md 오염 방지)',
+  )
+  assert.equal(readBack[1].anchor, undefined, '앵커 없는 레코드는 anchor 키 자체가 없다')
+
+  // 다른 values 필드만 고쳐도 앵커는 살아남는다.
+  edit(aDoc, (project) => {
+    const record = project.modules?.quality?.find((r) => r.id === 'mr-anchored')
+    assert(record, 'anchored record must exist')
+    record.values.target = '거푸집 단차(재검)'
+  })
+  const afterEdit = projectFromYDoc(aDoc).modules?.quality?.[0]
+  assert.equal(afterEdit?.values.target, '거푸집 단차(재검)')
+  assert.equal(afterEdit?.anchor?.taskId, anchoredTask.id, '값 편집이 앵커를 지우지 않는다')
+
+  // **해제 가능해야 한다** — 예약키를 reserved Set 에 넣으면 여기서 막힌다(쓰기까지 건너뛰므로).
+  edit(aDoc, (project) => {
+    const record = project.modules?.quality?.find((r) => r.id === 'mr-anchored')
+    assert(record, 'anchored record must exist')
+    record.anchor = undefined
+  })
+  const afterClear = projectFromYDoc(aDoc).modules?.quality?.[0]
+  assert.equal(afterClear?.anchor, undefined, '앵커 해제가 실제로 반영된다')
+  assert.equal(
+    bootstrapProjectYTypes(aDoc).modules.get('quality')?.get('mr-anchored')?.has(ANCHOR_SMOKE_KEY),
+    false,
+    '해제하면 Y.Map 에서 예약키가 사라진다(빈 문자열로 남지 않는다)',
+  )
+
+  // 쓰레기 값 방어 — 손으로 고친 .json·다른 클라이언트가 심은 값이 앵커로 승격되면 안 된다.
+  for (const junk of [123, 'not json', '[1,2]', '{"sheetId":1}', '{}']) {
+    const junkDoc = new Y.Doc()
+    applyProjectToYDoc(junkDoc, anchorBase)
+    bootstrapProjectYTypes(junkDoc)
+      .modules.get('quality')
+      ?.get('mr-plain')
+      ?.set(ANCHOR_SMOKE_KEY, junk)
+    const junkRead = projectFromYDoc(junkDoc).modules?.quality?.find((r) => r.id === 'mr-plain')
+    assert.equal(junkRead?.anchor, undefined, `쓰레기 앵커 값은 무시된다: ${String(junk)}`)
+    assert.equal(
+      ANCHOR_SMOKE_KEY in (junkRead?.values ?? {}),
+      false,
+      `쓰레기 앵커 값이 values 로 새지 않는다: ${String(junk)}`,
+    )
+  }
+
+  // JSON 스냅샷(파일 저장·서버 버전) 왕복에서도 앵커가 보존된다.
+  const anchorJson = JSON.parse(JSON.stringify(canonicalProjectSnapshot(anchorBase))) as Project
+  const anchorJsonDoc = new Y.Doc()
+  applyProjectToYDoc(anchorJsonDoc, anchorJson)
+  assert.equal(
+    projectFromYDoc(anchorJsonDoc).modules?.quality?.[0].anchor?.taskId,
+    anchoredTask.id,
+    'JSON 스냅샷 왕복에서 앵커가 보존된다',
+  )
+}
+
 // Legacy shared activeSheetId values are ignored; only the local preferred id applies.
 const legacyPointerDoc = new Y.Doc()
 applyProjectToYDoc(legacyPointerDoc, multi)
@@ -569,6 +771,181 @@ bootstrapProjectYTypes(legacyPointerDoc).meta.set('activeSheetId', 'sheet-b')
 assert.equal(projectFromYDoc(legacyPointerDoc).activeSheet?.id, 'sheet-a')
 assert.equal(projectFromYDoc(legacyPointerDoc, 'sheet-b').activeSheet?.id, 'sheet-b')
 
+// ── 쓰기 그림자 신선도 — 관찰되지 않는 컨테이너의 원격 기록이 삭제되지 않아야 한다 ──────
+// store 의 authoritativeShadow 는 observeRoot 관찰자가 깨울 때만 갱신된다. 관찰 목록에서
+// 빠진 컨테이너는 원격 변경을 shadow 가 모른 채로 다음 로컬 편집이 그 shadow 를 정본으로
+// 밀어버려 **원격 기록이 조용히 삭제된다**. 아래 4개 컨테이너가 관찰 목록에 있는지를
+// 동작으로 검증한다(목록을 눈으로 확인하는 게 아니라, 지워지는지로 판정).
+{
+  const freshBase = clone(base)
+  freshBase.id = 'shadow-freshness'
+  freshBase.modules = { quality: [{ id: 'mr-local', values: { target: '내가 쓴 것' } }] }
+  freshBase.changeLog = [
+    {
+      id: 'ch-local',
+      at: '2026-03-01T00:00:00.000Z',
+      actorName: '나',
+      kind: 'note',
+      taskIds: [],
+      summary: '로컬',
+      reason: '',
+    },
+  ]
+  useEditor.getState().setProject(freshBase)
+  const freshRuntime = getCurrentCrdtRuntime()
+  assert(freshRuntime, 'store must expose the active CRDT runtime')
+
+  // 원격 피어가 모듈 레코드·이력·기준선을 남긴다(로컬 편집이 아니라 외부에서 들어온 업데이트).
+  const peer = new Y.Doc()
+  Y.applyUpdate(peer, Y.encodeStateAsUpdate(freshRuntime.doc))
+  edit(peer, (project) => {
+    project.modules = {
+      ...(project.modules ?? {}),
+      quality: [
+        ...(project.modules?.quality ?? []),
+        { id: 'mr-remote', values: { target: '동료가 쓴 것' } },
+      ],
+    }
+    project.changeLog = [
+      ...(project.changeLog ?? []),
+      {
+        id: 'ch-remote',
+        at: '2026-03-02T00:00:00.000Z',
+        actorName: '동료',
+        kind: 'note',
+        taskIds: [],
+        summary: '원격',
+        reason: '',
+      },
+    ]
+    project.baseline = {
+      capturedAt: '2026-03-02T00:00:00.000Z',
+      asOf: '2026-03-02',
+      startDay: 0,
+      endDay: 90,
+      tasks: [{ id: first.id, start: 0, duration: 10 }],
+    }
+  })
+  Y.applyUpdate(freshRuntime.doc, Y.encodeStateAsUpdate(peer))
+  await Promise.resolve()
+
+  // 이제 **모듈과 무관한** 로컬 편집을 한 번 한다. 이 커밋이 shadow 전체를 정본으로 민다.
+  useEditor.getState().updateTask(first.id, { note: '로컬 편집' })
+
+  const settled = projectFromYDoc(freshRuntime.doc)
+  assert.deepEqual(
+    (settled.modules?.quality ?? []).map((r) => r.id).sort(),
+    ['mr-local', 'mr-remote'],
+    '원격 모듈 레코드가 로컬 편집 한 번에 삭제되지 않는다(root/modules 관찰 필요)',
+  )
+  assert.deepEqual(
+    (settled.changeLog ?? []).map((e) => e.id),
+    ['ch-local', 'ch-remote'],
+    '원격 변경 이력이 로컬 편집에 삭제되지 않는다(root/changeLog 관찰 필요)',
+  )
+  assert.equal(
+    settled.baseline?.asOf,
+    '2026-03-02',
+    '원격 기준선이 로컬 편집에 삭제되지 않는다(root/baseline 관찰 필요)',
+  )
+}
+
+// ── 앵커 store 경로 — 레거시 승격 · 합집합 보호 · 액션 · 조회전용 ────────────────────
+{
+  const storeBase = clone(base)
+  storeBase.id = 'anchor-store'
+  const targetTask = storeBase.tasks[0]
+
+  // (1) 구버전 파일 승격 — 앵커를 모르는 버전이 values 안에 가둬둔 값을 anchor 로 올린다.
+  storeBase.modules = {
+    quality: [
+      {
+        id: 'mr-legacy',
+        values: {
+          type: '부적합(NCR)',
+          target: '구버전 저장분',
+          $anchor: JSON.stringify({ taskId: targetTask.id, stamp: targetTask.name }),
+        },
+      },
+      {
+        id: 'mr-junk',
+        values: { type: '검측요청(WIR)', target: '깨진 앵커', $anchor: 'not json' },
+      },
+    ],
+    cost: [{ id: 'mr-cost', values: { group: '공사비', budget: '5000' } }],
+  }
+  useEditor.getState().setProject(storeBase)
+  const promoted = useEditor.getState().project.modules?.quality ?? []
+  assert.equal(
+    promoted.find((r) => r.id === 'mr-legacy')?.anchor?.taskId,
+    targetTask.id,
+    '구버전 파일의 values.$anchor 가 anchor 로 승격된다',
+  )
+  assert.equal(
+    ANCHOR_SMOKE_KEY in (promoted.find((r) => r.id === 'mr-legacy')?.values ?? {}),
+    false,
+    '승격 후 values 에서 예약키가 제거된다',
+  )
+  assert.equal(
+    promoted.find((r) => r.id === 'mr-junk')?.anchor,
+    undefined,
+    '해독 불가한 구버전 값은 앵커가 되지 않는다',
+  )
+  assert.equal(
+    ANCHOR_SMOKE_KEY in (promoted.find((r) => r.id === 'mr-junk')?.values ?? {}),
+    false,
+    '해독 불가해도 예약키는 values 에 남지 않는다',
+  )
+
+  // (2) 앵커 액션 — 걸고, 값 편집에도 살아남고, 해제된다.
+  useEditor.getState().setRecordAnchor('cost', 'mr-cost', {
+    taskId: targetTask.id,
+    stamp: targetTask.name,
+  })
+  assert.equal(
+    useEditor.getState().project.modules?.cost?.[0].anchor?.taskId,
+    targetTask.id,
+    'setRecordAnchor 가 앵커를 건다',
+  )
+  useEditor.getState().updateModuleRecord('cost', 'mr-cost', { budget: '6000' })
+  assert.equal(
+    useEditor.getState().project.modules?.cost?.[0].anchor?.taskId,
+    targetTask.id,
+    '값 편집이 앵커를 지우지 않는다',
+  )
+  useEditor.getState().clearRecordAnchor('cost', 'mr-cost')
+  assert.equal(
+    useEditor.getState().project.modules?.cost?.[0].anchor,
+    undefined,
+    'clearRecordAnchor 가 앵커를 해제한다',
+  )
+
+  // (3) 합집합 보호 — 템플릿 적용처럼 modules 키가 **아예 없는** 내용이 들어와도 살아남는다.
+  const templateLike = clone(base)
+  templateLike.id = 'anchor-store'
+  templateLike.modules = undefined
+  useEditor.getState().importProjectContent(templateLike)
+  const survived = useEditor.getState().project.modules
+  assert.deepEqual(
+    (survived?.quality ?? []).map((r) => r.id),
+    ['mr-legacy', 'mr-junk'],
+    'modules 없는 내용을 실어도 기존 관리 기록이 살아남는다(템플릿 적용 = 데이터 소실 금지)',
+  )
+  assert.equal((survived?.cost ?? []).length, 1, '다른 모듈도 함께 보존된다')
+
+  // (4) 조회 전용 — 열람은 되고 편집만 막힌다.
+  useEditor.getState().setReadOnly(true)
+  const blockedId = useEditor.getState().addModuleRecord('cost', { group: '설계비' })
+  assert.equal(blockedId, '', '조회 전용은 레코드를 만들지 못하고 빈 id 를 돌려준다')
+  useEditor.getState().setRecordAnchor('quality', 'mr-legacy', { taskId: 'someone-else' })
+  assert.equal(
+    useEditor.getState().project.modules?.quality?.[0].anchor?.taskId,
+    targetTask.id,
+    '조회 전용은 앵커를 바꾸지 못한다',
+  )
+  useEditor.getState().setReadOnly(false)
+}
+
 console.log(
-  'CRDT SMOKE OK: convergence, authority, JSON, hydration gate, undo, gesture, local sheet, periodInputs merge, task actuals merge, changeLog/baselineVersions audit',
+  'CRDT SMOKE OK: convergence, authority, JSON, hydration gate, undo, gesture, local sheet, periodInputs merge, task actuals merge, changeLog/baselineVersions audit, module records, shadow freshness, anchors',
 )
