@@ -11,6 +11,7 @@ import {
   fitToPaperView,
   monthWidthFromPxPerDay,
 } from '../src/engine/layout'
+import { buildByTaskIndex, countAnchorStates, resolveAnchor } from '../src/engine/anchors'
 import { augmentForMirror, mirrorActive, planMirrorView } from '../src/engine/mirror'
 import { fitToPaperScopedView, paperMm, paperPx } from '../src/engine/paper'
 import { routeLinks } from '../src/engine/routing'
@@ -1467,6 +1468,123 @@ console.log('')
     zoom: 0.3,
   })
   check(roomy.showDuration === true, '대조군: 행이 넉넉하면 공사일수를 그대로 띄운다')
+}
+
+// ── 앵커 해석기(engine/anchors.ts) ────────────────────────────────────────────
+{
+  console.log('\n[앵커 해석]')
+  const anchorProject = createSampleProject()
+  const liveTask = anchorProject.tasks[0]
+  const liveCategory = anchorProject.categories[0]
+
+  const linked = resolveAnchor(anchorProject, { taskId: liveTask.id })
+  check(linked?.state === 'linked', '활성 시트의 공정 앵커는 linked')
+  check(linked?.taskName === liveTask.name, '해석 결과에 현재 공정명이 실린다')
+
+  check(
+    resolveAnchor(anchorProject, undefined) === undefined,
+    '앵커 없는 레코드는 판정 자체를 하지 않는다(사업 단위)',
+  )
+  check(
+    resolveAnchor(anchorProject, { stamp: '이름만' }) === undefined,
+    '대상 없는 앵커(stamp 뿐)도 사업 단위로 본다',
+  )
+
+  check(
+    resolveAnchor(anchorProject, { taskId: 'ft-does-not-exist' })?.state === 'orphan',
+    '삭제된 공정을 가리키면 orphan',
+  )
+  const orphanWithStamp = resolveAnchor(anchorProject, {
+    taskId: 'ft-does-not-exist',
+    stamp: '사라진 공정',
+  })
+  check(
+    orphanWithStamp?.taskName === '사라진 공정',
+    'orphan 이어도 마지막으로 알던 이름을 보여준다(재지정 단서)',
+  )
+
+  check(
+    resolveAnchor(anchorProject, { taskId: liveTask.id, stamp: '전혀 다른 이름' })?.state ===
+      'needsCheck',
+    'stamp 불일치는 needsCheck — 조용한 오연결을 잡는 유일한 신호',
+  )
+  check(
+    resolveAnchor(anchorProject, { taskId: liveTask.id, stamp: `◆  ${liveTask.name}  ` })?.state ===
+      'linked',
+    '◆ 표식·공백 차이만으로는 경고하지 않는다(경고가 소음이 되면 안 된다)',
+  )
+
+  // 구버전 단일 공정표(activeSheet 자체가 없음) — sheetId 를 채울 값이 없어도 판정된다.
+  check(
+    anchorProject.activeSheet === undefined,
+    '전제: 기본 샘플에는 activeSheet 가 없다(sheetId 를 필수로 둘 수 없는 이유)',
+  )
+  check(
+    resolveAnchor(anchorProject, { categoryId: liveCategory.id })?.state === 'linked',
+    'sheetId 미지정 앵커는 활성 스코프(구버전은 최상위 tasks)로 해석된다',
+  )
+
+  // 다른 시트의 공정 — 깨진 게 아니라 화면 밖일 뿐이다.
+  const multiSheet = createSampleProject()
+  multiSheet.activeSheet = { id: 'sh-active', role: 'milestone', name: '시공 공정표' }
+  multiSheet.sheets = [
+    {
+      id: 'sh-other',
+      role: 'plan',
+      name: '예정공정표',
+      categories: [{ ...liveCategory, id: 'fc-other' }],
+      tasks: [{ ...liveTask, id: 'ft-other', categoryId: 'fc-other', name: '다른 시트 공정' }],
+      links: [],
+      rainySeasons: [],
+    },
+  ]
+  const cross = resolveAnchor(multiSheet, { sheetId: 'sh-other', taskId: 'ft-other' })
+  check(cross?.state === 'otherSheet', '비활성 시트의 공정은 otherSheet(고아가 아니다)')
+  check(cross?.sheetName === '예정공정표', 'otherSheet 는 어느 시트인지 알려준다')
+  check(
+    resolveAnchor(multiSheet, { sheetId: 'sh-deleted', taskId: 'ft-other' })?.state === 'orphan',
+    '시트 자체가 사라지면 orphan',
+  )
+  check(
+    resolveAnchor(multiSheet, { taskId: 'ft-other' })?.state === 'orphan',
+    '시트를 넘나드는 전체 검색은 하지 않는다(죽은 사본을 정상으로 오판하지 않기 위해)',
+  )
+
+  // 역인덱스 — 공정 하나에 걸린 여러 모듈의 레코드를 한 번에.
+  const indexed = createSampleProject()
+  const indexedTask = indexed.tasks[0]
+  indexed.modules = {
+    quality: [
+      { id: 'mr-1', values: {}, anchor: { taskId: indexedTask.id } },
+      { id: 'mr-2', values: {}, anchor: { taskId: indexedTask.id, stamp: '옛 이름' } },
+      { id: 'mr-3', values: {}, anchor: { taskId: 'ft-gone' } },
+    ],
+    risk: [
+      { id: 'mr-4', values: {}, anchor: { taskId: indexedTask.id } },
+      { id: 'mr-5', values: {} },
+    ],
+  }
+  const index = buildByTaskIndex(indexed)
+  check(index.get(indexedTask.id)?.length === 3, '한 공정에 걸린 레코드를 모듈을 넘어 모은다')
+  check(
+    new Set(index.get(indexedTask.id)?.map((r) => r.moduleId)).size === 2,
+    '역인덱스 항목이 어느 모듈의 레코드인지 알려준다',
+  )
+  check(!index.has('ft-gone'), '고아는 역인덱스에 담지 않는다(가리킬 공정이 없다)')
+  check(
+    buildByTaskIndex(createSampleProject()).size === 0,
+    '앵커가 하나도 없으면 빈 인덱스이고 예외도 없다',
+  )
+
+  const counts = countAnchorStates(indexed, indexed.modules.quality)
+  check(
+    counts.linked === 1 && counts.needsCheck === 1 && counts.orphan === 1 && counts.none === 0,
+    '모듈별 앵커 상태 집계가 4종을 구분한다',
+  )
+  check(
+    countAnchorStates(indexed, indexed.modules.risk).none === 1,
+    '앵커 없는 레코드는 none 으로 센다(경고가 아니다)',
+  )
 }
 
 console.log(`\n${failures === 0 ? '✅ ALL PASS' : `❌ ${failures} FAILURE(S)`}`)

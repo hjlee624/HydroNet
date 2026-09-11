@@ -1,6 +1,7 @@
 // BoQ 취입 파서 스모크 — `npm run smoke:boq`. 순수 함수(CSV·헤더검출·행추출·공종코드추천·매핑)
 // 회귀 검증. 실패 시 throw → 비정상 종료.
 
+import { createSampleProject } from '../src/data/sampleProject'
 import {
   extractRows,
   matchRowsToTasks,
@@ -9,6 +10,7 @@ import {
   parseQuantity,
   suggestWorkCode,
 } from '../src/state/boqImport'
+import { useEditor } from '../src/state/store'
 import type { Task } from '../src/types/model'
 
 let checks = 0
@@ -137,5 +139,53 @@ const codeSquare = suggestWorkCode('토사 굴착', '굴삭기 1.0㎥', '㎥')
 const codeM3 = suggestWorkCode('토사 굴착', '굴삭기 1.0㎥', 'm3')
 assert(!!codeSquare, 'suggestWorkCode: 토사 굴착(㎥) → 코드 추천됨')
 eq(codeM3, codeSquare, 'suggestWorkCode: m3 와 ㎥ 가 같은 코드를 추천')
+
+// ── 취입 자동 앵커(store 경로) — 사용자 입력 0 으로 내역 레코드가 공정에 걸린다 ──────────
+{
+  const anchorProject = createSampleProject()
+  anchorProject.id = 'boq-anchor'
+  const [taskA, taskB] = anchorProject.tasks.filter((t) => !t.isMilestone)
+  assert(!!taskA && !!taskB, '앵커 시나리오: 비마일스톤 공정 2개 필요')
+
+  // 3행 중 2행만 공정에 매핑되고, 그중 1행만 사용자가 체크했다고 가정한다.
+  const rows = [
+    { name: taskA.name, unit: '㎥', quantity: 1040, price: 12000, taskId: taskA.id },
+    { name: taskB.name, unit: '㎥', quantity: 520 },
+    { name: '매칭 안 되는 품목', unit: 'EA', quantity: 3 },
+  ]
+  useEditor.getState().setProject(anchorProject)
+  const applied = useEditor
+    .getState()
+    .importBoqQuantities([{ taskId: taskA.id, quantity: 1040, unit: '㎥' }], rows)
+
+  eq(applied.recordsAdded, 3, '자동 앵커: 저장 건수는 종전과 같다(전 행 저장)')
+  eq(applied.anchored, 1, '자동 앵커: 매핑된 행만 앵커를 받는다')
+
+  const boqRecords = useEditor.getState().project.modules?.boq ?? []
+  eq(boqRecords.length, 3, '자동 앵커: 내역 레코드 3건')
+  eq(boqRecords[0].anchor?.taskId, taskA.id, '자동 앵커: 매핑 행의 앵커가 그 공정을 가리킨다')
+  eq(boqRecords[0].anchor?.stamp, taskA.name, '자동 앵커: 생성 시점 공정명이 stamp 로 남는다')
+  eq(boqRecords[1].anchor, undefined, '자동 앵커: 미매핑 행은 앵커 없이 저장된다')
+  eq(boqRecords[2].anchor, undefined, '자동 앵커: 미매칭 행도 앵커 없이 저장된다')
+
+  // 기존 values 계약은 한 글자도 바뀌지 않아야 한다(앵커는 values 밖에 산다).
+  eq(boqRecords[0].values.item, taskA.name, '자동 앵커: values.item 종전과 동일')
+  eq(boqRecords[0].values.qty, '1040', '자동 앵커: values.qty 종전과 동일')
+  eq(boqRecords[0].values.price, '12000', '자동 앵커: values.price 종전과 동일')
+  assert(!('$anchor' in boqRecords[0].values), '자동 앵커: 예약키가 values 로 새지 않는다')
+
+  // 존재하지 않는 공정을 가리키는 행은 앵커를 만들지 않는다(없던 고아를 만들지 않는다).
+  const ghost = useEditor
+    .getState()
+    .importBoqQuantities([], [{ name: '유령', unit: 'EA', quantity: 1, taskId: 'ft-ghost' }])
+  eq(ghost.anchored, 0, '자동 앵커: 없는 공정을 가리키는 행은 앵커를 받지 않는다')
+
+  // 조회 전용은 아무것도 만들지 않는다.
+  useEditor.getState().setReadOnly(true)
+  const blocked = useEditor.getState().importBoqQuantities([], rows)
+  eq(blocked.recordsAdded, 0, '조회 전용: 내역 레코드를 만들지 않는다')
+  eq(blocked.anchored, 0, '조회 전용: 앵커도 만들지 않는다')
+  useEditor.getState().setReadOnly(false)
+}
 
 console.log(`✓ boq-smoke: ${checks} checks passed`)

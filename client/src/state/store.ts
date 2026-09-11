@@ -245,11 +245,25 @@ export interface EditorState {
   }
   /** 내역서(BoQ) 취입(검토서 B3) — 사용자가 확인한 매핑의 물량·단위·공종코드를 **단일 커밋**
    *  (undo 1엔트리)으로 반영한다. 일정(start/duration)은 건드리지 않으므로 cascade 없음.
-   *  조회 전용은 무반영. 반영 건수를 돌려준다. */
+   *  조회 전용은 무반영. 반영 건수를 돌려준다.
+   *
+   *  `rows[].taskId` 가 있으면 그 행으로 만들어지는 내역 레코드에 **공정 앵커를 자동으로**
+   *  붙인다. 매핑은 다이얼로그가 이미 계산해 둔 것(matchRowsToTasks)이라 사용자 입력이
+   *  추가로 들지 않는다 — 앵커는 평소 작업의 부산물이어야지 '일 하나 더'가 되면 안 된다. */
   importBoqQuantities: (
     items: Array<{ taskId: ID; quantity?: number; unit?: string; workCode?: string }>,
-    rows?: Array<{ name: string; category?: string; spec?: string; unit?: string; quantity: number; price?: number; note?: string }>,
-  ) => { applied: number; recordsAdded: number }
+    rows?: Array<{
+      name: string
+      category?: string
+      spec?: string
+      unit?: string
+      quantity: number
+      price?: number
+      note?: string
+      /** 이 행이 매핑된 공정. 없으면 앵커 없이(사업 단위 레코드로) 저장된다. */
+      taskId?: ID
+    }>,
+  ) => { applied: number; recordsAdded: number; anchored: number }
   /** 사내 일정표(엑셀·CSV) 취입(F12) — 공종 생성·공정 upsert·선후행 연결을 **단일 커밋**
    *  (undo 1엔트리)으로 반영한다. 같은 번호(extId)/공정 id 는 새로 만들지 않고 갱신한다.
    *  reschedule 은 호출하지 않는다(외부 일정표의 날짜가 정본). 조회 전용은 무반영. */
@@ -1481,15 +1495,27 @@ export const useEditor = create<EditorState>()((set, get) => {
       return { applied, skipped }
     },
     importBoqQuantities: (items, rows = []) => {
-      if (get().readOnly) return { applied: 0, recordsAdded: 0 }
+      if (get().readOnly) return { applied: 0, recordsAdded: 0, anchored: 0 }
       let applied = 0
       let recordsAdded = 0
+      let anchored = 0
       commit(
         (p) => {
           p.modules ??= {}
           p.modules.boq ??= []
           for (const row of rows) {
-            p.modules.boq.push({ id: `mr-${nanoid(8)}`, values: { category: row.category ?? '', item: row.name, spec: row.spec ?? '', unit: row.unit ?? '', qty: String(row.quantity), price: row.price == null ? '' : String(row.price), note: row.note ?? '' } })
+            // 매핑된 공정이 실제로 있을 때만 앵커를 붙인다 — 없는 공정을 가리키는 앵커를
+            // 만들어 두고 나중에 고아로 표시하는 건 사용자에게 없던 문제를 만드는 것이다.
+            const anchorTask = row.taskId ? p.tasks.find((t) => t.id === row.taskId) : undefined
+            const anchor = anchorTask
+              ? {
+                  ...(p.activeSheet?.id ? { sheetId: p.activeSheet.id } : {}),
+                  taskId: anchorTask.id,
+                  stamp: anchorTask.name,
+                }
+              : undefined
+            if (anchor) anchored++
+            p.modules.boq.push({ id: `mr-${nanoid(8)}`, values: { category: row.category ?? '', item: row.name, spec: row.spec ?? '', unit: row.unit ?? '', qty: String(row.quantity), price: row.price == null ? '' : String(row.price), note: row.note ?? '' }, ...(anchor ? { anchor } : {}) })
             recordsAdded++
           }
           for (const it of items) {
@@ -1513,7 +1539,11 @@ export const useEditor = create<EditorState>()((set, get) => {
         },
         { cascade: false, history: true },
       )
-      return { applied, recordsAdded }
+      // 주의(기존 비대칭, 이번에 생긴 것이 아님): 이 커밋은 history:true 한 덩어리 안에서
+      // 내역 레코드 추가와 Task.quantity 갱신을 함께 한다. 모듈 레코드는 undo 스코프 밖이라
+      // (crdt.ts 의 UndoManager 추적 대상에서 제외) 되돌리면 물량만 원복되고 레코드·앵커는
+      // 남는다. M4(롤업 EVM) 착수 전에 재취입 멱등성과 함께 다시 볼 것.
+      return { applied, recordsAdded, anchored }
     },
     importScheduleRows: (plan) => {
       if (get().readOnly) return { created: 0, updated: 0, linked: 0, unresolved: [] }

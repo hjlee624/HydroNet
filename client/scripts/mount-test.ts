@@ -106,6 +106,53 @@ async function main() {
   await modCheck('cost', '프로젝트 예산', '기록 모듈(프로젝트 예산)')
   await modCheck('progress', '진척·실적', '진척·실적 모듈')
   await modCheck('report', '공정 요약', '보고서 모듈')
+  await modCheck('boq', '공사 사업비', '기록 모듈(공사 사업비)')
+  await modCheck('quality', '품질·검측', '기록 모듈(품질·검측)')
+
+  // ── 앵커 칩(공정 연결 표시) ────────────────────────────────────────────────
+  console.log('\n[앵커 표시]')
+  {
+    // 이 블록 전용 import — 아래쪽(차트 검증)에서 같은 이름을 다시 선언하므로 스코프를 나눈다.
+    const { useEditor } = await import('../src/state/store')
+    const ed = useEditor.getState()
+    const anchorTask = ed.project.tasks.find((t) => !t.isMilestone)
+    check(!!anchorTask, '전제: 앵커를 걸 비마일스톤 공정이 있다')
+    const recordId = ed.addModuleRecord('quality', { type: '부적합(NCR)', target: '앵커 표시 검증' })
+    check(recordId !== '', '기록을 만들 수 있다(편집 권한 있음)')
+    useEditor.getState().setRecordAnchor('quality', recordId, {
+      taskId: anchorTask?.id,
+      stamp: anchorTask?.name,
+    })
+    useView.getState().setView('quality' as never)
+    await new Promise((r) => setTimeout(r, 250))
+    const linkedHtml = document.getElementById('root')!.innerHTML
+    check(linkedHtml.includes('seq-rec__anchor--ok'), '연결된 기록에 앵커 칩이 붙는다')
+    check(
+      linkedHtml.includes('seq-rec__unlink'),
+      '편집 권한이 있으면 연결 해제 버튼이 보인다',
+    )
+    check(
+      linkedHtml.includes('연결 안 됨만 보기'),
+      '연결된 기록이 있으면 필터 토글이 나타난다',
+    )
+
+    // 이름이 바뀌면 '확인 필요'로 강등된다 — 조용한 오연결을 잡는 신호.
+    if (anchorTask) useEditor.getState().updateTask(anchorTask.id, { name: '이름이 바뀐 공정' })
+    await new Promise((r) => setTimeout(r, 250))
+    check(
+      document.getElementById('root')!.innerHTML.includes('seq-rec__anchor--warn'),
+      '연결된 공정의 이름이 바뀌면 확인 필요로 표시된다',
+    )
+
+    // 조회 전용에서는 열람만 되고 해제 버튼이 사라진다.
+    useEditor.getState().setReadOnly(true)
+    await new Promise((r) => setTimeout(r, 250))
+    const roHtml = document.getElementById('root')!.innerHTML
+    check(roHtml.includes('seq-rec__anchor'), '조회 전용도 앵커 상태를 열람할 수 있다')
+    check(!roHtml.includes('seq-rec__unlink'), '조회 전용은 연결 해제 버튼이 없다')
+    useEditor.getState().setReadOnly(false)
+    useEditor.getState().deleteModuleRecord('quality', recordId)
+  }
 
   // ── 키보드/모달 정확성(F11) ────────────────────────────────────────────────
   // 편집기 화면으로 돌아와서 (1) 입력 중 Ctrl+Z 가 도면을 건드리지 않는지,

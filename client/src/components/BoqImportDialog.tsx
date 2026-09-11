@@ -156,7 +156,7 @@ export function BoqImportDialog({ onClose, initialFile }: { onClose: () => void;
   const [include, setInclude] = useState<Set<string>>(new Set())
   const [message, setMessage] = useState<string | null>(null)
   const [manual, setManual] = useState<string | null>(null)
-  const [result, setResult] = useState<number | null>(null)
+  const [result, setResult] = useState<{ applied: number; anchored: number } | null>(null)
   // 다중 시트 엑셀 — 전 시트를 읽어두고 사용자가 선택(rowCount=자동 인식 행 수, 추천용).
   const [sheets, setSheets] = useState<Array<{
     name: string
@@ -292,12 +292,28 @@ export function BoqImportDialog({ onClose, initialFile }: { onClose: () => void;
   }
 
   function onApply(): void {
-    const items = mappings
-      .filter((m) => include.has(m.taskId) && m.quantity != null && m.quantity > 0)
-      .map((m) => ({ taskId: m.taskId, quantity: m.quantity, unit: m.unit, workCode: m.workCode }))
+    const included = mappings.filter(
+      (m) => include.has(m.taskId) && m.quantity != null && m.quantity > 0,
+    )
+    const items = included.map((m) => ({
+      taskId: m.taskId,
+      quantity: m.quantity,
+      unit: m.unit,
+      workCode: m.workCode,
+    }))
     if (items.length === 0 && !parse?.rows.length) return
-    const r = a().importBoqQuantities(items, parse?.rows ?? [])
-    setResult(r.applied)
+    // 행↔공정 대응표는 matchRowsToTasks 가 이미 만들어 둔 것이다(m.row 는 parse.rows 의
+    // 객체 참조). 지금까지 이 자리에서 버려지고 있었다 — 그대로 넘겨주면 사용자가 아무것도
+    // 더 하지 않아도 내역 레코드가 공정에 걸린다. **체크해서 반영한 행만** 앵커를 받고,
+    // 미체크·미매칭 행은 종전처럼 앵커 없이 저장된다(저장 건수는 변하지 않는다).
+    const taskIdByRow = new Map<object, string>()
+    for (const m of included) if (m.row) taskIdByRow.set(m.row, m.taskId)
+    const rows = (parse?.rows ?? []).map((row) => {
+      const taskId = taskIdByRow.get(row)
+      return taskId ? { ...row, taskId } : row
+    })
+    const r = a().importBoqQuantities(items, rows)
+    setResult({ applied: r.applied, anchored: r.anchored })
     setInclude(new Set())
   }
 
@@ -316,7 +332,8 @@ export function BoqImportDialog({ onClose, initialFile }: { onClose: () => void;
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', width: '100%' }}>
           {result != null && (
             <span style={{ fontSize: 13, color: '#1f9d63', fontWeight: 600 }}>
-              ✓ {result}개 공정에 물량 반영
+              ✓ {result.applied}개 공정에 물량 반영
+              {result.anchored > 0 && ` · 내역 ${result.anchored}건이 공정에 연결됨`}
             </span>
           )}
           <span style={{ flex: 1 }} />
