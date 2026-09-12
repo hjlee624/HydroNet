@@ -1,6 +1,6 @@
 // 로그인 게이트 — 서버 모드일 때 로그인 → 프로젝트 선택 → 접속코드 → 편집기.
 // 로컬 모드(오프라인 단일 HTML/서버 없음)면 곧장 편집기. ADR-002.
-import { type FormEvent, type ReactNode, useEffect, useState } from 'react'
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from 'react'
 import { DIVISIONS, divisionIcon, divisionLabel } from '../../data/divisions'
 import {
   type AccessRequest,
@@ -722,6 +722,13 @@ function ProjectSelectScreen() {
       <div
         key={p.id}
         className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
+        // 본부 대표 이미지를 카드 배경 레이어로 넘긴다(CSS 가 아주 옅게 깔고 hover 에서 살린다).
+        // 인라인 style 인 이유: 본부 키가 런타임 값이라 CSS 만으로는 고를 수 없다.
+        style={
+          p.division
+            ? ({ '--card-hero': `url(/divisions/hero/${p.division}.jpg)` } as CSSProperties)
+            : undefined
+        }
       >
         <button
           className="proj-card__main"
@@ -830,7 +837,7 @@ function ProjectSelectScreen() {
   }
 
   return (
-    <div className="auth-screen">
+    <div className="auth-screen auth-screen--dash">
       <div className="auth-card auth-card--dash">
         <header className="proj-dash__head">
           <div className="proj-dash__greet">
