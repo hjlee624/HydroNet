@@ -684,6 +684,38 @@ function ProjectSelectScreen() {
       ? []
       : projects.filter((p) => (p.division ?? '') === selectedDiv)
 
+  // 스크롤 리빌 — 첫 화면 **밖에서 시작한** 카드만 접어 두었다가 들어올 때 편다. 화면 안의
+  // 카드는 CSS 진입 안무가 이미 담당하므로 건드리지 않는다(두 애니메이션이 겹치면 깜빡인다).
+  //
+  // 안전장치 둘: (1) IntersectionObserver 가 없으면(jsdom·구형 브라우저) 아무것도 하지 않아
+  // 카드가 평소대로 보인다. (2) 접는 클래스(js-reveal)는 관찰을 **시작한 뒤에** 붙인다 —
+  // 먼저 숨기고 관찰에 실패하면 카드가 영영 안 보인다.
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return
+    const cards = document.querySelectorAll<HTMLElement>('.proj-grid .proj-card')
+    if (!cards.length) return
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          entry.target.classList.add('is-in')
+          io.unobserve(entry.target)
+        }
+      },
+      { rootMargin: '0px 0px -8% 0px', threshold: 0.05 },
+    )
+    for (const card of cards) {
+      if (card.dataset.reveal) continue
+      card.dataset.reveal = '1'
+      if (card.getBoundingClientRect().top <= window.innerHeight) continue
+      io.observe(card)
+      card.classList.add('js-reveal')
+    }
+    return () => {
+      io.disconnect()
+    }
+  })
+
   // 검색바 + 탭 칩. 건수는 현재 검색어를 반영한다(빈 탭을 눌러 헤매지 않도록).
   const toolbar = (
     <div className="proj-filter">
@@ -723,11 +755,14 @@ function ProjectSelectScreen() {
         key={p.id}
         className={`proj-card proj-card--${p.role}${p.active === false ? ' proj-card--inactive' : ''}`}
         // 본부 대표 이미지를 카드 배경 레이어로 넘긴다(CSS 가 아주 옅게 깔고 hover 에서 살린다).
-        // 인라인 style 인 이유: 본부 키가 런타임 값이라 CSS 만으로는 고를 수 없다.
+        // `--i` 는 등장 순서 — CSS 가 이 값으로 stagger 지연을 만든다. nth-child 로는 개수만큼
+        // 규칙을 써야 하고 상한에서 끊기지만, 이 방식은 카드가 몇 개든 순서대로 흐른다.
+        // 인라인 style 인 이유: 본부 키·순번이 런타임 값이라 CSS 만으로는 고를 수 없다.
         style={
-          p.division
-            ? ({ '--card-hero': `url(/divisions/hero/${p.division}.jpg)` } as CSSProperties)
-            : undefined
+          {
+            '--i': i,
+            ...(p.division ? { '--card-hero': `url(/divisions/hero/${p.division}.jpg)` } : {}),
+          } as CSSProperties
         }
       >
         <button

@@ -2803,26 +2803,10 @@ textarea.input {
 .proj-card:hover::before {
   transform: scaleX(1);
 }
-.proj-card:nth-child(1) {
-  animation-delay: 0.03s;
-}
-.proj-card:nth-child(2) {
-  animation-delay: 0.07s;
-}
-.proj-card:nth-child(3) {
-  animation-delay: 0.11s;
-}
-.proj-card:nth-child(4) {
-  animation-delay: 0.15s;
-}
-.proj-card:nth-child(5) {
-  animation-delay: 0.19s;
-}
-.proj-card:nth-child(6) {
-  animation-delay: 0.23s;
-}
-.proj-card:nth-child(n + 7) {
-  animation-delay: 0.27s;
+/* 등장 지연은 `--i`(렌더 순번)에서 계산한다 — 카드가 몇 개든 순서대로 흐르고, 뒤로 갈수록
+   간격을 좁혀(0.88^i) 목록이 길어도 마지막 카드가 하염없이 기다리지 않는다. 상한 0.42s. */
+.proj-card {
+  animation-delay: min(calc(var(--i, 0) * 42ms), 420ms);
 }
 
 .proj-card__main {
@@ -6323,6 +6307,115 @@ textarea.input {
   border-color: rgba(255, 102, 0, 0.28);
   color: var(--primary-deep);
 }
+/* ═══ 모션 ═══════════════════════════════════════════════════════════════════════
+   Apple 식 모션의 핵심은 화려함이 아니라 **인과**다 — 요소가 어디서 와서 어디로 가는지가
+   보이면 화면이 살아 있게 느껴지고, 그렇지 않으면 그냥 깜빡인다. 그래서 (1) 위에서 아래로
+   순서대로 흐르는 진입 안무, (2) 손을 따라오는 hover 물리, (3) 스크롤에 반응하는 리빌,
+   (4) 활성 표시가 '이동'하는 연속성 — 네 가지만 쓰고 장식적 애니메이션은 넣지 않는다. */
+
+/* (1) 진입 안무 — 머리말 → 검색 → 본부 → 카드 순으로 시차를 두고 올라온다. */
+.auth-screen--dash .proj-dash__hello {
+  animation: paperRise 0.7s var(--ease-out-expo) 0.02s both;
+}
+.auth-screen--dash .proj-dash__sub {
+  animation: paperRise 0.7s var(--ease-out-expo) 0.08s both;
+}
+.auth-screen--dash .proj-filter {
+  animation: paperRise 0.7s var(--ease-out-expo) 0.14s both;
+}
+.auth-screen--dash .proj-divnav {
+  animation: paperRise 0.7s var(--ease-out-expo) 0.2s both;
+}
+.auth-screen--dash .proj-dash__mainhead {
+  animation: paperRise 0.7s var(--ease-out-expo) 0.24s both;
+}
+@keyframes paperRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* (3) 스크롤 리빌 — 목록이 길면 처음 화면 밖 카드는 접힌 채 기다리다가 들어올 때 펴진다.
+   JS 가 .is-in 을 붙인다(AuthGate). 관찰자가 없거나 실패해도 카드는 보여야 하므로
+   '기본 숨김'이 아니라 **.js-reveal 이 붙은 것만** 숨긴다. */
+.proj-card.js-reveal {
+  opacity: 0;
+  transform: translateY(22px);
+  animation: none;
+  transition:
+    opacity 0.62s var(--ease-out-expo),
+    transform 0.62s var(--ease-out-expo);
+}
+.proj-card.js-reveal.is-in {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+/* (2) hover 물리 — 카드가 뜨면 그 안의 요소도 따라 움직여야 한 덩어리로 읽힌다.
+   아이콘은 살짝 커지고, 사진은 천천히 밀려 들어온다(속도를 다르게 줘서 깊이를 만든다). */
+.auth-screen--dash .proj-card__icon {
+  transition:
+    transform var(--dur-mid) var(--ease-spring),
+    box-shadow var(--dur-fast) ease;
+}
+.auth-screen--dash .proj-card:hover .proj-card__icon {
+  transform: translateY(-2px) scale(1.06);
+  box-shadow: inset 0 0 0 1px rgba(255, 102, 0, 0.3);
+}
+.auth-screen--dash .proj-card__name {
+  transition: transform var(--dur-mid) var(--ease-out-expo);
+}
+.auth-screen--dash .proj-card:hover .proj-card__name {
+  transform: translateX(2px);
+}
+/* 누를 때는 즉시 반응한다 — 0.1s 안에 눌린 게 보여야 '먹통'으로 느끼지 않는다. */
+.auth-screen--dash .proj-card:active {
+  transform: translateY(-1px) scale(0.992);
+  transition-duration: 0.1s;
+}
+/* 카드 상단 오렌지 선이 좌→우로 그어진다(이미 있는 ::before 를 살린다). */
+.auth-screen--dash .proj-card::before {
+  transition: transform 0.5s var(--ease-out-expo);
+}
+
+/* (4) 본부 활성 표시 — 색만 바뀌면 '깜빡'이지만, 왼쪽 표시자가 자라면 '옮겨왔다'가 된다. */
+.auth-screen--dash .proj-divnav__item {
+  position: relative;
+  transition:
+    background var(--dur-fast) ease,
+    color var(--dur-fast) ease;
+}
+.auth-screen--dash .proj-divnav__item::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 3px;
+  height: 0;
+  border-radius: 999px;
+  background: var(--primary);
+  transform: translateY(-50%);
+  transition: height 0.34s var(--ease-spring);
+}
+.auth-screen--dash .proj-divnav__item.is-active::before,
+.auth-screen--dash .proj-divnav__item[aria-selected="true"]::before {
+  height: 58%;
+}
+
+/* 검색칸 — 포커스에서 살짝 떠오른다(입력 위치가 바뀌지 않게 transform 은 쓰지 않는다). */
+.auth-screen--dash input[type="search"],
+.auth-screen--dash input[type="text"] {
+  transition:
+    background var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    box-shadow var(--dur-mid) var(--ease-out-expo);
+}
+
 /* 필터 칩 — 기본 스타일이 옛 크림 토큰을 쓰고 있어 종이 톤에서 누렇게 뜬다. 진입 화면에서만
    회색 면 + 헤어라인으로 맞추고, 켜진 칩에만 오렌지를 옅게 준다. */
 .auth-screen--dash .proj-filter__chip {
@@ -6355,16 +6448,67 @@ textarea.input {
   color: var(--paper-ink);
 }
 
+/* 칩도 눌리는 느낌을 준다 — 색만 바뀌면 눌렸는지 확신이 안 선다. */
+.auth-screen--dash .proj-filter__chip {
+  transition:
+    background var(--dur-fast) ease,
+    border-color var(--dur-fast) ease,
+    color var(--dur-fast) ease,
+    transform 0.12s var(--ease-spring);
+}
+.auth-screen--dash .proj-filter__chip:active {
+  transform: scale(0.96);
+}
+.auth-screen--dash .proj-dash__new {
+  transition:
+    transform 0.16s var(--ease-spring),
+    box-shadow var(--dur-fast) ease,
+    background var(--dur-fast) ease;
+}
+.auth-screen--dash .proj-dash__new:hover {
+  opacity: 1;
+  background: var(--primary-bright);
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px -6px rgba(255, 102, 0, 0.5);
+}
+.auth-screen--dash .proj-dash__new:active {
+  transform: translateY(0) scale(0.97);
+}
+
+/* 모션을 줄여달라고 한 사용자에게는 **전부 끈다**. 지연된 등장 애니메이션을 끌 때는
+   `animation: none` 만으로 부족하다 — opacity:0 인 채 멈추면 화면이 비어 보이므로
+   스크롤 리빌도 함께 보이는 상태로 확정한다. */
 @media (prefers-reduced-motion: reduce) {
   .auth-card--dash,
-  .auth-screen--dash .proj-card {
+  .auth-screen--dash .proj-card,
+  .auth-screen--dash .proj-dash__hello,
+  .auth-screen--dash .proj-dash__sub,
+  .auth-screen--dash .proj-filter,
+  .auth-screen--dash .proj-divnav,
+  .auth-screen--dash .proj-dash__mainhead {
     animation: none;
   }
+  .proj-card.js-reveal {
+    opacity: 1;
+    transform: none;
+    transition: none;
+  }
   .auth-screen--dash .proj-card,
-  .auth-screen--dash .proj-card::after {
+  .auth-screen--dash .proj-card::after,
+  .auth-screen--dash .proj-card__icon,
+  .auth-screen--dash .proj-card__name,
+  .auth-screen--dash .proj-divnav__item::before,
+  .auth-screen--dash .proj-filter__chip,
+  .auth-screen--dash .proj-dash__new {
     transition-duration: 0.01s;
   }
-  .auth-screen--dash .proj-card:hover {
+  .auth-screen--dash .proj-card:hover,
+  .auth-screen--dash .proj-card:active,
+  .auth-screen--dash .proj-card:hover .proj-card__icon,
+  .auth-screen--dash .proj-card:hover .proj-card__name,
+  .auth-screen--dash .proj-filter__chip:active,
+  .auth-screen--dash .proj-dash__new:hover,
+  .auth-screen--dash .proj-dash__new:active {
     transform: none;
   }
 }
