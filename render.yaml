@@ -1,0 +1,55 @@
+# Render Blueprint — https://render.com/docs/blueprint-spec
+#
+# 이 파일은 "New > Blueprint" 로 서비스를 만들 때만 적용된다. 대시보드에서 손으로
+# 만든 기존 서비스는 이 파일을 읽지 않으므로, 아래 값들을 Settings 에 직접 넣거나
+# 서비스를 Blueprint 로 다시 만들어야 한다.
+#
+# 반드시 startCommand 로 server 만 띄울 것. 루트의 `npm start` 는 `npm run dev`(vite
+# 개발 서버 + --watch)라서 localhost 에만 바인딩되고, Render 의 0.0.0.0 포트 스캔이
+# 끝내 실패한다.
+services:
+  - type: web
+    name: sequence
+    runtime: node
+    # Free 플랜은 15분 유휴 시 sleep 되고 디스크를 붙일 수 없다. 상시 구동 + 데이터
+    # 보존이 목적이므로 starter 이상이어야 한다.
+    plan: starter
+    region: singapore
+    branch: feat/ai-review-roundtrip
+    # 루트 postinstall 이 client/server 의존성까지 설치하고, build 가 client/dist 를
+    # 만든다. server/src/index.js 는 dist 가 있으면 그대로 정적 서빙한다.
+    buildCommand: npm install && npm run build
+    startCommand: npm --prefix server start
+    # 인증이 걸리지 않은 유일한 경로(server/src/index.js 의 /api/health).
+    healthCheckPath: /api/health
+    autoDeploy: true
+
+    # 프로젝트·공정표·CRDT ydoc·계정이 모두 파일 기반이다. 디스크가 없으면 재배포
+    # 때마다 전부 초기화된다.
+    disk:
+      name: sequence-data
+      mountPath: /var/data
+      sizeGB: 1
+
+    envVars:
+      # package.json engines: node >=24 <25
+      - key: NODE_VERSION
+        value: "24"
+      - key: NODE_ENV
+        value: production
+      # production 에서는 미설정 시 기동 자체를 거부한다(auth/crypto.js assertJwtSecret).
+      # Render 가 생성하고 보관하므로 값이 저장소에 남지 않는다. 값을 바꾸면 전원
+      # 재로그인이 필요하다.
+      - key: AUTH_JWT_SECRET
+        generateValue: true
+      # 프로젝트 JSON · CRDT ydocs · 업로드 문서 · 계정 저장소의 루트.
+      - key: HN_DATA_DIR
+        value: /var/data
+      # 미설정 시 리눅스에서는 ProgramData 가 없어 os.homedir() 밑(휘발성)으로
+      # 떨어진다. 디스크 위로 고정해야 F15 버전 스냅샷이 재배포를 견딘다.
+      - key: HN_AUTOSAVE_DIR
+        value: /var/data/autosave
+      # 협업 WebSocket/CORS 허용 오리진. 서비스 URL 이 정해진 뒤 대시보드에서 입력
+      # (예: https://sequence.onrender.com). 비워두면 협업 접속이 거부된다.
+      - key: COLLAB_ALLOWED_ORIGINS
+        sync: false
