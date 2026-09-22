@@ -336,6 +336,25 @@ assert.deepEqual(
   assert.equal(rereadMilestone.view.displayEnd, '2028-02-01')
 }
 
+// 도면 제목도 시트별이다 — 예정공정표와 시공 마일스톤이 서로 다른 제목을 달 수 있어야 한다.
+// 표시 기간과 같은 자리(Sheet 정본 → 활성 시트 값이 view 로 올라옴)를 쓰므로 같은 규칙으로
+// 지킨다: 한쪽 제목이 공유 view 에 남더라도 다른 시트가 물려받으면 안 된다.
+{
+  const titleDoc = new Y.Doc()
+  const plan = clone(multi)
+  plan.view.title = '○○댐 실시설계 공정표'
+  applyProjectToYDoc(titleDoc, plan)
+
+  const milestone = projectFromYDoc(titleDoc, 'sheet-b')
+  assert.equal(milestone.view.title, undefined, '마일스톤은 예정공정표 제목을 상속하지 않는다')
+
+  milestone.view.title = '○○댐 시공 마일스톤'
+  applyProjectToYDoc(titleDoc, milestone)
+
+  assert.equal(projectFromYDoc(titleDoc, 'sheet-a').view.title, '○○댐 실시설계 공정표')
+  assert.equal(projectFromYDoc(titleDoc, 'sheet-b').view.title, '○○댐 시공 마일스톤')
+}
+
 // ── 공기 산정 전제(periodInputs) 동시 편집 — 필드별 독립 병합 ───────────────────────────
 // A가 준비기간 45, B가 법정공휴일수 60 을 **동시에** 넣는다. 예전처럼 중첩 객체 한 덩어리로
 // 저장하면 나중 쓰기가 객체 전체를 덮어써 한쪽 입력이 조용히 사라진다(③ 산정 총공기 박스가

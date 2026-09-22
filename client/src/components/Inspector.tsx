@@ -889,9 +889,51 @@ function LinkInspector({ id }: { id: string }) {
   )
 }
 
+/** 이 시트(차트)만의 도면 제목. 비우면 사업명으로 그린다.
+ *  타이핑 중에는 초안만 들고 있다가 blur/Enter 에 커밋한다(FloatField 와 같은 방식) —
+ *  한 글자마다 CRDT 를 두드리지 않기 위해서다. 시트 전환은 부모의 key 로 리마운트된다. */
+function SheetTitleField({
+  value,
+  projectName,
+  sheetLabel,
+}: {
+  value: string
+  projectName: string
+  sheetLabel: string
+}) {
+  const [text, setText] = useState(value)
+  // 협업으로 다른 사람이 제목을 바꾸면 입력 칸도 따라간다.
+  useEffect(() => {
+    setText(value)
+  }, [value])
+  return (
+    <div className="field">
+      <label htmlFor="sheet-title">도면 제목{sheetLabel && ` (${sheetLabel})`}</label>
+      <input
+        id="sheet-title"
+        className="input"
+        value={text}
+        placeholder={projectName}
+        onChange={(e) => setText(e.target.value)}
+        onBlur={() => useEditor.getState().setSheetTitle(text)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') e.currentTarget.blur()
+        }}
+      />
+      <p className="note">
+        공정표마다 따로 정합니다. 비워 두면 사업명(<b>{projectName}</b>)으로 그립니다.
+      </p>
+    </div>
+  )
+}
+
 function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
   const project = useEditor((s) => s.project)
   const a = useEditor.getState
+  // 도면 제목은 시트(차트)마다 따로 남는다. SheetTitleField 를 시트 id 로 keying 해서
+  // 시트를 바꾸면 초안이 남지 않고 그 시트 값으로 새로 뜨게 한다.
+  const sheetId = project.activeSheet?.id ?? ''
+  const sheetLabel = project.activeSheet?.name ?? ''
   const fontScale = project.view.fontScale ?? 1
   const monthWidth = Math.round(monthWidthFromPxPerDay(project.view.pxPerDay))
   // Margin the letterbox fit would leave = how far the drawing aspect is from
@@ -962,6 +1004,13 @@ function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
 
   return (
     <>
+      <SheetTitleField
+        key={sheetId}
+        value={project.view.title ?? ''}
+        projectName={project.name}
+        sheetLabel={sheetLabel}
+      />
+
       <div className="field">
         <label>프로젝트 착수일 (Day 0)</label>
         <input

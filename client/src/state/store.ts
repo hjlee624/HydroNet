@@ -390,6 +390,8 @@ export interface EditorState {
   clearBaseline: () => void
   toggleCommissioning: () => void
   toggleTitle: () => void
+  /** 지금 보고 있는 시트의 도면 제목을 정한다(빈 값 = 사업명 사용). 시트별로 따로 남는다. */
+  setSheetTitle: (title: string) => void
   /** 예정공정표↔마일스톤 연동 토글(요구사항 4) — 마일스톤 시트에서만 의미가 있다. */
   toggleMirrorPlan: () => void
   /** 미러로 표시된 예정 공정을 '마일스톤에서만' 숨김/표시 토글(예정 원본은 불변). */
@@ -681,6 +683,8 @@ function normalize(project: Project): Project {
       // 표시 기간 override + 예정↔마일스톤 연동 상태(저장/불러오기 보존 — 옵션이라 없으면 undefined).
       displayStart: v.displayStart,
       displayEnd: v.displayEnd,
+      // 시트별 도면 제목(정본 Sheet.title). 없으면 사업명으로 그린다 — 구버전 프로젝트 그대로.
+      title: v.title,
       mirrorPlan: v.mirrorPlan,
       mirrorHidden: v.mirrorHidden,
       // 공사기간 구분선 — 연도(세로+제목가로) 기본 ON·2.5px, 월(세로) 기본 ON·1px. 각각 인스펙터 조절.
@@ -2155,6 +2159,16 @@ export const useEditor = create<EditorState>()((set, get) => {
       commit(
         (p) => {
           p.view.showTitle = p.view.showTitle === false
+        },
+        { history: false },
+      ),
+    // 시트별 제목. 빈 문자열로 지우면 키를 없애 '사업명 그대로'로 되돌아간다 — 빈 문자열을
+    // 남기면 제목 없는 도면과 구분되지 않는다.
+    setSheetTitle: (title) =>
+      commit(
+        (p) => {
+          const v = title.trim()
+          p.view = { ...p.view, title: v || undefined }
         },
         { history: false },
       ),

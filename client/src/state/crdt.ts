@@ -326,6 +326,7 @@ function allSheets(project: Project): Sheet[] {
       rainySeasons: cloneJson(project.rainySeasons),
       displayStart: project.view.displayStart,
       displayEnd: project.view.displayEnd,
+      title: project.view.title,
     })
   }
   for (const sheet of project.sheets ?? []) {
@@ -352,6 +353,7 @@ function syncSheetCollection(target: RecordMap, sheets: Sheet[]): void {
         name: sheet.name,
         displayStart: sheet.displayStart,
         displayEnd: sheet.displayEnd,
+        title: sheet.title,
       },
       new Set(['categories', 'tasks', 'links', 'rainySeasons', POSITION_KEY]),
     )
@@ -627,6 +629,7 @@ function readSheet(record: Y.Map<unknown>): Sheet | null {
   const rainySeasons = record.get('rainySeasons')
   const displayStart = record.get('displayStart')
   const displayEnd = record.get('displayEnd')
+  const title = record.get('title')
   return {
     id,
     role,
@@ -639,6 +642,7 @@ function readSheet(record: Y.Map<unknown>): Sheet | null {
       : [],
     ...(typeof displayStart === 'string' ? { displayStart } : {}),
     ...(typeof displayEnd === 'string' ? { displayEnd } : {}),
+    ...(typeof title === 'string' ? { title } : {}),
   }
 }
 
@@ -748,7 +752,12 @@ export function projectFromYDoc(doc: Y.Doc, preferredActiveSheetId?: string): Pr
       // 다중 시트의 타임라인 기간은 각 시트가 정본이다. 값이 없는 시트는 자동 범위를 쓰며,
       // 다른 시트가 마지막으로 저장한 전역(구버전) 값을 물려받지 않는다.
       ...(activeSheet
-        ? { displayStart: activeSheet.displayStart, displayEnd: activeSheet.displayEnd }
+        ? {
+            displayStart: activeSheet.displayStart,
+            displayEnd: activeSheet.displayEnd,
+            // 도면 제목도 시트가 정본 — 시트를 바꾸면 제목이 따라 바뀐다.
+            title: activeSheet.title,
+          }
         : {}),
     },
     branding: {

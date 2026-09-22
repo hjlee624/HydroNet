@@ -183,8 +183,12 @@ export interface ViewSettings {
   showCriticalPath: boolean
   showFloat: boolean
   showGrid: boolean
-  /** Show the bold drawing title (project name) centred at the top. */
+  /** Show the bold drawing title centred at the top. */
   showTitle: boolean
+  /** 이 시트(차트)만의 도면 제목. 비어 있으면 사업명을 쓴다 — 예정공정표와 시공 마일스톤이
+   *  서로 다른 제목을 달 수 있어야 한다는 요구. displayStart/End 와 같이 **시트별** 값이라
+   *  활성 시트의 값이 여기 올라오고, 정본은 Sheet.title 이다. */
+  title?: string
   /** Global multiplier on every text size (1 = design size). Raised by
    *  "fit to paper" so text stays legible on large sheets; user-adjustable. */
   fontScale?: number
@@ -255,6 +259,8 @@ export interface Sheet {
   /** 이 시트에만 적용되는 타임라인 표시 시작/종료 월. */
   displayStart?: string
   displayEnd?: string
+  /** 이 시트에만 적용되는 도면 제목. 없거나 비면 사업명으로 그린다. */
+  title?: string
 }
 
 /**

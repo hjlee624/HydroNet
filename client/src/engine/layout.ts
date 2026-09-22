@@ -216,19 +216,12 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     Math.ceil((fs('axisYear') + fs('axisMonth')) * 1.6),
   )
 
-  // Drawing title = 사업명, plus the active 시트명 when the 사업 has more than one
-  // 공정표(예정공정표 + 마일스톤) so each sheet reads as its own titled drawing.
-  const sheetName = project.activeSheet?.name
-  const multiSheet = (project.sheets?.length ?? 0) >= 1
-  // Append the sheet name only when it isn't already the tail of 사업명 (avoids
-  // "…예정공정표 · 예정공정표" when a preset name ends with the sheet name).
-  const showSheet = multiSheet && sheetName && !project.name.endsWith(sheetName)
-  const title =
-    view.showTitle !== false && project.name
-      ? showSheet
-        ? `${project.name} · ${sheetName}`
-        : project.name
-      : ''
+  // Drawing title = 이 시트의 제목(없으면 사업명). 예전에는 시트가 둘 이상이면 사업명 뒤에
+  // " · 예정공정표" / " · 시공 마일스톤" 을 기계적으로 덧붙였는데, 사업명 자체가 이미 공정표
+  // 이름인 경우가 많아 제목이 늘 늘어지고 중복돼 보였다. 지금은 시트마다 제목을 따로 달 수
+  // 있으므로(view.title — 정본은 Sheet.title) 덧붙일 이유가 없다.
+  const sheetTitle = view.title?.trim()
+  const title = view.showTitle !== false ? sheetTitle || project.name || '' : ''
   const titleHeight = title ? Math.max(TITLE_BAND, Math.ceil(fs('title') * 1.5 + 12)) : 0
   const logoItems = project.branding?.logos ?? []
   const maxLogoH = logoItems.reduce((m, l) => Math.max(m, l.h), 0)

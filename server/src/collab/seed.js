@@ -168,7 +168,16 @@ function setSheetRecords(target, sheets) {
   for (const [index, sheet] of sheets.entries()) {
     if (!sheet?.id) continue
     const shared = new Y.Map()
-    setPlainMap(shared, { id: sheet.id, role: sheet.role, name: sheet.name })
+    // 시트별 스칼라(표시 기간·도면 제목)까지 담아야 한다 — client crdt.ts syncSheetCollection
+    // 과 같은 키 집합. 빠뜨리면 스냅샷 복구가 그 값만 조용히 지운다.
+    setPlainMap(shared, {
+      id: sheet.id,
+      role: sheet.role,
+      name: sheet.name,
+      displayStart: sheet.displayStart,
+      displayEnd: sheet.displayEnd,
+      title: sheet.title,
+    })
     setRecords(ensureMap(shared, 'categories'), sheet.categories)
     setRecords(ensureMap(shared, 'tasks'), sheet.tasks, canonicalTask)
     setRecords(ensureMap(shared, 'links'), sheet.links)
@@ -187,6 +196,10 @@ function residentSheets(project) {
       tasks: (project.tasks || []).map(canonicalTask),
       links: cloneJson(project.links || []),
       rainySeasons: cloneJson(project.rainySeasons || []),
+      // 활성 시트의 시트별 값은 project.view 에 올라와 있다(client crdt.ts allSheets 와 대칭).
+      displayStart: project.view?.displayStart,
+      displayEnd: project.view?.displayEnd,
+      title: project.view?.title,
     })
   }
   for (const sheet of project.sheets || []) byId.set(sheet.id, cloneJson(sheet))
@@ -357,6 +370,9 @@ function readSheetRecord(record) {
   const tasks = record.get('tasks')
   const links = record.get('links')
   const rainySeasons = record.get('rainySeasons')
+  const displayStart = record.get('displayStart')
+  const displayEnd = record.get('displayEnd')
+  const title = record.get('title')
   return {
     id,
     role,
@@ -365,6 +381,10 @@ function readSheetRecord(record) {
     tasks: tasks instanceof Y.Map ? orderedRecords(tasks) : [],
     links: links instanceof Y.Map ? orderedRecords(links) : [],
     rainySeasons: rainySeasons instanceof Y.Map ? orderedRecords(rainySeasons) : [],
+    // client crdt.ts readSheet 와 같은 규칙 — 문자열일 때만 실어 보낸다(빈 키를 만들지 않음).
+    ...(typeof displayStart === 'string' ? { displayStart } : {}),
+    ...(typeof displayEnd === 'string' ? { displayEnd } : {}),
+    ...(typeof title === 'string' ? { title } : {}),
   }
 }
 
@@ -479,6 +499,16 @@ function readProjectFromDoc(doc, documentName) {
     view: {
       ...view.toJSON(),
       ...(mirrorHidden instanceof Y.Array ? { mirrorHidden: mirrorHidden.toArray() } : {}),
+      // 시트별 값(표시 기간·도면 제목)은 시트가 정본이다. root/view 에 남아 있는 전역 값은
+      // 마지막으로 저장한 시트의 것이므로, 활성 시트 값으로 덮어써야 다른 시트의 설정이
+      // 스냅샷에서 번져 나가지 않는다(client crdt.ts projectFromYDoc 와 같은 규칙).
+      ...(activeSheet
+        ? {
+            displayStart: activeSheet.displayStart,
+            displayEnd: activeSheet.displayEnd,
+            title: activeSheet.title,
+          }
+        : {}),
     },
     branding: { logos: logos instanceof Y.Array ? logos.toArray() : [] },
     palette: palette.toArray(),

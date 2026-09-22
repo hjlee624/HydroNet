@@ -279,6 +279,41 @@ for (const t of PROJECT_TYPES) {
   }
 }
 
+// 7a-2. 도면 제목 — 시트(차트)마다 따로 단다
+// 예전엔 시트가 둘이면 사업명 뒤에 " · 예정공정표" / " · 시공 마일스톤" 이 **무조건** 붙어
+// 제목이 늘 늘어졌다. 지금은 시트별 제목(view.title)이 정본이고, 없으면 사업명 그대로다.
+console.log('')
+{
+  const base = makeProject('detailed-design', 'concrete-gravity')
+  base.name = '○○댐 건설공사'
+  const plain = computeLayout(base)
+  check(plain.title === '○○댐 건설공사', `제목에 시트명을 덧붙이지 않는다 ("${plain.title}")`)
+
+  const named = computeLayout({ ...base, view: { ...base.view, title: '실시설계 예정공정표' } })
+  check(named.title === '실시설계 예정공정표', '시트 제목이 있으면 그 제목으로 그린다')
+
+  // 같은 사업의 다른 시트는 자기 제목을 갖는다(정본은 Sheet.title → 활성 시트가 view 로 올림).
+  const ms = (base.sheets ?? []).find((s) => s.role === 'milestone')
+  const msLayout = computeLayout({
+    ...base,
+    categories: ms?.categories ?? [],
+    tasks: ms?.tasks ?? [],
+    links: ms?.links ?? [],
+    rainySeasons: ms?.rainySeasons ?? [],
+    view: { ...base.view, title: '시공 마일스톤 계획' },
+  })
+  check(
+    msLayout.title === '시공 마일스톤 계획' && named.title !== msLayout.title,
+    '두 시트가 서로 다른 제목을 단다',
+  )
+
+  const hidden = computeLayout({
+    ...base,
+    view: { ...base.view, showTitle: false, title: '실시설계 예정공정표' },
+  })
+  check(hidden.title === '', '제목 표시를 끄면 시트 제목이 있어도 그리지 않는다')
+}
+
 // 7b. 시설물 유형 프리셋 — 모든 유형이 유효한 시공 공정표(공종·바·화살표)를 생성
 console.log('')
 for (const f of FACILITY_TYPES) {
