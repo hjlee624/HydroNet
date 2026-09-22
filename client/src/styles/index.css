@@ -6517,3 +6517,64 @@ textarea.input {
     transform: none;
   }
 }
+
+/* ── 모듈 레일 접기(사용자 토글) ─────────────────────────────────────────────────
+   1100px 미만에서 이미 쓰던 '아이콘 전용' 모양을 넓은 화면에서도 손으로 쓸 수 있게
+   한 것. 레일을 통째로 감추지 않는 이유는 모듈 전환이 여기서만 되기 때문 — 접어도
+   한 번 클릭으로 이동할 수 있어야 한다.
+   이 블록은 반드시 @media (max-width: 1100px) 뒤에 와야 한다. 같은 특이도라
+   앞에 두면 미디어쿼리가 이기고 넓은 화면에서 접기가 먹지 않는다. */
+.mrail__fold {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 0 0 auto;
+  border: none;
+  background: transparent;
+  color: var(--stone);
+  font: inherit;
+  font-size: 11px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+}
+.mrail__fold:hover {
+  background: var(--cream-deeper);
+  color: var(--slate);
+}
+.mrail__fold-ic {
+  width: 18px;
+  text-align: center;
+  font-size: 13px;
+  line-height: 1;
+}
+.mrail--collapsed {
+  width: 56px;
+  padding: 10px 6px 20px;
+}
+.mrail--collapsed .mrail__brand {
+  padding: 3px 1px 8px;
+  align-items: center;
+}
+.mrail--collapsed .mrail__brand-mark {
+  font-size: 0;
+}
+.mrail--collapsed .mrail__brand-mark em {
+  font-size: 18px;
+}
+.mrail--collapsed .mrail__brand-sub,
+.mrail--collapsed .mrail__label,
+.mrail--collapsed .mrail__glabel {
+  display: none;
+}
+.mrail--collapsed .mrail__item,
+.mrail--collapsed .mrail__fold {
+  justify-content: center;
+  padding: 8px 4px;
+}
+@media (max-width: 1100px) {
+  /* 이 폭에서는 레일이 이미 아이콘 전용이라 토글이 아무것도 바꾸지 않는다 — 감춘다. */
+  .mrail__fold {
+    display: none;
+  }
+}

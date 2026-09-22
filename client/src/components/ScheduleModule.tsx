@@ -36,6 +36,15 @@ const lsSet = (key: string, value: string) => {
     /* ignore — non-persistent session */
   }
 }
+// 저장된 적이 없으면 fallback — '접힘'을 기억하되 첫 사용자는 패널을 다 본다.
+const lsBool = (key: string, fallback: boolean) => {
+  try {
+    const v = localStorage.getItem(key)
+    return v === null ? fallback : v === '1'
+  } catch {
+    return fallback
+  }
+}
 
 export function ScheduleModule() {
   const [exportOpen, setExportOpen] = useState(false)
@@ -43,6 +52,11 @@ export function ScheduleModule() {
   const [fitViewRequest, setFitViewRequest] = useState(0)
   const [leftWidth, setLeftWidth] = useState(() => lsNum('sequence:leftW', 288))
   const [rightWidth, setRightWidth] = useState(() => lsNum('sequence:rightW', 300))
+  // 넓은 화면에서도 좌·우 패널을 접을 수 있다. 편집 화면에 정보가 너무 많다는 요구에서
+  // 나온 것 — 접으면 도면이 그만큼 넓어진다. 전체화면(presentation)·좁은 화면(narrow)은
+  // 이미 각자 패널을 치우므로 이 상태를 보지 않는다. 폭과 마찬가지로 기기별로 기억한다.
+  const [leftOpen, setLeftOpen] = useState(() => lsBool('sequence:leftOpen', true))
+  const [rightOpen, setRightOpen] = useState(() => lsBool('sequence:rightOpen', true))
   // Fullscreen preview hides the side panels so the chart can be checked
   // full-bleed before printing.
   const [presentation, setPresentation] = useState(false)
@@ -82,6 +96,12 @@ export function ScheduleModule() {
   useEffect(() => {
     lsSet('sequence:rightW', String(rightWidth))
   }, [rightWidth])
+  useEffect(() => {
+    lsSet('sequence:leftOpen', leftOpen ? '1' : '0')
+  }, [leftOpen])
+  useEffect(() => {
+    lsSet('sequence:rightOpen', rightOpen ? '1' : '0')
+  }, [rightOpen])
 
   useEffect(() => {
     const onFs = () => setPresentation(!!document.fullscreenElement)
@@ -175,8 +195,8 @@ export function ScheduleModule() {
         fullscreen={presentation}
       />
       <div className="app__body">
-        {!presentation && !narrow && <Sidebar width={leftWidth} />}
-        {!presentation && !narrow && (
+        {!presentation && !narrow && leftOpen && <Sidebar width={leftWidth} />}
+        {!presentation && !narrow && leftOpen && (
           <Resizer side="left" width={leftWidth} setWidth={setLeftWidth} />
         )}
         <div className="app__center">
@@ -246,16 +266,29 @@ export function ScheduleModule() {
               )}
             </div>
           )}
-          {!presentation && <ViewBar />}
+          {!presentation && (
+            <ViewBar
+              panels={
+                narrow
+                  ? undefined
+                  : {
+                      left: leftOpen,
+                      right: rightOpen,
+                      toggleLeft: () => setLeftOpen((v) => !v),
+                      toggleRight: () => setRightOpen((v) => !v),
+                    }
+              }
+            />
+          )}
           <ChartCanvas fitRequest={fitRequest} fitViewRequest={fitViewRequest} />
           {/* 문제 목록 팝오버는 상태바 바로 위에 뜬다(상태바의 ⚠ 버튼으로 토글). */}
           <ProblemList />
           <StatusBar />
         </div>
-        {!presentation && !narrow && (
+        {!presentation && !narrow && rightOpen && (
           <Resizer side="right" width={rightWidth} setWidth={setRightWidth} />
         )}
-        {!presentation && !narrow && (
+        {!presentation && !narrow && rightOpen && (
           <Inspector
             width={rightWidth}
             onFitChart={() => setFitViewRequest((request) => request + 1)}

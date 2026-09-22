@@ -8,7 +8,16 @@ import { filterActive, useEditor } from '../state/store'
 const HINTS = ALL_SHORTCUTS.filter((d) => d.hint)
 const HINT_TITLE = ALL_SHORTCUTS.map((d) => `${d.keys.join('+')}: ${d.label}`).join(' / ')
 
-export function ViewBar() {
+/** 좌·우 패널 접기 토글. 넓은 화면에서만 넘어온다 — 좁은 화면은 서랍(drawerbar)이 같은 일을
+ *  이미 하므로 ScheduleModule 이 undefined 를 넘겨 이 묶음을 통째로 뺀다. */
+export interface PanelToggles {
+  left: boolean
+  right: boolean
+  toggleLeft: () => void
+  toggleRight: () => void
+}
+
+export function ViewBar({ panels }: { panels?: PanelToggles } = {}) {
   const filter = useEditor((s) => s.filter)
   const colorMode = useEditor((s) => s.colorMode)
   const a = useEditor.getState
@@ -45,6 +54,33 @@ export function ViewBar() {
       )}
 
       <span className="viewbar__spacer" />
+
+      {/* 패널 접기 — 화면이 정보로 빽빽할 때 좌·우를 접어 도면에 폭을 넘긴다.
+          켜짐(주황) = 패널 보임. 좁은 화면 서랍 칩과 같은 표기·같은 의미. */}
+      {panels && (
+        <>
+          <span className="viewbar__label">패널</span>
+          <button
+            type="button"
+            className={`chip ${panels.left ? 'on' : ''}`}
+            title="왼쪽 공종 구성 패널 접기/펼치기"
+            aria-pressed={panels.left}
+            onClick={panels.toggleLeft}
+          >
+            ☰ 공종 구성
+          </button>
+          <button
+            type="button"
+            className={`chip ${panels.right ? 'on' : ''}`}
+            title="오른쪽 속성 패널(도면·프로젝트 / 텍스트 / 공정 속성 / 연결 속성) 접기/펼치기"
+            aria-pressed={panels.right}
+            onClick={panels.toggleRight}
+          >
+            ⚙ 속성
+          </button>
+          <span className="viewbar__sep" />
+        </>
+      )}
 
       <span className="viewbar__label">색상</span>
       <div className="seg seg--sm">
