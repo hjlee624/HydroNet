@@ -18,7 +18,9 @@ services:
     branch: feat/ai-review-roundtrip
     # 루트 postinstall 이 client/server 의존성까지 설치하고, build 가 client/dist 를
     # 만든다. server/src/index.js 는 dist 가 있으면 그대로 정적 서빙한다.
-    buildCommand: npm install && npm run build
+    # NODE_ENV=production 은 빌드에도 적용돼 npm 이 devDependencies(vite·tsc)를 건너뛴다.
+    # --include=dev 는 postinstall 안의 client/server install 에도 전달된다.
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm --prefix server start
     # 인증이 걸리지 않은 유일한 경로(server/src/index.js 의 /api/health).
     healthCheckPath: /api/health
@@ -49,7 +51,16 @@ services:
       # 떨어진다. 디스크 위로 고정해야 F15 버전 스냅샷이 재배포를 견딘다.
       - key: HN_AUTOSAVE_DIR
         value: /var/data/autosave
-      # 협업 WebSocket/CORS 허용 오리진. 서비스 URL 이 정해진 뒤 대시보드에서 입력
-      # (예: https://sequence.onrender.com). 비워두면 협업 접속이 거부된다.
+      # 첫 기동(빈 디스크) 때만 개발자 계정을 만든다. 둘 다 Blueprint 생성 화면에서
+      # 반드시 채울 것 — 비우면 공개 URL 에 admin / Sequence1! 가 생긴다.
+      # ID 는 로그인 화면이 010 휴대전화 형식(숫자 11자리)만 받으므로 'admin' 은 UI 로 못 쓴다.
+      # 비밀번호는 8~12자, 영문·숫자·특수 중 2종 이상.
+      - key: AUTH_BOOTSTRAP_USER
+        sync: false
+      - key: AUTH_BOOTSTRAP_PASSWORD
+        sync: false
+      # 허용 오리진(CORS + 협업 WebSocket). 서비스 URL 이 정해진 뒤 대시보드에서 입력
+      # (예: https://sequence.onrender.com, 따옴표·경로 없이). 비워두면 협업만이 아니라
+      # 로그인 POST 를 포함한 모든 브라우저 쓰기 요청이 403 이다. 저장하면 자동 재배포된다.
       - key: COLLAB_ALLOWED_ORIGINS
         sync: false

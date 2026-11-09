@@ -260,7 +260,7 @@ npm --prefix client run build:single   # → Sequence.html (오프라인 단독 
 | `NODE_VERSION` | `24` |
 | `AUTH_JWT_SECRET` | 16자 이상 (**미설정 시 운영 모드에서 기동 거부**) |
 | `HN_DATA_DIR` · `HN_AUTOSAVE_DIR` | 영구 디스크 경로 (`/var/data`, `/var/data/autosave`) |
-| `COLLAB_ALLOWED_ORIGINS` | 서비스 URL (미설정 시 협업 WebSocket 차단) |
+| `COLLAB_ALLOWED_ORIGINS` | 서비스 URL (미설정 시 협업 WebSocket 과 로그인 등 브라우저 쓰기 요청이 모두 403) |
 
 - 루트의 `npm start` 는 `npm run dev`(vite 개발 서버)라 **배포에 쓰면 안 됩니다** —
   `localhost` 에만 바인딩돼 플랫폼의 `0.0.0.0` 포트 스캔이 실패합니다.
