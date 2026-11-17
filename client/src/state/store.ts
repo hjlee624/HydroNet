@@ -677,6 +677,7 @@ function normalize(project: Project): Project {
       showGrid: v.showGrid ?? true,
       showTitle: v.showTitle !== false,
       fontScale: v.fontScale ?? 1,
+      barHeight: v.barHeight,
       textStyles: v.textStyles ?? {},
       // 왼쪽 공정명 표(공종 하위) — 기본 ON(구버전 프로젝트도 켜짐). 끄면 기존(막대 위 이름)으로.
       taskColumn: v.taskColumn ?? true,

@@ -948,8 +948,9 @@ function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
     const patch = fitToPaperView(project, w, h)
     const canFit =
       patch.pxPerDay !== undefined || patch.rowHeight !== undefined || patch.fontScale !== undefined
-    return { offPct, canFit }
+    return { offPct, canFit, m }
   }, [project])
+  const layoutNow = fitState.m
   function setSheet(patch: { size?: PaperSize; orientation?: 'landscape' | 'portrait' }) {
     a().setPaper(patch)
   }
@@ -1258,6 +1259,43 @@ function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
           aria-label="글자 크기 배율"
           style={{ width: '100%', accentColor: 'var(--primary)' }}
         />
+      </div>
+      <div className="field">
+        <label>
+          막대 두께{' '}
+          <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
+            {Math.round(layoutNow.barHeight)}px
+          </span>
+        </label>
+        <input
+          type="range"
+          min={3}
+          max={16}
+          step={1}
+          value={Math.round(layoutNow.barHeight)}
+          onChange={(e) => a().setView({ barHeight: Number(e.target.value) })}
+          aria-label="막대 두께"
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+      </div>
+      <div className="field">
+        <label>
+          줄 높이{' '}
+          <span style={{ color: 'var(--stone)', fontWeight: 400 }}>
+            {Math.round(layoutNow.rowHeight)}px
+          </span>
+        </label>
+        <input
+          type="range"
+          min={20}
+          max={120}
+          step={1}
+          value={Math.round(layoutNow.rowHeight)}
+          onChange={(e) => a().setView({ rowHeight: Number(e.target.value) })}
+          aria-label="줄 높이"
+          style={{ width: '100%', accentColor: 'var(--primary)' }}
+        />
+        <p className="note">글자·막대가 겹치지 않는 최소 높이 아래로는 내려가지 않습니다.</p>
       </div>
       {!fitState.canFit ? (
         fitState.offPct <= 1 ? (

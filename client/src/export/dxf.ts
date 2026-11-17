@@ -407,7 +407,7 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
       du = ts('taskDuration'),
       mn = ts('milestoneName'),
       md = ts('milestoneDate')
-    const milestoneR = Math.min(model.rowHeight * 0.3, 11)
+    const milestoneR = model.milestoneR
     const laneColor = (lt: LaidTask) =>
       lt.task.color ?? model.categories.find((c) => c.id === lt.categoryId)?.color ?? '#7c93a8'
 
@@ -472,13 +472,12 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
 
   // ── drawing title ──
   if (model.titleHeight > 0 && model.title) {
-    const ti = ts('title')
     text(
       'HN_TITLE',
       model.contentWidth / 2,
       model.titleHeight * 0.66,
       model.title,
-      ti.fontSize,
+      model.titleFontSize,
       'center',
       7,
     )

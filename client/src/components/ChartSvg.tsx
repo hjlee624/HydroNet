@@ -11,7 +11,7 @@ import type { CSSProperties, MouseEvent as RMouseEvent, PointerEvent as RPointer
 import { memo } from 'react'
 import type { AdequacyResult } from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
-import { arrangeLabelCenters } from '../engine/labelLayout'
+import { arrangeLabelCenters, screenTextCaps } from '../engine/labelLayout'
 import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
 import { createProcessColorMap } from '../engine/taskColor'
@@ -126,7 +126,7 @@ function ChartSvgBase({
   const yearLineW = project.view.yearLineWidth ?? 2.5
   const showMonthLine = project.view.showMonthLine !== false
   const monthLineW = project.view.monthLineWidth ?? 1
-  const milestoneR = Math.min(model.rowHeight * 0.3, 11)
+  const milestoneR = model.milestoneR
   const screenScale = Math.max(0.02, zoom)
   // 전체 맞춤처럼 배율이 낮아져도 연결선과 화살촉은 화면에서 막대와 함께 읽혀야 한다.
   // 출력 시에는 data-export-* 값으로 사용자가 지정한 원래 도면 두께를 복원한다.
@@ -205,14 +205,23 @@ function ChartSvgBase({
   // 실제 렌더가 반드시 같은 크기를 써야 한다** — 배치는 작은 크기로 계산하고 렌더는 큰 크기로
   // 그리면 같은 행의 공정명끼리 겹친다(실측 확인).
   const screenFontOverride: Partial<Record<TextRole, number>> = {}
+  // 화면 보정 상한 — 글자가 놓인 칸(월 폭·헤더 높이·왼쪽 열 폭)을 넘겨 키우지 않는다.
+  const baseSize = (role: TextRole) =>
+    resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1).fontSize
+  const caps = screenTextCaps(model, baseSize, taskCol)
+  const screenCap: Partial<Record<TextRole, number>> = caps
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
   function roleAttrs(role: TextRole) {
     const s = resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1)
+    // 제목은 도면 폭에 맞춰 줄인 크기가 기준(출력도 같은 크기).
+    if (role === 'title') s.fontSize = model.titleFontSize
     const style: CSSProperties = { fontFamily: s.fontFamily, cursor: 'pointer' }
     return {
-      fontSize: screenFontOverride[role] ?? readableScreenTextSize(role, s.fontSize, screenScale),
+      fontSize:
+        screenFontOverride[role] ??
+        readableScreenTextSize(role, s.fontSize, screenScale, screenCap[role]),
       fontWeight: s.fontWeight,
       fill: s.fill,
       style,
@@ -260,6 +269,11 @@ function ChartSvgBase({
   // 배치 계산과 렌더가 같은 크기를 쓰도록 roleAttrs 에 주입한다(위 주석 참조).
   screenFontOverride.taskName = screenTaskNameSize
   screenFontOverride.taskDuration = screenDurationSize
+  // 왼쪽 열의 공정명은 막대 위 이름과 같은 역할이지만 놓인 칸이 다르다(열 폭이 상한).
+  const leftTaskNameSize = Math.max(
+    taskNameStyle.fontSize,
+    Math.min(screenTaskNameSize, caps.leftTaskName),
+  )
   const screenTaskLabelX = new Map<string, number>()
   const exportTaskLabelX = new Map<string, number>()
   const barsByRow = new Map<string, LaidTask[]>()
@@ -627,6 +641,7 @@ function ChartSvgBase({
                   x={(lt.task.subName ?? '').trim() ? 40 : 30}
                   y={lt.cy + 3.5}
                   {...roleAttrs('taskName')}
+                  fontSize={leftTaskNameSize}
                   {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
                 >
                   {lt.task.name.replace(/^◆\s*/, '')}

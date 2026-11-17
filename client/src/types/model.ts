@@ -192,6 +192,8 @@ export interface ViewSettings {
   /** Global multiplier on every text size (1 = design size). Raised by
    *  "fit to paper" so text stays legible on large sheets; user-adjustable. */
   fontScale?: number
+  /** 막대 두께(px, 3~16). 미지정 = 자동(줄 높이의 34%, 최대 16). 얇게 하면 줄 최소 높이도 준다. */
+  barHeight?: number
   /** Per-role typography overrides for the chart texts (empty = all defaults). */
   textStyles?: Partial<Record<TextRole, TextStyle>>
   /** 표시 기간 override (ISO `YYYY-MM-01`). 마일스톤 상단 연/월 클릭 팝업에서 설정.

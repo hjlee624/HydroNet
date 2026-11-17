@@ -112,6 +112,10 @@ export interface LayoutModel {
   pxPerDay: number
   rowHeight: number
   barHeight: number
+  /** Milestone diamond radius (shrinks with a user-set thin bar). */
+  milestoneR: number
+  /** Title font size, shrunk when the title would overrun the drawing width. */
+  titleFontSize: number
   domainStartDay: number
   domainEndDay: number
   xOf: (day: number) => number
@@ -199,18 +203,24 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   // 왼쪽 라벨열에 공정명을 공종 하위로 나열할지(기본 ON). 켜지면 공종명은 레인 상단 헤더로
   // 올라가고 각 공정 줄에 이름이 들어가며, 라벨열 폭도 공정명에 맞춰 넓어진다.
   const taskCol = view.taskColumn !== false
+  // 막대 두께(view.barHeight, px) — 지정하면 줄 최소 높이도 그만큼 낮아져 같은 용지에 더 많은
+  // 줄이 들어간다. 미지정이면 기존 자동값(반두께 8 기준)이라 기존 도면 형상은 그대로.
+  const userBar = view.barHeight != null ? Math.min(16, Math.max(3, view.barHeight)) : null
+  const halfBar = userBar != null ? userBar / 2 : 8
+  const milestoneCap = userBar != null ? Math.min(11, halfBar + 3.5) : 11
   const rowHeight = Math.max(
     view.rowHeight,
     Math.ceil(
       2 *
         Math.max(
-          11.5 + fs('taskName'),
-          11 + fs('milestoneName'),
-          12 + fs('taskDuration'),
+          halfBar + 3.5 + fs('taskName'),
+          milestoneCap + fs('milestoneName'),
+          halfBar + 4 + fs('taskDuration'),
         ),
     ),
   )
-  const barHeight = Math.min(rowHeight * 0.34, 16)
+  const barHeight = userBar ?? Math.min(rowHeight * 0.34, 16)
+  const milestoneR = Math.min(rowHeight * 0.3, milestoneCap)
   const headerHeight = Math.max(
     view.headerHeight,
     Math.ceil((fs('axisYear') + fs('axisMonth')) * 1.6),
@@ -433,6 +443,9 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   })
 
   // ── Timeline header: months + years ──
+  // 월 칸이 글자보다 좁으면 겹치지 않게 격월/분기/반기 단위로 솎아 표기한다.
+  const monthLabelW = estimateTextWidth('12', fs('axisMonth')) + 4
+  const monthStep = [1, 2, 3, 6, 12].find((n) => n * 30.4 * pxPerDay >= monthLabelW) ?? 12
   const months: MonthTick[] = []
   const years: YearTick[] = []
   let d = parseISO(toISO(startDate))
@@ -449,7 +462,7 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     months.push({
       x,
       width,
-      label: MONTH_LABELS_KO[d.getMonth()],
+      label: d.getMonth() % monthStep === 0 ? MONTH_LABELS_KO[d.getMonth()] : '',
       monthIndex0: d.getMonth(),
       year: d.getFullYear(),
       isYearStart,
@@ -501,8 +514,15 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     }
   }
 
+  // 제목이 도면 폭을 넘으면 글자를 줄여 한 줄에 다 보이게 한다.
+  const titleFs = fs('title')
+  const titleW = estimateTextWidth(title, titleFs) * 1.05
+  const titleFontSize = titleW > contentWidth - 24 ? (titleFs * (contentWidth - 24)) / titleW : titleFs
+
   return {
     contentWidth,
+    milestoneR,
+    titleFontSize,
     contentHeight,
     labelWidth,
     headerHeight,
