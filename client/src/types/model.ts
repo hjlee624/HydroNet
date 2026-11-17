@@ -22,6 +22,7 @@ export type TextRole =
   | 'headerTitle'
   | 'headerSub'
   | 'taskName'
+  | 'taskLabel'
   | 'taskDuration'
   | 'milestoneName'
   | 'milestoneDate'

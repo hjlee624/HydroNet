@@ -82,7 +82,7 @@ export function screenTextCaps(
     categories: { name: string; subGroups: { name: string }[] }[]
     tasks: { isMilestone: boolean; task: { name: string; parentId?: string; subName?: string } }[]
   },
-  base: (role: 'categoryLabel' | 'subCategoryLabel' | 'taskName') => number,
+  base: (role: 'categoryLabel' | 'subCategoryLabel' | 'taskLabel') => number,
   taskCol: boolean,
 ): {
   title: number
@@ -92,7 +92,7 @@ export function screenTextCaps(
   headerSub: number
   categoryLabel: number
   subCategoryLabel: number
-  leftTaskName: number
+  taskLabel: number
 } {
   const unit = (text: string) => estimateLabelWidth(text, 1) // 글자 크기 1 당 폭
   const yearRowH = m.headerHeight * 0.46
@@ -109,7 +109,7 @@ export function screenTextCaps(
   }
   const cat = base('categoryLabel')
   const sub = base('subCategoryLabel')
-  const task = base('taskName')
+  const task = base('taskLabel')
   for (const c of m.categories) {
     fit(c.name, 18, cat)
     for (const sg of c.subGroups) fit(sg.name, 26, sub)
@@ -130,6 +130,6 @@ export function screenTextCaps(
     // 공종명은 레인 상단 인셋(layout.ts: max(20, 1.4×글자)) 안에 들어가야 한다.
     categoryLabel: Math.min(cat * ratio, Math.max(20, cat * 1.4) / 1.4),
     subCategoryLabel: sub * ratio,
-    leftTaskName: task * ratio,
+    taskLabel: task * ratio,
   }
 }

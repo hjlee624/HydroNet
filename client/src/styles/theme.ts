@@ -114,6 +114,7 @@ export const TEXT_ROLE_DEFAULTS: Record<TextRole, Required<TextStyle>> = {
   headerTitle: { fontSize: 14, fontFamily: KOPUB_BOLD, color: colors.charcoal },
   headerSub: { fontSize: 12, fontFamily: KOPUB_MEDIUM, color: colors.steel },
   taskName: { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: colors.charcoal },
+  taskLabel: { fontSize: 10.5, fontFamily: KOPUB_MEDIUM, color: colors.charcoal },
   taskDuration: { fontSize: 9, fontFamily: KOPUB_MEDIUM, color: colors.steel },
   milestoneName: { fontSize: 13, fontFamily: KOPUB_MEDIUM, color: colors.ink },
   milestoneDate: { fontSize: 9, fontFamily: KOPUB_MEDIUM, color: colors.steel },
@@ -129,7 +130,8 @@ export const TEXT_ROLE_LABELS: Record<TextRole, string> = {
   subCategoryLabel: '세부공종 이름',
   headerTitle: '좌측 헤더(공종/마일스톤)',
   headerSub: '좌측 헤더(착수)',
-  taskName: '공정 이름',
+  taskName: '차트 공정 이름(막대 위)',
+  taskLabel: '왼쪽 표 공정 이름',
   taskDuration: '공정 기간',
   milestoneName: '마일스톤 이름',
   milestoneDate: '마일스톤 날짜',
@@ -149,6 +151,7 @@ export const SCREEN_TEXT_MIN_PX: Record<TextRole, number> = {
   headerTitle: 8.5,
   headerSub: 7.5,
   taskName: 8.5,
+  taskLabel: 8.5,
   taskDuration: 7.5,
   milestoneName: 8.5,
   milestoneDate: 7.5,
@@ -231,7 +234,10 @@ export function resolveTextStyle(
   fontScale = 1,
 ): { fontSize: number; fontFamily: string; fill: string; fontWeight: number } {
   const d = TEXT_ROLE_DEFAULTS[role]
-  const o = overrides?.[role]
+  // 왼쪽 표 공정 이름은 예전에 차트 공정 이름과 한 역할이었다 — 따로 지정하지 않은 항목은
+  // 차트 쪽 설정을 물려받아 기존 도면의 모양이 바뀌지 않게 한다.
+  const o =
+    role === 'taskLabel' ? { ...overrides?.taskName, ...overrides?.taskLabel } : overrides?.[role]
   const fontFamily = (o?.fontFamily && o.fontFamily.trim()) || d.fontFamily
   return {
     fontSize: (o?.fontSize ?? d.fontSize) * (fontScale > 0 ? fontScale : 1),

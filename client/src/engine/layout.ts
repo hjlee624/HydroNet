@@ -216,6 +216,7 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
           halfBar + 3.5 + fs('taskName'),
           milestoneCap + fs('milestoneName'),
           halfBar + 4 + fs('taskDuration'),
+          0.75 * fs('taskLabel'), // 왼쪽 표 공정 이름 한 줄(글자 높이 1.5배)이 들어갈 높이
         ),
     ),
   )
@@ -259,7 +260,7 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     labelWidth = Math.max(labelWidth, 18 + estimateTextWidth(c.name, catFs) + 10)
   // 좌측 라벨열은 WBS 트리(공종 > 세부공종 > 공정)를 담는다. 세부공종은 26, 공정은 그 하위로
   // 한 단 더 들여(세부공종 있으면 40, 없으면 30) 나열하므로 가장 긴 라벨까지 폭을 확보한다.
-  const taskFs = fs('taskName')
+  const taskFs = fs('taskLabel')
   for (const t of tasks) {
     const sn = (t.subName ?? '').trim()
     if (sn) labelWidth = Math.max(labelWidth, 26 + estimateTextWidth(sn, subFs) + 10)

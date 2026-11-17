@@ -209,7 +209,11 @@ function ChartSvgBase({
   const baseSize = (role: TextRole) =>
     resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1).fontSize
   const caps = screenTextCaps(model, baseSize, taskCol)
-  const screenCap: Partial<Record<TextRole, number>> = caps
+  // 왼쪽 표 공정 이름은 열 폭과 한 줄 높이가 상한.
+  const screenCap: Partial<Record<TextRole, number>> = {
+    ...caps,
+    taskLabel: Math.min(caps.taskLabel, model.rowHeight / 1.5),
+  }
 
   // Resolve a styleable text role into the props every <text> needs. font-family
   // goes through `style` so it survives rasterised export; click selects the role.
@@ -269,11 +273,6 @@ function ChartSvgBase({
   // 배치 계산과 렌더가 같은 크기를 쓰도록 roleAttrs 에 주입한다(위 주석 참조).
   screenFontOverride.taskName = screenTaskNameSize
   screenFontOverride.taskDuration = screenDurationSize
-  // 왼쪽 열의 공정명은 막대 위 이름과 같은 역할이지만 놓인 칸이 다르다(열 폭이 상한).
-  const leftTaskNameSize = Math.max(
-    taskNameStyle.fontSize,
-    Math.min(screenTaskNameSize, caps.leftTaskName),
-  )
   const screenTaskLabelX = new Map<string, number>()
   const exportTaskLabelX = new Map<string, number>()
   const barsByRow = new Map<string, LaidTask[]>()
@@ -640,8 +639,7 @@ function ChartSvgBase({
                   key={`tl-${lt.task.id}`}
                   x={(lt.task.subName ?? '').trim() ? 40 : 30}
                   y={lt.cy + 3.5}
-                  {...roleAttrs('taskName')}
-                  fontSize={leftTaskNameSize}
+                  {...roleAttrs('taskLabel')}
                   {...(lt.task.__mirror ? { opacity: 0.6 } : {})}
                 >
                   {lt.task.name.replace(/^◆\s*/, '')}
