@@ -191,9 +191,9 @@ export const TEXT_BOX_RATIO = 1.6
  * 높이를 잡는데 저배율에서는 화면 글자를 minPx/zoom 으로 키우므로, 상한을 두지 않으면 둘이
  * 겹친다(실측: 48% 배율 TBM 터널 프리셋에서 9~12px 겹침).
  *
- * 둘 다 판독 크기로 들어가면 그대로 두고, 안 되면 **이름을 우선**해 띠 전체를 이름에 주고
- * 공사일수는 화면에서만 감춘다. 공사일수 몫을 남겨 두면 이름까지 판독 크기 아래로 내려가
- * (실측 5.3px) 둘 다 못 읽게 되기 때문이다. 감춘 라벨은 출력에서 되살린다.
+ * 둘 다 판독 크기로 들어가면 그대로 두고, 안 되면 **이름을 우선**해 키우되 공사일수의 도면
+ * 크기 몫은 남긴다(감추지 않는다). showDuration 은 행이 도면 크기로도 둘을 못 담는 예외에서만
+ * false 다 — layout.ts 의 행 높이 하한이 같은 식으로 자리를 보장하므로 정상 도면에서는 항상 true.
  */
 export function resolveRowLabelSizes(args: {
   rowHeight: number
@@ -208,11 +208,13 @@ export function resolveRowLabelSizes(args: {
   const durationWanted = readableScreenTextSize('taskDuration', durationBase, zoom)
   if ((nameWanted + durationWanted) * TEXT_BOX_RATIO <= budget)
     return { nameSize: nameWanted, durationSize: durationWanted, showDuration: true }
-  return {
-    nameSize: readableScreenTextSize('taskName', nameBase, zoom, budget / TEXT_BOX_RATIO),
-    durationSize: durationBase,
-    showDuration: false,
-  }
+  // 둘 다 판독 크기로는 안 들어간다 → 숨기지 않고 줄인다. 이름을 우선해 키우되 공사일수의
+  // 도면 크기 몫은 남긴다. layout.ts 가 도면 크기 기준으로는 둘 다 들어가게 행 높이를 잡으므로
+  // 공사일수가 사라지는 일은 없다(예전에는 여기서 숨겨 "글자 크기를 바꾸면 사라진다"가 됐다).
+  const avail = budget / TEXT_BOX_RATIO
+  const nameSize = Math.max(nameBase, Math.min(nameWanted, avail - durationBase))
+  const durationSize = Math.max(durationBase, Math.min(durationWanted, avail - nameSize))
+  return { nameSize, durationSize, showDuration: nameSize + durationSize <= avail + 0.01 }
 }
 
 /** Selectable 글꼴 options for the text-style inspector (export-safe Windows faces). */

@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Category, Project, Task, TextRole } from '../types/model'
-import { resolveTextStyle } from '../styles/theme'
+import { resolveTextStyle, TEXT_BOX_RATIO } from '../styles/theme'
 import {
   MONTH_LABELS_KO,
   addMonths,
@@ -210,6 +210,9 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
   const milestoneCap = userBar != null ? Math.min(11, halfBar + 3.5) : 11
   const rowHeight = Math.max(
     view.rowHeight,
+    // 막대 위 공정명 + 막대 아래 공기가 한 줄에 함께 들어가는 높이(ChartSvg 의 행 라벨 예산과
+    // 같은 식). 이게 빠지면 공기 글자를 키웠을 때 예산을 넘겨 화면에서 공기가 숨겨진다.
+    Math.ceil(2 * halfBar + TEXT_BOX_RATIO * (fs('taskName') + fs('taskDuration'))),
     Math.ceil(
       2 *
         Math.max(
