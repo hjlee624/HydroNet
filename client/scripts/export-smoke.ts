@@ -10,7 +10,12 @@ import { fitToSheetView, paperMm, SHEET_ROW_MM, sheetPages, tilePages } from '..
 import { computeSchedule } from '../src/engine/scheduling'
 import { processColor, processTaskIds } from '../src/engine/taskColor'
 import { projectToDxf } from '../src/export/dxf'
-import { exportDiagnostics, exportPreflight, MIN_FONT_PT } from '../src/export/preflight'
+import {
+  exportDiagnostics,
+  exportPreflight,
+  fullScopeProject,
+  MIN_FONT_PT,
+} from '../src/export/preflight'
 import { ALL_SHORTCUTS, KEYMAP, resolveAction } from '../src/state/keymap'
 import type { PaperSettings, Project } from '../src/types/model'
 
@@ -227,6 +232,42 @@ check(
   tallPdf.headerTop === fm.headerTop && tallPdf.headerHeight === fm.headerHeight,
   'PDF 2쪽부터 반복할 연·월 헤더 띠가 전달된다',
 )
+// 표시 기간이 공정을 가리지 않고 축만 넓혀 둔 경우 — '전체 도면' 출력도 그 기간을 유지해야
+// 화면에서 맞춘 한 줄 10mm·쪽 나눔이 출력과 같다(예전엔 버려서 한 줄 11.7mm·4장으로 달라졌다).
+const iso = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+const day0 = new Date(tall.startDate)
+const wideView = {
+  ...tall.view,
+  displayStart: iso(new Date(day0.getFullYear() - 1, day0.getMonth(), 1)),
+  displayEnd: iso(new Date(day0.getFullYear() + 12, day0.getMonth(), 1)),
+}
+const wide: Project = { ...tall, view: wideView }
+const wideFitted: Project = {
+  ...wide,
+  view: { ...wideView, ...fitToSheetView(wide, undefined, a3.w, a3.h) },
+}
+const wideScreen = sheetPages(computeLayout(wideFitted), a3.w, a3.h)
+const widePdf = exportPreflight({ project: wideFitted, filter: FILTER_OFF, scope: 'full', paper: A3, format: 'pdf' })
+check(fullScopeProject(wideFitted) === wideFitted, '공정을 가리지 않는 표시 기간은 전체 도면 출력에서도 유지한다')
+check(
+  Math.abs(widePdf.rowMm - SHEET_ROW_MM) < 0.01 && widePdf.pageBreaks.join() === wideScreen.breaks.join(),
+  `축을 넓혀 둔 도면도 화면 점선과 PDF 쪽 나눔이 같다 (한 줄 ${widePdf.rowMm.toFixed(2)}mm · ${widePdf.pages}장)`,
+)
+// 상위 공정 + 세부공정 묶음은 한 장에 함께 둔다.
+const p0 = tall.tasks.find((t) => !t.isMilestone && !t.parentId)
+if (p0) {
+  const kids = [1, 2, 3].map((n) => ({ ...p0, id: `kid-${n}`, parentId: p0.id, row: n, name: `세부 ${n}` }))
+  const blockProject: Project = { ...tall, tasks: [...tall.tasks, ...kids] }
+  const bm = computeLayout(blockProject)
+  const rowsOf = bm.tasks.filter((lt) => lt.task.id === p0.id || lt.task.parentId === p0.id)
+  const top = Math.min(...rowsOf.map((lt) => lt.cy)) - bm.rowHeight / 2
+  const bottom = Math.max(...rowsOf.map((lt) => lt.cy)) + bm.rowHeight / 2
+  // 어떤 쪽 높이에서도 그 묶음 안쪽에서는 나누지 않는다.
+  const splits = [1.0, 1.07, 1.13, 1.21, 1.29].some((k) =>
+    sheetPages(bm, a3.w, a3.h * k).breaks.some((b) => b > top + 0.5 && b < bottom - 0.5),
+  )
+  check(rowsOf.length === 4 && !splits, '상위 공정 이름 줄과 세부공정 줄은 쪽 경계로 갈라지지 않는다')
+}
 const tallDxf = projectToDxf(fittedTall)
 const dxfLines = tallDxf.split(/\r?\n/)
 const pageFrames = dxfLines.filter((l, i) => l === 'HN_PAGE' && dxfLines[i - 2] === 'POLYLINE').length

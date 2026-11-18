@@ -27,6 +27,32 @@ export const SCOPE_LABELS: Record<ExportScope, string> = {
   view: '현재 표시 범위',
 }
 
+/**
+ * '전체 도면' 출력용 프로젝트 — 표시 기간(view.displayStart/End)이 공정을 가리거나 자를 때만
+ * 그 설정을 버린다. 공정을 하나도 가리지 않는 표시 기간(축만 넓혀 둔 경우)은 그대로 둔다:
+ * 그래야 화면에서 맞춘 배율·쪽 나눔과 출력물이 같다. 예전엔 무조건 버려서, 축을 넓혀 둔
+ * 도면은 출력 때 폭이 줄어 한 줄이 더 크게 찍히고 쪽이 화면 점선과 다르게 나뉘었다.
+ * 사전 점검·PDF·DXF 가 모두 이 함수로 같은 도면을 본다.
+ */
+export function fullScopeProject(project: Project): Project {
+  const { displayStart, displayEnd } = project.view
+  if (!displayStart && !displayEnd) return project
+  const open: Project = {
+    ...project,
+    view: { ...project.view, displayStart: undefined, displayEnd: undefined },
+  }
+  const all = computeLayout(open)
+  const windowed = computeLayout(project)
+  const hidesNothing =
+    windowed.tasks.length === all.tasks.length &&
+    all.tasks.every(
+      (lt) =>
+        lt.task.start >= windowed.domainStartDay &&
+        lt.task.start + (lt.isMilestone ? 0 : lt.task.duration) <= windowed.domainEndDay,
+    )
+  return hidesNothing ? project : open
+}
+
 /** 인쇄물에서 읽을 수 있다고 보는 최소 글자 크기(pt). 이보다 작으면 경고. */
 export const MIN_FONT_PT = 6
 
@@ -124,12 +150,8 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
   const { project, filter, scope, paper, format } = i
   const vector = format === 'svg' || format === 'dxf'
 
-  // 전체 도면은 화면에서 임시로 늘려 둔 표시 기간을 버리고 실제 공정 데이터 범위만 쓴다.
-  const fullProject: Project = {
-    ...project,
-    view: { ...project.view, displayStart: undefined, displayEnd: undefined },
-  }
-  const full = computeLayout(fullProject)
+  // 전체 도면은 공정을 가리는 표시 기간만 버린다(fullScopeProject).
+  const full = computeLayout(fullScopeProject(project))
   const shown =
     scope === 'view'
       ? filterOn(filter)

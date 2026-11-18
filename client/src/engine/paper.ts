@@ -154,8 +154,14 @@ export interface SheetPages {
 export function sheetPages(
   m: Pick<
     LayoutModel,
-    'contentWidth' | 'contentHeight' | 'rowHeight' | 'headerHeight' | 'categories' | 'chartTop' | 'chartHeight'
-  >,
+    | 'contentWidth'
+    | 'contentHeight'
+    | 'rowHeight'
+    | 'headerHeight'
+    | 'categories'
+    | 'chartTop'
+    | 'chartHeight'
+  > & { tasks?: LayoutModel['tasks'] },
   paperWmm: number,
   paperHmm: number,
 ): SheetPages {
@@ -163,22 +169,53 @@ export function sheetPages(
   const pageHeight = paperHmm / mmPerPx
   const out: SheetPages = { mmPerPx, rowMm: m.rowHeight * mmPerPx, pageHeight, breaks: [] }
   if (!(pageHeight - m.headerHeight > 1)) return out // 헤더만으로 한 장이 차는 비정상 배율
-  const candidates: number[] = []
-  for (const c of m.categories) {
-    candidates.push(c.y)
-    const inset = c.height - c.subRows * m.rowHeight
-    for (let i = 1; i < c.subRows; i++) candidates.push(c.y + inset + i * m.rowHeight)
+  // 상위 공정(왼쪽 이름 줄)과 그 세부공정 줄들은 한 묶음이다 — 묶음 안에서는 되도록 나누지
+  // 않는다(이름만 앞 장에 남고 막대는 다음 장으로 넘어가는 일을 막는다).
+  const blockRows = new Map<string, { min: number; max: number }>()
+  const parentIds = new Set((m.tasks ?? []).map((lt) => lt.task.parentId).filter(Boolean))
+  for (const lt of m.tasks ?? []) {
+    const block = lt.task.parentId ?? (parentIds.has(lt.task.id) ? lt.task.id : null)
+    if (!block) continue
+    const key = `${lt.categoryId}#${block}`
+    const r = blockRows.get(key)
+    if (r) {
+      r.min = Math.min(r.min, lt.subRow)
+      r.max = Math.max(r.max, lt.subRow)
+    } else blockRows.set(key, { min: lt.subRow, max: lt.subRow })
   }
-  candidates.push(m.chartTop + m.chartHeight) // 하단 로고 띠 앞
-  candidates.sort((a, b) => a - b)
+  const insideBlock = (catId: string, row: number) => {
+    for (const [key, r] of blockRows)
+      if (key.startsWith(`${catId}#`) && row > r.min && row <= r.max) return true
+    return false
+  }
+  const preferred: number[] = [] // 묶음을 가르지 않는 경계
+  const anyRow: number[] = [] // 모든 줄 경계(묶음이 한 장보다 클 때의 차선)
+  for (const c of m.categories) {
+    preferred.push(c.y)
+    anyRow.push(c.y)
+    const inset = c.height - c.subRows * m.rowHeight
+    for (let i = 1; i < c.subRows; i++) {
+      const y = c.y + inset + i * m.rowHeight
+      anyRow.push(y)
+      if (!insideBlock(c.id, i)) preferred.push(y)
+    }
+  }
+  const footerTop = m.chartTop + m.chartHeight // 하단 로고 띠 앞
+  preferred.push(footerTop)
+  anyRow.push(footerTop)
+  const lastIn = (list: number[], lo: number, hi: number) => {
+    let hit: number | null = null
+    for (const y of list) if (y > lo + 0.01 && y <= hi + 0.01 && (hit === null || y > hit)) hit = y
+    return hit
+  }
   let start = 0
   let capacity = pageHeight
   while (m.contentHeight - start > capacity + 0.01) {
-    let next = start + capacity // 한 줄이 용지보다 크면(비정상) 그 자리에서 자른다
-    for (const y of candidates) {
-      if (y > start + 0.01 && y <= start + capacity + 0.01) next = y
-      else if (y > start + capacity) break
-    }
+    // 한 줄이 용지보다 크면(비정상) 그 자리에서 자른다.
+    const next =
+      lastIn(preferred, start, start + capacity) ??
+      lastIn(anyRow, start, start + capacity) ??
+      start + capacity
     out.breaks.push(next)
     start = next
     capacity = pageHeight - m.headerHeight

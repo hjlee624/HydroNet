@@ -305,9 +305,17 @@ function ChartSvgBase({
       exportTaskLabelX.set(id, x)
   }
 
+  // 쪽 나눔 — **지금 그려진 이 도면**의 것. 화면 점선과 PDF 가 같은 값을 쓰도록 SVG 에 실어 둔다
+  // (PDF 는 이 SVG 를 그대로 잘라 찍으므로, 여기 값이 곧 실제 쪽 경계다).
+  const paper = paperMm(project.paper.size, project.paper.orientation)
+  const sheet = sheetPages(model, paper.w, paper.h)
+
   return (
     <svg
       id="sequence-chart"
+      data-page-breaks={sheet.breaks.join(',')}
+      data-header-top={headerTop}
+      data-header-height={headerHeight}
       width={contentWidth}
       height={contentHeight}
       viewBox={`0 0 ${contentWidth} ${contentHeight}`}
@@ -1209,11 +1217,7 @@ function ChartSvgBase({
       {/* 쪽 나눔 점선(화면 전용) — 용지 폭에 맞춰 출력할 때 다음 장으로 넘어가는 경계.
           PDF·DXF 가 같은 계산(sheetPages)으로 나누므로 여기 보이는 선이 곧 실제 경계다. */}
       {project.view.pageBreaks &&
-        sheetPages(
-          model,
-          paperMm(project.paper.size, project.paper.orientation).w,
-          paperMm(project.paper.size, project.paper.orientation).h,
-        ).breaks.map((y, i) => (
+        sheet.breaks.map((y, i) => (
           <g key={`pb-${y}`} data-export-hide="1" pointerEvents="none">
             <line
               x1={0}

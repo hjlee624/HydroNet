@@ -10,7 +10,12 @@ import { useMemo, useState } from 'react'
 import { DPI_OPTIONS, PAPER_SIZES, paperPx, SHEET_ROW_MM } from '../engine/paper'
 import { projectToDxf } from '../export/dxf'
 import { buildExportSvgString, type ExportFormat, exportChart } from '../export/exporter'
-import { type ExportScope, exportDiagnostics, exportPreflight } from '../export/preflight'
+import {
+  type ExportScope,
+  exportDiagnostics,
+  exportPreflight,
+  fullScopeProject,
+} from '../export/preflight'
 import { logError, logInfo } from '../state/logger'
 import { filterActive, useEditor } from '../state/store'
 import { colors } from '../styles/theme'
@@ -131,7 +136,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
     const restoreFilter = scope === 'full' && filterActive(prevFilter)
     const prevStart = a().project.view.displayStart
     const prevEnd = a().project.view.displayEnd
-    const restoreRange = scope === 'full' && !!(prevStart || prevEnd)
+    // 표시 기간은 공정을 가릴 때만 푼다 — 사전 점검과 같은 판단(fullScopeProject).
+    const restoreRange =
+      scope === 'full' && fullScopeProject(a().project).view.displayStart !== prevStart
     a().selectTask(null)
     if (restoreFilter) a().clearFilter()
     if (restoreRange) a().setView({ displayStart: undefined, displayEnd: undefined })
@@ -191,10 +198,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
       setBusy(true)
       setMsg(null)
       try {
-        const exportProject =
-          scope === 'full'
-            ? { ...project, view: { ...project.view, displayStart: undefined, displayEnd: undefined } }
-            : project
+        const exportProject = scope === 'full' ? fullScopeProject(project) : project
         const dxf = projectToDxf(exportProject, scope === 'view' ? filter : undefined)
         download(dxf, `${filename}.dxf`, 'application/dxf')
         logInfo(`DXF 내보내기 완료(${pre.scopeLabel}): ${filename}.dxf`)
@@ -230,9 +234,13 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           pdfPages:
             format === 'pdf'
               ? {
-                  breaks: pre.pageBreaks,
-                  headerTop: pre.headerTop,
-                  headerHeight: pre.headerHeight,
+                  // 캡처한 그 SVG 가 들고 있는 쪽 나눔을 쓴다 — 화면 점선과 반드시 같다.
+                  breaks: (live.svg.getAttribute('data-page-breaks') ?? '')
+                    .split(',')
+                    .filter(Boolean)
+                    .map(Number),
+                  headerTop: Number(live.svg.getAttribute('data-header-top')) || 0,
+                  headerHeight: Number(live.svg.getAttribute('data-header-height')) || 0,
                 }
               : undefined,
         })
