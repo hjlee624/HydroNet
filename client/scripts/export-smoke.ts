@@ -6,11 +6,16 @@
 
 import { createSampleProject } from '../src/data/sampleProject'
 import { computeLayout, type LayoutFilter } from '../src/engine/layout'
-import { paperPx, tilePages, tilePagesWithFrozen } from '../src/engine/paper'
+import { paperPx, tilePages } from '../src/engine/paper'
 import { computeSchedule } from '../src/engine/scheduling'
 import { processColor, processTaskIds } from '../src/engine/taskColor'
 import { projectToDxf } from '../src/export/dxf'
-import { exportDiagnostics, exportPreflight, MIN_FONT_PT } from '../src/export/preflight'
+import {
+  exportDiagnostics,
+  exportPreflight,
+  MIN_FONT_PT,
+  pdfSplitPlan,
+} from '../src/export/preflight'
 import { ALL_SHORTCUTS, KEYMAP, resolveAction } from '../src/state/keymap'
 import type { PaperSettings, Project } from '../src/types/model'
 
@@ -173,37 +178,52 @@ const bf = exportPreflight({
 console.log(`  fontScale=6 → ${bf.minFontPt.toFixed(2)}pt`)
 check(bf.minFontPt > a4.minFontPt, '글자 크기를 키우면 인쇄 pt 도 커진다(안내가 실제 해법)')
 
-// ── 4. 분할 장수(타일) 가 engine/paper.ts 와 일치 ─────────────────────────────
+// ── 4. 분할 장수 — 기본은 한 장, 사용자가 고른 PDF 만 2·4장으로 나눈다 ─────────
 console.log('\n[분할 장수]')
 const px4 = paperPx(A4)
 const m = computeLayout(project)
 const drawScale = Math.min(px4.wPx / m.contentWidth, px4.hPx / m.contentHeight)
-const legibleScale = drawScale * Math.max(1, MIN_FONT_PT / a4.minFontPt)
-const expect = tilePagesWithFrozen(
-  m.contentWidth * legibleScale,
-  m.contentHeight * legibleScale,
-  px4.wPx,
-  px4.hPx,
-  m.labelWidth * legibleScale,
-  m.chartTop * legibleScale,
-)
-console.log(
-  `  preflight ${a4.legibleCols}×${a4.legibleRows}=${a4.legiblePages}장 · tilePages ${expect.cols}×${expect.rows}=${expect.pages}장`,
-)
 check(a4.pages === 1, 'PNG는 한 장 이미지로 유지한다')
 check(
-  a4Pdf.pages === a4Pdf.legiblePages && a4Pdf.pages > 1,
-  `PDF는 최소 ${MIN_FONT_PT}pt 확보를 위해 자동 분할한다 (${a4Pdf.pages}장)`,
+  a4Pdf.pages === 1 && Math.abs(a4Pdf.splitScale - drawScale) < 1e-9,
+  'PDF 기본은 글자가 작아도 자동 분할하지 않고 전체 도면을 한 장에 맞춘다',
 )
 check(
-  a4.legiblePages === expect.pages &&
-    a4.legibleCols === expect.cols &&
-    a4.legibleRows === expect.rows,
-  '읽을 수 있는 크기의 분할 장수가 engine/paper.ts tilePages 와 일치',
+  a4Pdf.splitScale * m.contentWidth <= px4.wPx + 1e-6 &&
+    a4Pdf.splitScale * m.contentHeight <= px4.hPx + 1e-6,
+  '한 장 출력은 전체 도면이 용지 안에 들어간다(잘림 없음)',
+)
+for (const split of [2, 4] as const) {
+  const sp = exportPreflight({
+    project,
+    filter: FILTER_OFF,
+    scope: 'full',
+    paper: A4,
+    format: 'pdf',
+    split,
+  })
+  const plan = pdfSplitPlan(m, px4.wPx, px4.hPx, split)
+  console.log(
+    `  ${split}분할 → ${sp.splitCols}×${sp.splitRows} · 최소 글자 ${sp.minFontPt.toFixed(2)}pt (한 장 ${a4Pdf.minFontPt.toFixed(2)}pt)`,
+  )
+  check(sp.pages === split && sp.splitCols * sp.splitRows === split, `${split}분할을 고르면 정확히 ${split}장`)
+  check(sp.splitScale > a4Pdf.splitScale, `${split}분할은 한 장보다 크게 찍힌다`)
+  // 모든 조각이 용지 안에 들어간다: 좌측 열 + 본문 1/cols, 헤더 + 본문 1/rows.
+  const sliceW = m.labelWidth + (m.contentWidth - m.labelWidth) / plan.cols
+  const sliceH = m.chartTop + (m.contentHeight - m.chartTop) / plan.rows
+  check(
+    sliceW * plan.scale <= px4.wPx + 1e-6 && sliceH * plan.scale <= px4.hPx + 1e-6,
+    `${split}분할의 각 장이 용지 안에 들어간다(본문 누락 없음)`,
+  )
+}
+check(
+  exportPreflight({ project, filter: FILTER_OFF, scope: 'full', paper: A4, format: 'png', split: 4 })
+    .pages === 1,
+  '분할 설정은 PDF 에만 적용된다',
 )
 check(
   a4Pdf.frozenLabelWidth === m.labelWidth && a4Pdf.frozenHeaderHeight === m.chartTop,
-  'PDF 자동 분할은 매 장에 좌측 WBS와 상단 연·월 헤더를 반복한다',
+  'PDF 분할은 매 장에 좌측 WBS와 상단 연·월 헤더를 반복한다',
 )
 check(tilePages(100, 100, 100, 100).pages === 1, 'tilePages: 딱 맞으면 1장')
 check(tilePages(201, 100, 100, 100).pages === 3, 'tilePages: 가로 2.01배면 3장(3×1)')

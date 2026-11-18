@@ -9,11 +9,11 @@
 //   • 표시 기간 제한 — view.displayStart/displayEnd 로 잘려나가는 구간
 //   • 용지 위 최소 글자 크기(pt) — 너무 작으면 인쇄물에서 읽히지 않는다
 //   • 레터박스 여백 비율 — 출력 엔진은 잘라내지 않고 축소·중앙배치하므로 '잘림'이 아니라 '여백'
-//   • 분할 장수 — 최소 글자 크기를 확보하려면 용지 몇 장이 필요한가(engine/paper.ts tilePages)
+//   • 분할 장수 — 기본은 한 장(전체 도면을 용지 안에 축소). 사용자가 2·4분할을 고른 PDF만 나눈다
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { computeLayout, type LayoutFilter } from '../engine/layout'
-import { paperPx, tilePagesWithFrozen } from '../engine/paper'
+import { paperPx } from '../engine/paper'
 import { computeSchedule } from '../engine/scheduling'
 import { resolveTextStyle } from '../styles/theme'
 import type { PaperSettings, Project, TextRole } from '../types/model'
@@ -25,6 +25,34 @@ export type ExportScope = 'full' | 'view'
 export const SCOPE_LABELS: Record<ExportScope, string> = {
   full: '전체 도면',
   view: '현재 표시 범위',
+}
+
+/** PDF 분할 장수 — 1 = 전체 도면을 한 장에(기본). 2·4 는 사용자가 고른 경우에만. */
+export type PdfSplit = 1 | 2 | 4
+
+/**
+ * N장 분할 배치 — 매 장에 좌측 WBS 열과 상단 헤더를 반복하고, 본문을 cols×rows 로 나눈다.
+ * 가능한 배치(2장: 2×1·1×2 / 4장: 4×1·2×2·1×4) 중 도면이 가장 크게 찍히는 것을 고른다.
+ * scale = 도면 좌표 → 출력 픽셀 배율(그 배율에서 모든 조각이 용지 안에 들어간다).
+ */
+export function pdfSplitPlan(
+  m: { contentWidth: number; contentHeight: number; labelWidth: number; chartTop: number },
+  pageW: number,
+  pageH: number,
+  split: PdfSplit,
+): { cols: number; rows: number; scale: number } {
+  if (split === 1)
+    return { cols: 1, rows: 1, scale: Math.min(pageW / m.contentWidth, pageH / m.contentHeight) }
+  const bodyW = Math.max(1, m.contentWidth - m.labelWidth)
+  const bodyH = Math.max(1, m.contentHeight - m.chartTop)
+  let best = { cols: split as number, rows: 1, scale: 0 }
+  for (let cols = 1; cols <= split; cols++) {
+    if (split % cols) continue
+    const rows = split / cols
+    const scale = Math.min(pageW / (m.labelWidth + bodyW / cols), pageH / (m.chartTop + bodyH / rows))
+    if (scale > best.scale) best = { cols, rows, scale }
+  }
+  return best
 }
 
 /** 인쇄물에서 읽을 수 있다고 보는 최소 글자 크기(pt). 이보다 작으면 경고. */
@@ -69,6 +97,8 @@ export interface PreflightInput {
   scope: ExportScope
   paper: PaperSettings
   format: ExportFormat
+  /** PDF 분할 장수(기본 1 = 한 장). PDF 가 아니면 무시. */
+  split?: PdfSplit
 }
 
 export interface PreflightResult {
@@ -95,14 +125,13 @@ export interface PreflightResult {
   minFontPt: number
   /** 그 글자가 어떤 역할인지(한국어). */
   minFontRole: string
-  /** 실제 출력 장수 — PDF는 최소 글자 크기를 지키기 위해 자동 분할할 수 있다. */
+  /** 실제 출력 장수 — 기본 1. PDF 에서 사용자가 2·4분할을 고른 경우에만 늘어난다. */
   pages: number
-  /** 최소 글자 크기를 확보하려면 필요한 분할 장수(1이면 나눌 필요 없음). */
-  legiblePages: number
-  legibleCols: number
-  legibleRows: number
-  /** PDF 자동 분할에서 SVG 좌표를 출력 픽셀로 바꾸는 배율. */
-  legibleScale: number
+  /** 분할 배치(가로 조각 × 세로 조각). 한 장이면 1×1. */
+  splitCols: number
+  splitRows: number
+  /** SVG 좌표를 출력 픽셀로 바꾸는 배율(한 장이면 용지에 맞춘 축소 배율). */
+  splitScale: number
   /** PDF 각 장에 반복할 좌측 WBS·상단 축 영역(도면 좌표). */
   frozenLabelWidth: number
   frozenHeaderHeight: number
@@ -160,18 +189,11 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
     }
   }
   if (!Number.isFinite(minFontPx)) minFontPx = 0
-  const minFontPt = (minFontPx * drawScale * 72) / px.effectiveDpi
-
-  // 읽을 수 있는 크기(MIN_FONT_PT)로 키우면 도면이 용지를 넘친다 → 몇 장 분할이 필요한가.
-  const legibleScale = minFontPt > 0 ? drawScale * Math.max(1, MIN_FONT_PT / minFontPt) : drawScale
-  const tiles = tilePagesWithFrozen(
-    shown.contentWidth * legibleScale,
-    shown.contentHeight * legibleScale,
-    px.wPx,
-    px.hPx,
-    shown.labelWidth * legibleScale,
-    shown.chartTop * legibleScale,
-  )
+  // 기본은 전체 도면을 한 장에 넣는다(작업한 그대로, 잘림 없음). 글자가 작아져도 자동으로
+  // 나누지 않는다 — 나누는 것은 사용자가 2·4분할을 고른 PDF 뿐이다.
+  const tiles = pdfSplitPlan(shown, px.wPx, px.hPx, format === 'pdf' ? (i.split ?? 1) : 1)
+  const pages = tiles.cols * tiles.rows
+  const minFontPt = (minFontPx * tiles.scale * 72) / px.effectiveDpi
 
   const ds = project.view.displayStart
   const de = project.view.displayEnd
@@ -203,11 +225,11 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
   if (!vector) {
     if (minFontPt > 0 && minFontPt < MIN_FONT_PT)
       warnings.push(
-        format === 'pdf' && tiles.pages > 1
-          ? `한 장에 넣으면 가장 작은 글자(${ROLE_LABELS[minFontRoleId]})가 약 ${minFontPt.toFixed(1)}pt라 읽기 어려워 ${paper.size} ${tiles.cols}×${tiles.rows} = ${tiles.pages}장으로 자동 분할합니다.`
+        format === 'pdf'
+          ? `용지에서 가장 작은 글자(${ROLE_LABELS[minFontRoleId]})가 약 ${minFontPt.toFixed(1)}pt로 인쇄됩니다 — 글자 크기를 키우거나, 더 큰 용지 또는 더 많은 분할을 고르세요.`
           : `용지에서 가장 작은 글자(${ROLE_LABELS[minFontRoleId]})가 약 ${minFontPt.toFixed(1)}pt로 인쇄됩니다 — 글자 크기를 키우거나 더 큰 용지를 고르세요.`,
       )
-    if (marginPct > 5)
+    if (pages === 1 && marginPct > 5)
       warnings.push(
         `도면 비율이 용지와 달라 약 ${marginPct}%가 여백으로 남습니다 — 아래 [여백 없이 시트에 맞추기]로 채울 수 있습니다(출력은 잘리지 않고 축소됩니다).`,
       )
@@ -232,11 +254,10 @@ export function exportPreflight(i: PreflightInput): PreflightResult {
     marginPct,
     minFontPt,
     minFontRole: ROLE_LABELS[minFontRoleId],
-    pages: format === 'pdf' ? tiles.pages : 1,
-    legiblePages: tiles.pages,
-    legibleCols: tiles.cols,
-    legibleRows: tiles.rows,
-    legibleScale,
+    pages,
+    splitCols: tiles.cols,
+    splitRows: tiles.rows,
+    splitScale: tiles.scale,
     frozenLabelWidth: shown.labelWidth,
     frozenHeaderHeight: shown.chartTop,
     frozenTitleHeight: shown.titleHeight,

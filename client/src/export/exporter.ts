@@ -331,8 +331,8 @@ export async function exportChart(
       return { clamped: px.clamped, pages: 1 }
     }
 
-    // PDF — when a fitted single page would make text unreadable, keep the requested
-    // paper size and tile the chart at the preflight's legible physical scale.
+    // PDF — one fitted page by default (the whole chart, never cropped). Tiles only when the
+    // user picked a 2/4 split in the dialog (preflight supplies the plan).
     const orientation = px.wMm >= px.hMm ? 'landscape' : 'portrait'
     const pdf = new jsPDF({ orientation, unit: 'mm', format: [px.wMm, px.hMm], compress: true })
     const tilePlan = opts.pdfTiles

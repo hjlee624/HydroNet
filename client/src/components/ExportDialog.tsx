@@ -10,7 +10,12 @@ import { useMemo, useState } from 'react'
 import { DPI_OPTIONS, PAPER_SIZES, paperPx } from '../engine/paper'
 import { projectToDxf } from '../export/dxf'
 import { buildExportSvgString, type ExportFormat, exportChart } from '../export/exporter'
-import { type ExportScope, exportDiagnostics, exportPreflight } from '../export/preflight'
+import {
+  type ExportScope,
+  exportDiagnostics,
+  exportPreflight,
+  type PdfSplit,
+} from '../export/preflight'
 import { logError, logInfo } from '../state/logger'
 import { filterActive, useEditor } from '../state/store'
 import { colors } from '../styles/theme'
@@ -67,6 +72,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const [format, setFormat] = useState<ExportFormat>('pdf')
   // 기본은 '전체 도면' — 기존 정책(필터를 해제하고 전체를 출력)을 그대로 유지한다.
   const [scope, setScope] = useState<ExportScope>('full')
+  // PDF 분할 — 기본은 한 장(전체 도면을 용지 안에). 2·4분할은 고를 때만.
+  const [split, setSplit] = useState<PdfSplit>(1)
   const [transparent, setTransparent] = useState(false)
   const [stamp, setStamp] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -89,8 +96,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const px = paperPx(paperEff)
 
   const preInput = useMemo(
-    () => ({ project, filter, scope, paper: paperEff, format }),
-    [project, filter, scope, paperEff, format],
+    () => ({ project, filter, scope, paper: paperEff, format, split }),
+    [project, filter, scope, paperEff, format, split],
   )
   // 출력 사전 점검 — 무엇이 몇 개 나가는지, 글자가 몇 pt로 찍히는지 미리 계산한다.
   const pre = useMemo(() => exportPreflight(preInput), [preInput])
@@ -232,9 +239,9 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           pdfTiles:
             format === 'pdf' && pre.pages > 1
               ? {
-                  scale: pre.legibleScale,
-                  cols: pre.legibleCols,
-                  rows: pre.legibleRows,
+                  scale: pre.splitScale,
+                  cols: pre.splitCols,
+                  rows: pre.splitRows,
                   labelWidth: pre.frozenLabelWidth,
                   headerHeight: pre.frozenHeaderHeight,
                   titleHeight: pre.frozenTitleHeight,
@@ -407,6 +414,32 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         </>
       )}
 
+      {format === 'pdf' && (
+        <div className="field">
+          <label>분할</label>
+          <div className="seg">
+            {([1, 2, 4] as const).map((n) => (
+              <button
+                type="button"
+                key={n}
+                className={split === n ? 'active' : ''}
+                onClick={() => {
+                  setSplit(n)
+                  setMsg(null)
+                }}
+              >
+                {n === 1 ? '한 장' : `${n}분할`}
+              </button>
+            ))}
+          </div>
+          <p className="note">
+            {split === 1
+              ? '전체 공정표를 고른 용지 한 장 안에 그대로 넣습니다(잘리지 않고 축소).'
+              : `같은 용지 ${split}장에 나눠 크게 찍습니다(${pre.splitCols}×${pre.splitRows}). 각 장에 공사명·좌측 표·연·월 헤더를 반복합니다.`}
+          </p>
+        </div>
+      )}
+
       {/* ── 출력 사전 점검 — 무엇이 어떻게 나가는지 확정해서 보여준다 ── */}
       <div className="field" style={{ marginTop: 2 }}>
         <label>출력 전 점검</label>
@@ -460,6 +493,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
                   scope,
                   paper: paperEff,
                   format,
+                  split,
                 })
                 setMsg(
                   after.marginPct <= 1
@@ -492,7 +526,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           {vector
             ? '미리보기는 래스터 출력(PNG·JPG·PDF) 기준 배치입니다. SVG·DXF는 벡터 원본이라 여백 개념이 없습니다.'
             : format === 'pdf' && pre.pages > 1
-              ? `미리보기는 전체 도면 개요입니다. 실제 PDF는 ${pre.legibleCols}×${pre.legibleRows} = ${pre.pages}장으로 나뉘며 각 장에 공사명·좌측 WBS·연·월 헤더를 반복합니다.`
+              ? `미리보기는 전체 도면 개요입니다. 실제 PDF는 ${pre.splitCols}×${pre.splitRows} = ${pre.pages}장으로 나뉘며 각 장에 공사명·좌측 WBS·연·월 헤더를 반복합니다.`
             : '용지 안에 도면이 어떻게 앉는지(여백 포함) 실제 출력과 같은 방식으로 보여줍니다.'}
         </p>
       </div>
