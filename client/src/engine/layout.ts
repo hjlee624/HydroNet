@@ -7,7 +7,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import type { Category, Project, Task, TextRole } from '../types/model'
-import { resolveTextStyle, TEXT_BOX_RATIO } from '../styles/theme'
+import { resolveTextStyle, SCREEN_TEXT_MIN_PX, TEXT_BOX_RATIO } from '../styles/theme'
 import {
   MONTH_LABELS_KO,
   addMonths,
@@ -212,7 +212,13 @@ export function computeLayout(project: Project, filter?: LayoutFilter): LayoutMo
     view.rowHeight,
     // 막대 위 공정명 + 막대 아래 공기가 한 줄에 함께 들어가는 높이(ChartSvg 의 행 라벨 예산과
     // 같은 식). 이게 빠지면 공기 글자를 키웠을 때 예산을 넘겨 화면에서 공기가 숨겨진다.
-    Math.ceil(2 * halfBar + TEXT_BOX_RATIO * (fs('taskName') + fs('taskDuration'))),
+    Math.ceil(
+      2 * halfBar +
+        TEXT_BOX_RATIO *
+          // 화면은 최소 판독 크기 아래로 그리지 않으므로(100% 배율 기준) 그 크기로 자리를 잡는다.
+          (Math.max(fs('taskName'), SCREEN_TEXT_MIN_PX.taskName) +
+            Math.max(fs('taskDuration'), SCREEN_TEXT_MIN_PX.taskDuration)),
+    ),
     Math.ceil(
       2 *
         Math.max(
