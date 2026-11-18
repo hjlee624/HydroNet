@@ -232,14 +232,17 @@ async function main() {
   )
   useEditor.getState().setZoom(0.03)
   await wait(80)
-  // 행에 얽매이지 않는 역할(제목·공종·연·월)은 저배율에서도 판독 크기를 그대로 지킨다.
+  // 제목·공종·연·월은 저배율에서 판독 크기를 향해 키우되, **놓인 칸(월 폭·헤더 높이·왼쪽 열
+  // 폭)에 들어가는 만큼만** 키운다. 예전엔 칸과 무관하게 판독 크기로 키워서 월 숫자·연도가
+  // 서로 겹치고 왼쪽 공종명이 열 경계에서 잘렸다. 도면 크기 아래로는 내리지 않는다.
   const readableRoles = ['title', 'categoryLabel', 'axisYear', 'axisMonth'] as const
   for (const role of readableRoles) {
     const textEl = document.querySelector(`[data-text-role="${role}"]`) as SVGTextElement | null
-    const screenPx = Number(textEl?.getAttribute('font-size') ?? 0) * 0.03
+    const size = Number(textEl?.getAttribute('font-size') ?? 0)
+    const drawn = Number(textEl?.getAttribute('data-export-font-size') ?? 0)
     check(
-      screenPx >= SCREEN_TEXT_MIN_PX[role] - 0.05,
-      `3% 전체 맞춤에서도 ${role} 글자가 최소 ${SCREEN_TEXT_MIN_PX[role]}px로 보인다 (${screenPx.toFixed(1)}px)`,
+      drawn > 0 && size >= drawn - 0.01 && size <= SCREEN_TEXT_MIN_PX[role] / 0.03 + 0.01,
+      `3% 전체 맞춤에서 ${role} 글자는 도면 크기 이상·판독 크기 이하로 그린다 (${size.toFixed(1)} / 도면 ${drawn.toFixed(1)})`,
     )
   }
   // taskName·taskDuration 은 **행 높이 안에 갇힌** 라벨이라 사정이 다르다. 공정명은 막대 위,
@@ -419,9 +422,9 @@ async function main() {
     useEditor.getState().setZoom(0.02)
     await wait(120)
     const sheetFitButton = document.querySelector<HTMLButtonElement>(
-      '.panel--right button[title="도면 비율을 용지에 맞추고 작업 화면 전체를 다시 표시"]',
+      '.panel--right button[title="도면 폭을 용지 폭에 맞추고 한 줄을 10mm로 조정"]',
     )
-    check(!!sheetFitButton, '용지 비율과 화면 전체를 함께 맞추는 버튼이 렌더된다')
+    check(!!sheetFitButton, '[여백 없이 시트에 맞추기] 버튼이 속성 패널에 렌더된다')
     sheetFitButton?.click()
     await wait(180)
     const recovered = useEditor.getState()
@@ -591,10 +594,8 @@ async function main() {
     useEditor.getState().fitToPaper()
     await wait(200)
     check(
-      (document.querySelector('.modal')?.textContent ?? '').includes(
-        '여백 없이 꽉 차게 출력됩니다',
-      ),
-      '용지에 맞춘 직후 [전체 도면]은 여백 0 으로 안내된다(재현 전제)',
+      (document.querySelector('.modal')?.textContent ?? '').includes('용지 폭에 맞고 한 줄'),
+      '용지에 맞춘 직후 [전체 도면]은 시트에 맞았다고 안내된다(재현 전제)',
     )
     useEditor.getState().setFilter({ critical: true, milestone: false, query: '' })
     await wait(150)
@@ -605,7 +606,7 @@ async function main() {
     viewScopeBtn?.click()
     await wait(200)
     const scoped = document.querySelector('.modal')?.textContent ?? ''
-    const fitClaim = scoped.includes('여백 없이 꽉 차게 출력됩니다')
+    const fitClaim = scoped.includes('용지 폭에 맞고 한 줄')
     const marginWarn = scoped.includes('여백으로 남습니다')
     check(
       !(fitClaim && marginWarn),
@@ -619,8 +620,16 @@ async function main() {
     previewBtn?.click()
     await wait(250)
     check(!!document.querySelector('.export-preview img'), '미리보기 그림이 만들어진다')
+    // 시트 맞춤은 가로 폭과 줄 높이만 보므로 필터를 바꿔도 대개 맞은 상태가 유지된다.
+    // 월 폭을 바꿔 '맞지 않은 상태'를 만든 뒤 버튼이 나타나는지 본다.
+    useEditor.getState().setView({ pxPerDay: useEditor.getState().project.view.pxPerDay * 1.4 })
+    await wait(200)
+    modalBtns()
+      .find((b) => b.textContent?.includes('미리보기'))
+      ?.click()
+    await wait(250)
     const fitBtn = modalBtns().find((b) => b.textContent?.includes('여백 없이 시트에 맞추기'))
-    check(!!fitBtn, '[여백 없이 시트에 맞추기] 버튼이 렌더된다(여백이 남는 상태)')
+    check(!!fitBtn, '[여백 없이 시트에 맞추기] 버튼이 렌더된다(시트에 맞지 않은 상태)')
     fitBtn?.click()
     await wait(250)
     check(

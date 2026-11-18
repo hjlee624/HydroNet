@@ -16,6 +16,7 @@
 
 import { dayToDate, toISO } from '../engine/dates'
 import { computeLayout, type LaidTask, type LayoutFilter, type LayoutModel } from '../engine/layout'
+import { paperMm, sheetPages } from '../engine/paper'
 import { routeLinks } from '../engine/routing'
 import { resolveTextStyle } from '../styles/theme'
 import type { Project } from '../types/model'
@@ -111,6 +112,7 @@ const LAYERS: Array<[string, number]> = [
   ['HN_ARROW', 9],
   ['HN_ARROW_CRIT', 1],
   ['HN_TITLE', 7],
+  ['HN_PAGE', 8],
 ]
 
 /** filter 를 주면 그 범위(현재 표시 범위)만, 생략하면 전체 도면을 DXF 로 만든다.
@@ -118,8 +120,32 @@ const LAYERS: Array<[string, number]> = [
 export function projectToDxf(project: Project, filter?: LayoutFilter): string {
   const model: LayoutModel = computeLayout(project, filter)
   const routed = routeLinks(model, project.links)
-  const H = model.contentHeight
-  const fy = (y: number) => H - y // flip to Y-up
+  // 쪽 나눔 — PDF·화면 점선과 같은 계산(sheetPages). 도면을 용지 높이 단위로 세로로 쌓는다:
+  // 2쪽부터는 쪽 맨 위에 연·월 헤더 띠가 들어가므로, 나뉜 뒤쪽 내용을 그 쪽의 시작 + 헤더
+  // 높이로 민다. 그래서 각 쪽 틀(HN_PAGE)을 창으로 잡으면 그대로 용지 한 장이 된다.
+  const mm = paperMm(project.paper.size, project.paper.orientation)
+  const sheet = sheetPages(model, mm.w, mm.h)
+  const pageCount = sheet.breaks.length + 1
+  const H = Math.max(model.contentHeight, pageCount * sheet.pageHeight)
+  const shiftOf = (y: number) => {
+    let k = 0
+    while (k < sheet.breaks.length && y > sheet.breaks[k] + 1e-6) k++
+    return k === 0 ? 0 : k * sheet.pageHeight + model.headerHeight - sheet.breaks[k - 1]
+  }
+  /** 세로 구간 [y1, y2] 를 쪽 단위로 자른다 — 반복 헤더 띠를 가로지르지 않게 그릴 때 쓴다. */
+  const pageSpans = (y1: number, y2: number): Array<[number, number]> => {
+    const edges = [Number.NEGATIVE_INFINITY, ...sheet.breaks, Number.POSITIVE_INFINITY]
+    const out: Array<[number, number]> = []
+    for (let k = 0; k + 1 < edges.length; k++) {
+      // 경계값 자체는 앞쪽에 속하므로, 뒤쪽 구간의 시작은 경계 바로 아래에서 잡는다.
+      const a = Math.max(y1, k === 0 ? edges[k] : edges[k] + 0.01)
+      const b = Math.min(y2, edges[k + 1])
+      if (b > a) out.push([a, b])
+    }
+    return out
+  }
+  let rawY = false // true 인 동안은 쌓인 출력 좌표를 그대로 쓴다(반복 헤더·쪽 틀)
+  const fy = (y: number) => H - (rawY ? y : y + shiftOf(y)) // flip to Y-up
   const ts = (role: Parameters<typeof resolveTextStyle>[0]) =>
     resolveTextStyle(role, project.view.textStyles, project.view.fontScale ?? 1)
 
@@ -258,25 +284,28 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
   }
 
   // ── 우기 bands (drawn first, behind everything) ──
-  for (const r of model.rainyRects) {
-    solidRect('HN_RAINY', r.x, r.y, r.width, r.height, 254)
-  }
+  for (const r of model.rainyRects)
+    for (const [a, b] of pageSpans(r.y, r.y + r.height))
+      solidRect('HN_RAINY', r.x, a, r.width, b - a, 254)
 
   // ── grid: month verticals, year verticals, lane separators ──
   const chartBottom = model.chartTop + model.chartHeight
   // 월 구분선(세로) — 표시 ON일 때만. R12는 선 두께가 없어 화면의 두께 조절은 미반영.
   if (project.view.showMonthLine !== false)
-    for (const m of model.months) line('HN_GRID', m.x, model.chartTop, m.x, chartBottom, 9)
+    for (const m of model.months)
+      for (const [a, b] of pageSpans(model.chartTop, chartBottom)) line('HN_GRID', m.x, a, m.x, b, 9)
   // 연도 구분선은 월 격자(ACI 9, 연회색)보다 진한 회색(ACI 8)으로 — 화면과 동일하게 연 구획 강조.
   // R12는 선 두께가 없어 화면의 두께 조절은 미반영, 표시 ON/OFF만 반영한다.
   if (project.view.showYearLine !== false)
-    for (const y of model.years) line('HN_GRID', y.x, model.headerTop, y.x, chartBottom, 8)
+    for (const y of model.years)
+      for (const [a, b] of pageSpans(model.headerTop, chartBottom)) line('HN_GRID', y.x, a, y.x, b, 8)
   for (const c of model.categories) {
     line('HN_GRID', model.labelWidth, c.y + c.height, model.contentWidth, c.y + c.height, 9)
   }
   // label column right border + header/title dividers + header month-row ticks +
   // outer drawing frame — all mirrored from the on-screen separators.
-  line('HN_AXIS', model.labelWidth, model.titleHeight, model.labelWidth, model.contentHeight, 7)
+  for (const [a, b] of pageSpans(model.titleHeight, model.contentHeight))
+    line('HN_AXIS', model.labelWidth, a, model.labelWidth, b, 7)
   const yearRowDxf = model.headerHeight * 0.46
   if (model.titleHeight > 0)
     line('HN_AXIS', 0, model.titleHeight, model.contentWidth, model.titleHeight, 7) // 제목↔헤더
@@ -305,11 +334,10 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
   ) // 테두리
 
   // ── timeline axis text (years / months) ──
-  {
+  const drawAxisText = (top: number) => {
     const yr = ts('axisYear'),
       mo = ts('axisMonth')
-    const headerH = model.headerHeight,
-      top = model.headerTop
+    const headerH = model.headerHeight
     const yearRowH = headerH * 0.46
     for (const y of model.years) {
       text(
@@ -334,13 +362,13 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
       )
     }
   }
+  drawAxisText(model.headerTop)
 
   // ── left header labels ──
-  {
+  const drawHeaderLabels = (top: number) => {
     const ht = ts('headerTitle'),
       hs = ts('headerSub')
-    const top = model.headerTop,
-      headerH = model.headerHeight
+    const headerH = model.headerHeight
     textLeft('HN_HEADER', 12, top + headerH * 0.4, '공종 / 마일스톤', ht.fontSize, 7)
     textLeft(
       'HN_HEADER',
@@ -351,6 +379,39 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
       7,
     )
   }
+  drawHeaderLabels(model.headerTop)
+
+  // ── 쪽 틀 + 2쪽부터 맨 위에 연·월 헤더 반복(제목은 1쪽에만) ──
+  rawY = true
+  for (let k = 0; k < pageCount; k++) {
+    const pageTop = k * sheet.pageHeight
+    if (k > 0) {
+      const bottom = pageTop + model.headerHeight
+      const yearRow = pageTop + model.headerHeight * 0.46
+      line('HN_AXIS', 0, pageTop, model.contentWidth, pageTop, 7)
+      line('HN_AXIS', model.labelWidth, yearRow, model.contentWidth, yearRow, 7)
+      line('HN_AXIS', 0, bottom, model.contentWidth, bottom, 7)
+      line('HN_AXIS', model.labelWidth, pageTop, model.labelWidth, bottom, 7)
+      if (project.view.showMonthLine !== false)
+        for (const m of model.months) line('HN_GRID', m.x, yearRow, m.x, bottom, 9)
+      if (project.view.showYearLine !== false)
+        for (const y of model.years) line('HN_GRID', y.x, pageTop, y.x, bottom, 8)
+      drawAxisText(pageTop)
+      drawHeaderLabels(pageTop)
+    }
+    polyline(
+      'HN_PAGE',
+      [
+        [0, pageTop],
+        [model.contentWidth, pageTop],
+        [model.contentWidth, pageTop + sheet.pageHeight],
+        [0, pageTop + sheet.pageHeight],
+      ],
+      true,
+      8,
+    )
+  }
+  rawY = false
 
   // ── category + sub-category labels ──
   {
@@ -500,7 +561,7 @@ export function projectToDxf(project: Project, filter?: LayoutFilter): string {
   hg(30, '0.0')
   hg(9, '$EXTMAX')
   hg(10, num(model.contentWidth))
-  hg(20, num(model.contentHeight))
+  hg(20, num(H))
   hg(30, '0.0')
   hg(0, 'ENDSEC')
 

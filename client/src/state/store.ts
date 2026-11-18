@@ -11,7 +11,7 @@ import { create } from 'zustand'
 import { createSampleProject } from '../data/sampleProject'
 import { normWorkName } from '../engine/adequacy'
 import { daysInMonth, doyToMonthDay, monthDayToDoy } from '../engine/dates'
-import { fitToPaperScopedView, paperMm } from '../engine/paper'
+import { fitToSheetView, paperMm } from '../engine/paper'
 import {
   applyCascade,
   computeSchedule,
@@ -678,6 +678,7 @@ function normalize(project: Project): Project {
       showTitle: v.showTitle !== false,
       fontScale: v.fontScale ?? 1,
       barHeight: v.barHeight,
+      pageBreaks: v.pageBreaks,
       textStyles: v.textStyles ?? {},
       // 왼쪽 공정명 표(공종 하위) — 기본 ON(구버전 프로젝트도 켜짐). 끄면 기존(막대 위 이름)으로.
       taskColumn: v.taskColumn ?? true,
@@ -1953,24 +1954,16 @@ export const useEditor = create<EditorState>()((set, get) => {
     fitToPaper: (filter) => {
       const p = get().project
       const { w, h } = paperMm(p.paper.size, p.paper.orientation)
-      const patch = fitToPaperScopedView(p, filter, w, h)
-      if (
-        patch.pxPerDay === undefined &&
-        patch.rowHeight === undefined &&
-        patch.fontScale === undefined
-      ) {
-        logInfo('이미 용지 비율·글자 크기에 맞춰져 있습니다.')
-        return
-      }
+      // 가로는 용지 폭에 정확히, 한 줄은 10mm. 세로는 맞추지 않고 넘치면 다음 장으로 넘긴다.
+      // 누르면 쪽 나눔 점선도 켠다(어디서 다음 장으로 넘어가는지 작업 중에 보이게).
+      const patch = { ...fitToSheetView(p, filter, w, h), pageBreaks: true }
       commit(
         (d) => {
           d.view = { ...d.view, ...patch }
         },
         { history: false },
       )
-      // '여백 없이 채웠다'고 단정하지 않는다 — 실제 여백은 호출한 화면이 출력 사전 점검으로
-      // 다시 계산해 말한다(ExportDialog). 여기서는 무엇을 바꿨는지만 남긴다.
-      logInfo('용지 비율에 맞춰 읽기 좋은 범위에서 시간축·행 높이·글자 크기를 조정했습니다.')
+      logInfo('용지 폭에 맞추고 한 줄을 10mm로 조정했습니다 — 넘치는 부분은 다음 장으로 넘어갑니다.')
     },
     // history:false — 이름/시작일은 자유텍스트 입력(키 입력마다 undo 누적 방지, subName/색
     // 편집과 동일 정책). startDate는 day-offset 기준이라 CPM에 영향 없음.

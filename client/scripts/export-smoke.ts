@@ -6,16 +6,11 @@
 
 import { createSampleProject } from '../src/data/sampleProject'
 import { computeLayout, type LayoutFilter } from '../src/engine/layout'
-import { paperPx, tilePages } from '../src/engine/paper'
+import { fitToSheetView, paperMm, SHEET_ROW_MM, sheetPages, tilePages } from '../src/engine/paper'
 import { computeSchedule } from '../src/engine/scheduling'
 import { processColor, processTaskIds } from '../src/engine/taskColor'
 import { projectToDxf } from '../src/export/dxf'
-import {
-  exportDiagnostics,
-  exportPreflight,
-  MIN_FONT_PT,
-  pdfSplitPlan,
-} from '../src/export/preflight'
+import { exportDiagnostics, exportPreflight, MIN_FONT_PT } from '../src/export/preflight'
 import { ALL_SHORTCUTS, KEYMAP, resolveAction } from '../src/state/keymap'
 import type { PaperSettings, Project } from '../src/types/model'
 
@@ -178,53 +173,70 @@ const bf = exportPreflight({
 console.log(`  fontScale=6 → ${bf.minFontPt.toFixed(2)}pt`)
 check(bf.minFontPt > a4.minFontPt, '글자 크기를 키우면 인쇄 pt 도 커진다(안내가 실제 해법)')
 
-// ── 4. 분할 장수 — 기본은 한 장, 사용자가 고른 PDF 만 2·4장으로 나눈다 ─────────
-console.log('\n[분할 장수]')
-const px4 = paperPx(A4)
-const m = computeLayout(project)
-const drawScale = Math.min(px4.wPx / m.contentWidth, px4.hPx / m.contentHeight)
-check(a4.pages === 1, 'PNG는 한 장 이미지로 유지한다')
-check(
-  a4Pdf.pages === 1 && Math.abs(a4Pdf.splitScale - drawScale) < 1e-9,
-  'PDF 기본은 글자가 작아도 자동 분할하지 않고 전체 도면을 한 장에 맞춘다',
-)
-check(
-  a4Pdf.splitScale * m.contentWidth <= px4.wPx + 1e-6 &&
-    a4Pdf.splitScale * m.contentHeight <= px4.hPx + 1e-6,
-  '한 장 출력은 전체 도면이 용지 안에 들어간다(잘림 없음)',
-)
-for (const split of [2, 4] as const) {
-  const sp = exportPreflight({
-    project,
-    filter: FILTER_OFF,
-    scope: 'full',
-    paper: A4,
-    format: 'pdf',
-    split,
-  })
-  const plan = pdfSplitPlan(m, px4.wPx, px4.hPx, split)
-  console.log(
-    `  ${split}분할 → ${sp.splitCols}×${sp.splitRows} · 최소 글자 ${sp.minFontPt.toFixed(2)}pt (한 장 ${a4Pdf.minFontPt.toFixed(2)}pt)`,
-  )
-  check(sp.pages === split && sp.splitCols * sp.splitRows === split, `${split}분할을 고르면 정확히 ${split}장`)
-  check(sp.splitScale > a4Pdf.splitScale, `${split}분할은 한 장보다 크게 찍힌다`)
-  // 모든 조각이 용지 안에 들어간다: 좌측 열 + 본문 1/cols, 헤더 + 본문 1/rows.
-  const sliceW = m.labelWidth + (m.contentWidth - m.labelWidth) / plan.cols
-  const sliceH = m.chartTop + (m.contentHeight - m.chartTop) / plan.rows
-  check(
-    sliceW * plan.scale <= px4.wPx + 1e-6 && sliceH * plan.scale <= px4.hPx + 1e-6,
-    `${split}분할의 각 장이 용지 안에 들어간다(본문 누락 없음)`,
-  )
+// ── 4. 시트 맞춤 · 쪽 나눔 — 가로는 용지 폭에 정확히, 한 줄 10mm, 넘치면 다음 장 ─────
+console.log('\n[시트 맞춤 · 쪽 나눔]')
+const A3: PaperSettings = { size: 'A3', orientation: 'landscape', dpi: 150 }
+const a3 = paperMm('A3', 'landscape')
+// 줄이 많아 한 장에 안 들어가는 공정표(샘플 공정을 4벌로 늘린다).
+const tall: Project = {
+  ...project,
+  paper: { ...project.paper, ...A3 },
+  tasks: [0, 1, 2, 3].flatMap((n) =>
+    project.tasks.map((t) => (n === 0 ? t : { ...t, id: `${t.id}-x${n}`, parentId: undefined })),
+  ),
 }
+const fitPatch = fitToSheetView(tall, undefined, a3.w, a3.h)
+const fittedTall: Project = { ...tall, view: { ...tall.view, ...fitPatch } }
+const fm = computeLayout(fittedTall)
+const sp = sheetPages(fm, a3.w, a3.h)
+const edges = [0, ...sp.breaks, fm.contentHeight]
+console.log(
+  `  맞춤 ${JSON.stringify(fitPatch)} → 한 줄 ${sp.rowMm.toFixed(3)}mm · ${edges.length - 1}장 · 쪽 높이 ${sp.pageHeight.toFixed(1)}px`,
+)
+check(Math.abs(sp.rowMm - SHEET_ROW_MM) < 0.01, `시트에 맞추면 한 줄이 ${SHEET_ROW_MM}mm 가 된다`)
 check(
-  exportPreflight({ project, filter: FILTER_OFF, scope: 'full', paper: A4, format: 'png', split: 4 })
-    .pages === 1,
-  '분할 설정은 PDF 에만 적용된다',
+  Math.abs(fm.contentWidth * sp.mmPerPx - a3.w) < 1e-6,
+  '도면 폭이 용지 폭과 정확히 같다(좌우 여백 없음)',
+)
+check(!('fontScale' in fitPatch), '시트 맞춤은 글자 크기를 건드리지 않는다')
+check(
+  Object.keys(fitToSheetView(fittedTall, undefined, a3.w, a3.h)).length === 0,
+  '한 번 맞춘 뒤 다시 눌러도 바뀌는 것이 없다',
+)
+check(sp.breaks.length >= 1, `줄이 많으면 다음 장으로 넘어간다 (${edges.length - 1}장)`)
+check(
+  edges.slice(1).every((y, k) => (k === 0 ? 0 : fm.headerHeight) + y - edges[k] <= sp.pageHeight + 0.02),
+  '모든 쪽이 용지 높이 안에 들어간다(2쪽부터는 반복 헤더 포함)',
 )
 check(
-  a4Pdf.frozenLabelWidth === m.labelWidth && a4Pdf.frozenHeaderHeight === m.chartTop,
-  'PDF 분할은 매 장에 좌측 WBS와 상단 연·월 헤더를 반복한다',
+  sp.breaks.every((b) =>
+    fm.tasks.every((lt) => b <= lt.cy - fm.rowHeight / 2 + 0.5 || b >= lt.cy + fm.rowHeight / 2 - 0.5),
+  ),
+  '쪽은 줄 경계에서만 나뉜다(줄 중간을 자르지 않는다)',
 )
+const tallPdf = exportPreflight({ project: fittedTall, filter: FILTER_OFF, scope: 'full', paper: A3, format: 'pdf' })
+const tallPng = exportPreflight({ project: fittedTall, filter: FILTER_OFF, scope: 'full', paper: A3, format: 'png' })
+check(
+  tallPdf.pages === edges.length - 1 &&
+    tallPdf.marginPct === 0 &&
+    tallPdf.pageBreaks.join() === sp.breaks.join(),
+  'PDF 사전 점검이 같은 쪽 나눔을 쓴다(여백 0%)',
+)
+check(tallPng.pages === 1 && tallPng.pageBreaks.length === 0, 'PNG는 한 장 이미지로 유지한다')
+check(
+  tallPdf.headerTop === fm.headerTop && tallPdf.headerHeight === fm.headerHeight,
+  'PDF 2쪽부터 반복할 연·월 헤더 띠가 전달된다',
+)
+const tallDxf = projectToDxf(fittedTall)
+const dxfLines = tallDxf.split(/\r?\n/)
+const pageFrames = dxfLines.filter((l, i) => l === 'HN_PAGE' && dxfLines[i - 2] === 'POLYLINE').length
+const firstYear = String(fm.years[0].year)
+check(pageFrames === edges.length - 1, `DXF 에 쪽 틀이 장수만큼 그려진다 (${pageFrames}개)`)
+check(
+  dxfLines.filter((l) => l === firstYear).length >= edges.length - 1,
+  'DXF 의 연·월 헤더가 쪽마다 반복된다',
+)
+check(!tallDxf.includes('NaN'), 'DXF 좌표에 NaN 없음')
 check(tilePages(100, 100, 100, 100).pages === 1, 'tilePages: 딱 맞으면 1장')
 check(tilePages(201, 100, 100, 100).pages === 3, 'tilePages: 가로 2.01배면 3장(3×1)')
 check(tilePages(0, 0, 100, 100).pages === 1, 'tilePages: 0 입력에도 최소 1장(NaN 방지)')

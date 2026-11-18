@@ -12,6 +12,7 @@ import { memo } from 'react'
 import type { AdequacyResult } from '../engine/adequacy'
 import { dayToDate, toISO } from '../engine/dates'
 import { arrangeLabelCenters, screenTextCaps } from '../engine/labelLayout'
+import { paperMm, sheetPages } from '../engine/paper'
 import type { LaidTask, LayoutModel } from '../engine/layout'
 import type { RoutedLink } from '../engine/routing'
 import { createProcessColorMap } from '../engine/taskColor'
@@ -1204,6 +1205,35 @@ function ChartSvgBase({
           markerEnd="url(#hn-arrow-crit)"
         />
       )}
+
+      {/* 쪽 나눔 점선(화면 전용) — 용지 폭에 맞춰 출력할 때 다음 장으로 넘어가는 경계.
+          PDF·DXF 가 같은 계산(sheetPages)으로 나누므로 여기 보이는 선이 곧 실제 경계다. */}
+      {project.view.pageBreaks &&
+        sheetPages(
+          model,
+          paperMm(project.paper.size, project.paper.orientation).w,
+          paperMm(project.paper.size, project.paper.orientation).h,
+        ).breaks.map((y, i) => (
+          <g key={`pb-${y}`} data-export-hide="1" pointerEvents="none">
+            <line
+              x1={0}
+              y1={y}
+              x2={contentWidth}
+              y2={y}
+              stroke={colors.primary}
+              strokeWidth={1.5 / screenScale}
+              strokeDasharray={`${8 / screenScale} ${5 / screenScale}`}
+            />
+            <text
+              x={6 / screenScale}
+              y={y - 4 / screenScale}
+              fontSize={11 / screenScale}
+              fill={colors.primary}
+            >
+              {i + 2}쪽 ▼
+            </text>
+          </g>
+        ))}
 
       {/* Awareness is transient, untrusted UI state. This entire overlay is excluded from export. */}
       <g data-export-hide="1" pointerEvents="none">

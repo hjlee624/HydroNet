@@ -7,15 +7,10 @@
 // 그 사실은 아래 점검란에 숫자로 표기된다 — export/preflight.ts 가 계산한다.
 
 import { useMemo, useState } from 'react'
-import { DPI_OPTIONS, PAPER_SIZES, paperPx } from '../engine/paper'
+import { DPI_OPTIONS, PAPER_SIZES, paperPx, SHEET_ROW_MM } from '../engine/paper'
 import { projectToDxf } from '../export/dxf'
 import { buildExportSvgString, type ExportFormat, exportChart } from '../export/exporter'
-import {
-  type ExportScope,
-  exportDiagnostics,
-  exportPreflight,
-  type PdfSplit,
-} from '../export/preflight'
+import { type ExportScope, exportDiagnostics, exportPreflight } from '../export/preflight'
 import { logError, logInfo } from '../state/logger'
 import { filterActive, useEditor } from '../state/store'
 import { colors } from '../styles/theme'
@@ -72,8 +67,6 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const [format, setFormat] = useState<ExportFormat>('pdf')
   // 기본은 '전체 도면' — 기존 정책(필터를 해제하고 전체를 출력)을 그대로 유지한다.
   const [scope, setScope] = useState<ExportScope>('full')
-  // PDF 분할 — 기본은 한 장(전체 도면을 용지 안에). 2·4분할은 고를 때만.
-  const [split, setSplit] = useState<PdfSplit>(1)
   const [transparent, setTransparent] = useState(false)
   const [stamp, setStamp] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -96,8 +89,8 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const px = paperPx(paperEff)
 
   const preInput = useMemo(
-    () => ({ project, filter, scope, paper: paperEff, format, split }),
-    [project, filter, scope, paperEff, format, split],
+    () => ({ project, filter, scope, paper: paperEff, format }),
+    [project, filter, scope, paperEff, format],
   )
   // 출력 사전 점검 — 무엇이 몇 개 나가는지, 글자가 몇 pt로 찍히는지 미리 계산한다.
   const pre = useMemo(() => exportPreflight(preInput), [preInput])
@@ -120,13 +113,11 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
   const previewKey = `${scope}|${format}|${stamp}|${transparent}|${px.wMm}x${px.hMm}@${px.effectiveDpi}|${v.pxPerDay}x${v.rowHeight}x${v.fontScale ?? 1}|${contentKey}`
   const previewUrl = preview?.key === previewKey ? preview.url : null
 
-  // 레터박스로 남는 여백 — 사전 점검(preflight)이 계산한 값을 그대로 쓴다. 예전엔 여기서
-  // 필터를 무시한 전체 레이아웃으로 따로 계산해, '현재 표시 범위'를 고르면 두 줄 아래
-  // 경고가 '약 70%가 여백'이라고 하는데 여기선 '여백 없이 꽉 차게'라고 하는 모순이 났다.
+  // 시트 맞춤 상태 — 용지 폭에 맞췄을 때 한 줄이 10mm 인가(사전 점검이 계산한 값 그대로).
   const fitInfo = useMemo(() => {
     if (format === 'svg' || format === 'dxf') return null
-    return { offPct: pre.marginPct, fitted: pre.marginPct <= 1 }
-  }, [pre.marginPct, format])
+    return { fitted: Math.abs(pre.rowMm - SHEET_ROW_MM) < 0.05 }
+  }, [pre.rowMm, format])
 
   /**
    * 선택한 출력 범위를 실제 화면(=클론 원본인 라이브 SVG)에 반영한 뒤 fn 을 실행한다.
@@ -236,15 +227,12 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           format,
           transparent,
           stamp: stamp ? stampText : undefined,
-          pdfTiles:
-            format === 'pdf' && pre.pages > 1
+          pdfPages:
+            format === 'pdf'
               ? {
-                  scale: pre.splitScale,
-                  cols: pre.splitCols,
-                  rows: pre.splitRows,
-                  labelWidth: pre.frozenLabelWidth,
-                  headerHeight: pre.frozenHeaderHeight,
-                  titleHeight: pre.frozenTitleHeight,
+                  breaks: pre.pageBreaks,
+                  headerTop: pre.headerTop,
+                  headerHeight: pre.headerHeight,
                 }
               : undefined,
         })
@@ -414,32 +402,6 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         </>
       )}
 
-      {format === 'pdf' && (
-        <div className="field">
-          <label>분할</label>
-          <div className="seg">
-            {([1, 2, 4] as const).map((n) => (
-              <button
-                type="button"
-                key={n}
-                className={split === n ? 'active' : ''}
-                onClick={() => {
-                  setSplit(n)
-                  setMsg(null)
-                }}
-              >
-                {n === 1 ? '한 장' : `${n}분할`}
-              </button>
-            ))}
-          </div>
-          <p className="note">
-            {split === 1
-              ? '전체 공정표를 고른 용지 한 장 안에 그대로 넣습니다(잘리지 않고 축소).'
-              : `같은 용지 ${split}장에 나눠 크게 찍습니다(${pre.splitCols}×${pre.splitRows}). 각 장에 공사명·좌측 표·연·월 헤더를 반복합니다.`}
-          </p>
-        </div>
-      )}
-
       {/* ── 출력 사전 점검 — 무엇이 어떻게 나가는지 확정해서 보여준다 ── */}
       <div className="field" style={{ marginTop: 2 }}>
         <label>출력 전 점검</label>
@@ -451,7 +413,10 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               {' '}
               · 용지 {project.paper.size}{' '}
               {project.paper.orientation === 'landscape' ? '가로' : '세로'} · 최소 글자{' '}
-              <strong>{pre.minFontPt.toFixed(1)}pt</strong> · 여백 {pre.marginPct}% · {pre.pages}장
+              <strong>{pre.minFontPt.toFixed(1)}pt</strong> ·{' '}
+              {format === 'pdf'
+                ? `한 줄 ${pre.rowMm.toFixed(1)}mm · ${pre.pages}장`
+                : `여백 ${pre.marginPct}% · 1장`}
             </>
           )}
           {pre.rangeLabel && <> · 표시 기간 {pre.rangeLabel}</>}
@@ -473,7 +438,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
         fitInfo &&
         (fitInfo.fitted ? (
           <p className="note" style={{ color: 'var(--primary-deep)' }}>
-            ✓ 도면이 용지 비율에 맞아 여백 없이 꽉 차게 출력됩니다.
+            ✓ 용지 폭에 맞고 한 줄 {SHEET_ROW_MM}mm 입니다 — PDF 로는 {pre.sheetPages}장.
           </p>
         ) : (
           <div className="field" style={{ marginTop: 2 }}>
@@ -481,9 +446,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
               type="button"
               className="btn btn--sm"
               onClick={() => {
-                // '현재 표시 범위'로 출력할 거면 **그 필터가 남기는 도면**에 맞춘다. 예전엔
-                // 늘 전체 도면 기준으로 맞춰서, 필터를 건 채 누르면 여백이 그대로거나 더
-                // 나빠지는데도 '여백 없이 출력됩니다'라고 단정했다.
+                // '현재 표시 범위'로 출력할 거면 **그 필터가 남기는 도면**에 맞춘다.
                 const scoped = scope === 'view' && filterActive(filter) ? filter : undefined
                 a().fitToPaper(scoped)
                 // 결과 문구는 단정하지 않고 **다시 점검한 값**에서 끌어온다.
@@ -493,20 +456,18 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
                   scope,
                   paper: paperEff,
                   format,
-                  split,
                 })
                 setMsg(
-                  after.marginPct <= 1
-                    ? `${after.scopeLabel} 기준으로 용지 비율에 맞췄습니다 — 여백 ${after.marginPct}%로 출력됩니다.`
-                    : `배율을 조정했지만 ${after.scopeLabel} 기준 여백이 약 ${after.marginPct}% 남습니다 — 용지 방향·크기를 바꾸거나 표시 기간을 조정해 보세요.`,
+                  `${after.scopeLabel} 기준으로 용지 폭에 맞췄습니다 — 한 줄 ${after.rowMm.toFixed(1)}mm · PDF ${after.sheetPages}장.`,
                 )
               }}
             >
               ⤢ 여백 없이 시트에 맞추기
             </button>
             <p className="note">
-              이 범위로 출력하면 용지의 약 <strong>{fitInfo.offPct}%</strong>가 여백으로 남습니다.
-              누르면 배율(시간축·행 높이)을 조정해 꽉 채웁니다 — 글자·막대 왜곡 없음.
+              지금 그대로면 용지 폭 기준 한 줄 <strong>{pre.rowMm.toFixed(1)}mm</strong>(PDF{' '}
+              {pre.sheetPages}장)입니다. 누르면 한 줄을 {SHEET_ROW_MM}mm 로 맞춥니다 — 글자 크기는
+              그대로, 넘치는 부분은 다음 장으로 넘어갑니다.
             </p>
           </div>
         ))}
@@ -526,7 +487,7 @@ export function ExportDialog({ onClose }: { onClose: () => void }) {
           {vector
             ? '미리보기는 래스터 출력(PNG·JPG·PDF) 기준 배치입니다. SVG·DXF는 벡터 원본이라 여백 개념이 없습니다.'
             : format === 'pdf' && pre.pages > 1
-              ? `미리보기는 전체 도면 개요입니다. 실제 PDF는 ${pre.splitCols}×${pre.splitRows} = ${pre.pages}장으로 나뉘며 각 장에 공사명·좌측 WBS·연·월 헤더를 반복합니다.`
+              ? `미리보기는 전체 도면 개요입니다. 실제 PDF는 가로를 용지 폭에 맞춰 세로 ${pre.pages}장으로 나뉘며, 2쪽부터 맨 위에 연·월 헤더를 반복합니다.`
             : '용지 안에 도면이 어떻게 앉는지(여백 포함) 실제 출력과 같은 방식으로 보여줍니다.'}
         </p>
       </div>

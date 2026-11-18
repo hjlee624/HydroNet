@@ -158,16 +158,19 @@ async function loadSvgImage(svgString: string): Promise<HTMLImageElement> {
   return img
 }
 
-function rasterizePdfTile(
+/**
+ * PDF 한 쪽 — 도면 폭을 용지 폭에 맞춘 배율로 [y0, y1) 구간을 그린다. 2쪽부터는 맨 위에
+ * 연·월 헤더 띠를 다시 그리고 그 아래에 이어 붙인다(제목은 1쪽에만).
+ */
+function rasterizePdfPage(
   img: HTMLImageElement,
   content: ContentSize,
   pageW: number,
   pageH: number,
-  scale: number,
-  col: number,
-  row: number,
+  y0: number,
+  y1: number,
   background: string,
-  frozen: { labelWidth: number; headerHeight: number; titleHeight: number },
+  header: { top: number; height: number } | null,
 ): HTMLCanvasElement {
   const canvas = document.createElement('canvas')
   canvas.width = pageW
@@ -175,88 +178,13 @@ function rasterizePdfTile(
   const ctx = canvas.getContext('2d')!
   ctx.fillStyle = background
   ctx.fillRect(0, 0, pageW, pageH)
-  const labelPx = Math.min(pageW - 1, Math.max(0, frozen.labelWidth * scale))
-  const headerPx = Math.min(pageH - 1, Math.max(0, frozen.headerHeight * scale))
-  const titlePx = Math.min(headerPx, Math.max(0, frozen.titleHeight * scale))
-  const bodyDestW = Math.max(1, pageW - labelPx)
-  const bodyDestH = Math.max(1, pageH - headerPx)
-  const bodySourceW = bodyDestW / scale
-  const bodySourceH = bodyDestH / scale
-  const sourceX = frozen.labelWidth + col * bodySourceW
-  const sourceY = frozen.headerHeight + row * bodySourceH
-  const sourceW = Math.max(0, Math.min(bodySourceW, content.width - sourceX))
-  const sourceH = Math.max(0, Math.min(bodySourceH, content.height - sourceY))
-
-  // Body quadrant.
-  if (sourceW > 0 && sourceH > 0)
-    ctx.drawImage(
-      img,
-      sourceX,
-      sourceY,
-      sourceW,
-      sourceH,
-      labelPx,
-      headerPx,
-      sourceW * scale,
-      sourceH * scale,
-    )
-  // Timeline header for this horizontal slice.
-  const axisSourceH = Math.max(0, frozen.headerHeight - frozen.titleHeight)
-  if (sourceW > 0 && axisSourceH > 0)
-    ctx.drawImage(
-      img,
-      sourceX,
-      frozen.titleHeight,
-      sourceW,
-      axisSourceH,
-      labelPx,
-      titlePx,
-      sourceW * scale,
-      axisSourceH * scale,
-    )
-  // WBS column for this vertical slice.
-  if (frozen.labelWidth > 0 && sourceH > 0)
-    ctx.drawImage(
-      img,
-      0,
-      sourceY,
-      frozen.labelWidth,
-      sourceH,
-      0,
-      headerPx,
-      labelPx,
-      sourceH * scale,
-    )
-  // Top-left axis corner.
-  if (frozen.labelWidth > 0 && axisSourceH > 0)
-    ctx.drawImage(
-      img,
-      0,
-      frozen.titleHeight,
-      frozen.labelWidth,
-      axisSourceH,
-      0,
-      titlePx,
-      labelPx,
-      axisSourceH * scale,
-    )
-  // Repeat the centered title band without distorting its text.
-  if (frozen.titleHeight > 0 && titlePx > 0) {
-    const titleSourceW = Math.min(content.width, pageW / scale)
-    const titleSourceX = Math.max(0, (content.width - titleSourceW) / 2)
-    const titleDestX = (pageW - titleSourceW * scale) / 2
-    ctx.drawImage(
-      img,
-      titleSourceX,
-      0,
-      titleSourceW,
-      frozen.titleHeight,
-      titleDestX,
-      0,
-      titleSourceW * scale,
-      titlePx,
-    )
+  const scale = pageW / content.width
+  let dy = 0
+  if (header && header.height > 0) {
+    ctx.drawImage(img, 0, header.top, content.width, header.height, 0, 0, pageW, header.height * scale)
+    dy = header.height * scale
   }
+  if (y1 > y0) ctx.drawImage(img, 0, y0, content.width, y1 - y0, 0, dy, pageW, (y1 - y0) * scale)
   return canvas
 }
 
@@ -270,15 +198,9 @@ export interface ExportOptions {
   transparent?: boolean
   /** 우측 하단 버전 표기 한 줄(사업명·시트·출력 범위·시각). 미지정이면 표기 없음. */
   stamp?: string
-  /** PDF readability plan from preflight. Omit to keep a single fitted page. */
-  pdfTiles?: {
-    scale: number
-    cols: number
-    rows: number
-    labelWidth: number
-    headerHeight: number
-    titleHeight: number
-  }
+  /** PDF 쪽 나눔(preflight 가 계산). 주면 가로를 용지 폭에 맞추고 세로로 여러 장에 나눈다.
+   *  생략하면 예전처럼 한 장에 비율 유지 축소. */
+  pdfPages?: { breaks: number[]; headerTop: number; headerHeight: number }
 }
 
 export async function exportChart(
@@ -331,50 +253,32 @@ export async function exportChart(
       return { clamped: px.clamped, pages: 1 }
     }
 
-    // PDF — one fitted page by default (the whole chart, never cropped). Tiles only when the
-    // user picked a 2/4 split in the dialog (preflight supplies the plan).
+    // PDF — 가로는 용지 폭에 정확히 맞추고, 세로로 넘치면 다음 장으로 넘긴다(2쪽부터 맨 위에
+    // 연·월 헤더 반복). 쪽 나눔은 preflight(engine/paper.ts sheetPages)가 정한다.
     const orientation = px.wMm >= px.hMm ? 'landscape' : 'portrait'
     const pdf = new jsPDF({ orientation, unit: 'mm', format: [px.wMm, px.hMm], compress: true })
-    const tilePlan = opts.pdfTiles
-    const cols = Math.max(1, tilePlan?.cols ?? 1)
-    const rows = Math.max(1, tilePlan?.rows ?? 1)
-    const pages = cols * rows
-    if (pages === 1) {
+    const plan = opts.pdfPages
+    let pages = 1
+    if (!plan) {
       const canvas = await rasterize(svgString, content, px.wPx, px.hPx, bg)
-      pdf.addImage(
-        canvas.toDataURL('image/jpeg', 0.94),
-        'JPEG',
-        0,
-        0,
-        px.wMm,
-        px.hMm,
-        undefined,
-        'FAST',
-      )
+      pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
     } else {
       const img = await loadSvgImage(svgString)
-      const scale = Math.max(0.01, tilePlan?.scale ?? 1)
-      let pageIndex = 0
-      for (let row = 0; row < rows; row++) {
-        for (let col = 0; col < cols; col++) {
-          if (pageIndex > 0) pdf.addPage([px.wMm, px.hMm], orientation)
-          const canvas = rasterizePdfTile(img, content, px.wPx, px.hPx, scale, col, row, whiteBg, {
-            labelWidth: tilePlan?.labelWidth ?? 0,
-            headerHeight: tilePlan?.headerHeight ?? 0,
-            titleHeight: tilePlan?.titleHeight ?? 0,
-          })
-          pdf.addImage(
-            canvas.toDataURL('image/jpeg', 0.94),
-            'JPEG',
-            0,
-            0,
-            px.wMm,
-            px.hMm,
-            undefined,
-            'FAST',
-          )
-          pageIndex++
-        }
+      const edges = [0, ...plan.breaks, content.height]
+      pages = edges.length - 1
+      for (let k = 0; k < pages; k++) {
+        if (k > 0) pdf.addPage([px.wMm, px.hMm], orientation)
+        const canvas = rasterizePdfPage(
+          img,
+          content,
+          px.wPx,
+          px.hPx,
+          edges[k],
+          edges[k + 1],
+          whiteBg,
+          k > 0 ? { top: plan.headerTop, height: plan.headerHeight } : null,
+        )
+        pdf.addImage(canvas.toDataURL('image/jpeg', 0.94), 'JPEG', 0, 0, px.wMm, px.hMm, undefined, 'FAST')
       }
     }
     pdf.save(`${filename}.pdf`)

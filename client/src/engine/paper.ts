@@ -1,7 +1,13 @@
 // Paper (ISO 216 A-series) dimensions and pixel helpers for the export engine.
 
 import type { Orientation, PaperSettings, PaperSize, Project } from '../types/model'
-import { computeLayout, fitToPaperView, type LayoutFilter } from './layout'
+import {
+  AUTO_FIT_LIMITS,
+  computeLayout,
+  fitToPaperView,
+  type LayoutFilter,
+  type LayoutModel,
+} from './layout'
 
 /** Portrait dimensions in millimetres. */
 export const PAPER_MM: Record<PaperSize, { w: number; h: number }> = {
@@ -122,6 +128,92 @@ export function fitToPaperScopedView(
   paperHmm: number,
 ): { pxPerDay?: number; rowHeight?: number; fontScale?: number } {
   return fitToPaperView(scopedProject(project, filter), paperWmm, paperHmm)
+}
+
+/** 시트 맞춤에서 한 줄(행)이 용지 위에서 차지하는 높이(mm). */
+export const SHEET_ROW_MM = 10
+
+export interface SheetPages {
+  /** 도면 좌표 1px 이 용지에서 차지하는 길이(mm) — 도면 폭을 용지 폭에 정확히 맞춘 배율. */
+  mmPerPx: number
+  /** 한 줄(행)의 용지 위 높이(mm). */
+  rowMm: number
+  /** 용지 한 장의 높이(도면 좌표 px). */
+  pageHeight: number
+  /** 쪽이 나뉘는 도면 y 좌표(오름차순). 비어 있으면 한 장. */
+  breaks: number[]
+}
+
+/**
+ * 도면 폭을 용지 폭에 **정확히** 맞췄을 때 세로로 몇 장이 되고 어디서 나뉘는지.
+ *
+ * 1쪽은 제목·연/월 헤더부터 시작하고, 2쪽부터는 맨 위에 연/월 헤더를 반복한 뒤 이어진다
+ * (그래서 2쪽부터는 담을 수 있는 높이가 헤더만큼 줄어든다). 줄 중간에서는 자르지 않는다 —
+ * 공종 시작선과 줄 경계에서만 나눈다. 화면의 쪽 나눔 점선·PDF·DXF 가 모두 이 결과를 쓴다.
+ */
+export function sheetPages(
+  m: Pick<
+    LayoutModel,
+    'contentWidth' | 'contentHeight' | 'rowHeight' | 'headerHeight' | 'categories' | 'chartTop' | 'chartHeight'
+  >,
+  paperWmm: number,
+  paperHmm: number,
+): SheetPages {
+  const mmPerPx = paperWmm / Math.max(1, m.contentWidth)
+  const pageHeight = paperHmm / mmPerPx
+  const out: SheetPages = { mmPerPx, rowMm: m.rowHeight * mmPerPx, pageHeight, breaks: [] }
+  if (!(pageHeight - m.headerHeight > 1)) return out // 헤더만으로 한 장이 차는 비정상 배율
+  const candidates: number[] = []
+  for (const c of m.categories) {
+    candidates.push(c.y)
+    const inset = c.height - c.subRows * m.rowHeight
+    for (let i = 1; i < c.subRows; i++) candidates.push(c.y + inset + i * m.rowHeight)
+  }
+  candidates.push(m.chartTop + m.chartHeight) // 하단 로고 띠 앞
+  candidates.sort((a, b) => a - b)
+  let start = 0
+  let capacity = pageHeight
+  while (m.contentHeight - start > capacity + 0.01) {
+    let next = start + capacity // 한 줄이 용지보다 크면(비정상) 그 자리에서 자른다
+    for (const y of candidates) {
+      if (y > start + 0.01 && y <= start + capacity + 0.01) next = y
+      else if (y > start + capacity) break
+    }
+    out.breaks.push(next)
+    start = next
+    capacity = pageHeight - m.headerHeight
+  }
+  return out
+}
+
+/**
+ * [여백 없이 시트에 맞추기] — 도면 폭을 용지 폭에 맞췄을 때 한 줄이 정확히 SHEET_ROW_MM 가
+ * 되도록 시간축(pxPerDay)을 푼다. 줄 높이는 글자·막대가 들어가는 최소 높이로 내려, 10mm 안에서
+ * 글자가 가장 크게 찍히게 한다. 글자 크기는 건드리지 않는다. 세로는 맞추지 않는다 — 넘치면
+ * sheetPages 가 다음 장으로 넘긴다.
+ */
+export function fitToSheetView(
+  project: Project,
+  filter: LayoutFilter | undefined,
+  paperWmm: number,
+  paperHmm: number,
+): { pxPerDay?: number; rowHeight?: number; fontScale?: number } {
+  if (!(paperWmm > 0) || !(paperHmm > 0)) return {}
+  const scoped = scopedProject(project, filter)
+  const rowHeight = AUTO_FIT_LIMITS.minRowHeight // 하한 아래 → computeLayout 이 최소 높이로 올린다
+  // 글자 크기는 사용자가 정한 대로 둔다. 다만 슬라이더 범위(50~600%)를 벗어난 폭주 값은
+  // 옛 자동 맞춤이 남긴 사고 흔적이므로 100% 로 되돌린다(88430% 글자 사례).
+  const fs0 = project.view.fontScale ?? 1
+  const fontScale = fs0 >= AUTO_FIT_LIMITS.minFontScale && fs0 <= 6 ? fs0 : 1
+  const m = computeLayout({ ...scoped, view: { ...scoped.view, rowHeight, fontScale } })
+  const days = Math.max(1, m.domainEndDay - m.domainStartDay)
+  const targetWidth = (m.rowHeight * paperWmm) / SHEET_ROW_MM
+  const pxPerDay = Math.max(0.02, (targetWidth - m.labelWidth) / days)
+  const out: { pxPerDay?: number; rowHeight?: number; fontScale?: number } = {}
+  if (fontScale !== fs0) out.fontScale = fontScale
+  if (Math.abs(pxPerDay - project.view.pxPerDay) > 1e-4) out.pxPerDay = Number(pxPerDay.toFixed(5))
+  if (rowHeight !== project.view.rowHeight) out.rowHeight = rowHeight
+  return out
 }
 
 export function paperPx(paper: PaperSettings): PaperPx {

@@ -193,6 +193,8 @@ export interface ViewSettings {
   /** Global multiplier on every text size (1 = design size). Raised by
    *  "fit to paper" so text stays legible on large sheets; user-adjustable. */
   fontScale?: number
+  /** 쪽 나눔 점선 표시 — [여백 없이 시트에 맞추기]를 누르면 켜진다(화면 전용, 출력엔 안 그림). */
+  pageBreaks?: boolean
   /** 막대 두께(px, 3~16). 미지정 = 자동(줄 높이의 34%, 최대 16). 얇게 하면 줄 최소 높이도 준다. */
   barHeight?: number
   /** Per-role typography overrides for the chart texts (empty = all defaults). */

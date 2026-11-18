@@ -10,11 +10,10 @@ import { assessConstructionPeriod, assessTaskAdequacy, normWorkName } from '../e
 import { dateToDay, daysInMonth, dayToDate, parseISO, toISO } from '../engine/dates'
 import {
   computeLayout,
-  fitToPaperView,
   monthWidthFromPxPerDay,
   pxPerDayFromMonthWidth,
 } from '../engine/layout'
-import { PAPER_SIZES, paperMm } from '../engine/paper'
+import { PAPER_SIZES, paperMm, SHEET_ROW_MM, sheetPages } from '../engine/paper'
 import { type EditImpact, previewEdit } from '../engine/scheduling'
 import { processColor, processTaskIds } from '../engine/taskColor'
 import type { InspectorTab } from '../state/store'
@@ -936,19 +935,17 @@ function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
   const sheetLabel = project.activeSheet?.name ?? ''
   const fontScale = project.view.fontScale ?? 1
   const monthWidth = Math.round(monthWidthFromPxPerDay(project.view.pxPerDay))
-  // Margin the letterbox fit would leave = how far the drawing aspect is from
-  // the sheet. Paper selection preserves the editing density; the explicit fit
-  // button below is the only action that rewrites the time/row scale.
+  // 용지 폭에 맞췄을 때 한 줄이 몇 mm 로 찍히고 몇 장이 되는지 — 시트 맞춤 버튼 아래 안내에 쓴다.
   const fitState = useMemo(() => {
     const m = computeLayout(project)
     const { w, h } = paperMm(project.paper.size, project.paper.orientation)
-    const offPct = Math.round((Math.abs(m.contentWidth / m.contentHeight - w / h) / (w / h)) * 100)
-    // canFit = whether "맞춤" would actually change anything — so the button never
-    // advertises a margin it can't remove (e.g. at the density clamp limits).
-    const patch = fitToPaperView(project, w, h)
-    const canFit =
-      patch.pxPerDay !== undefined || patch.rowHeight !== undefined || patch.fontScale !== undefined
-    return { offPct, canFit, m }
+    const sheet = sheetPages(m, w, h)
+    return {
+      m,
+      rowMm: sheet.rowMm,
+      pages: sheet.breaks.length + 1,
+      fitted: Math.abs(sheet.rowMm - SHEET_ROW_MM) < 0.05,
+    }
   }, [project])
   const layoutNow = fitState.m
   function setSheet(patch: { size?: PaperSize; orientation?: 'landscape' | 'portrait' }) {
@@ -1297,37 +1294,38 @@ function ProjectInspector({ onFitChart }: { onFitChart?: () => void }) {
         />
         <p className="note">글자·막대가 겹치지 않는 최소 높이 아래로는 내려가지 않습니다.</p>
       </div>
-      {!fitState.canFit ? (
-        fitState.offPct <= 1 ? (
-          <p className="note" style={{ color: 'var(--primary-deep)' }}>
-            ✓ 용지 비율에 맞아 여백 없이 출력됩니다.
-          </p>
-        ) : (
-          <p className="note">
-            여백 약 {fitState.offPct}% — 용지 방향/규격을 바꾸면 더 줄일 수 있습니다.
-          </p>
-        )
-      ) : (
-        <div className="field">
-          <button
-            className="btn btn--sm"
-            style={{ width: '100%' }}
-            title="도면 비율을 용지에 맞추고 작업 화면 전체를 다시 표시"
-            onClick={() => {
-              a().beginGesture()
-              a().fitToPaper()
-              a().endGesture()
-              onFitChart?.()
-            }}
-          >
-            ⤢ 용지 비율 + 화면 전체 맞춤
-            {fitState.offPct > 1 ? ` (현재 여백 약 ${fitState.offPct}%)` : ''}
-          </button>
-        </div>
-      )}
+      <div className="field">
+        <button
+          type="button"
+          className="btn btn--sm"
+          style={{ width: '100%' }}
+          title={`도면 폭을 용지 폭에 맞추고 한 줄을 ${SHEET_ROW_MM}mm로 조정`}
+          onClick={() => {
+            a().beginGesture()
+            a().fitToPaper()
+            a().endGesture()
+            onFitChart?.()
+          }}
+        >
+          ⤢ 여백 없이 시트에 맞추기
+        </button>
+      </div>
+      <p className="note" style={fitState.fitted ? { color: 'var(--primary-deep)' } : undefined}>
+        {fitState.fitted ? '✓ ' : ''}
+        {project.paper.size} 폭에 맞추면 한 줄 {fitState.rowMm.toFixed(1)}mm · {fitState.pages}장
+        {fitState.fitted ? '' : ` — 버튼을 누르면 한 줄 ${SHEET_ROW_MM}mm로 맞춥니다`}
+      </p>
+      <label className="toggle" style={{ display: 'flex', marginBottom: 8 }}>
+        <input
+          type="checkbox"
+          checked={!!project.view.pageBreaks}
+          onChange={(e) => a().setView({ pageBreaks: e.target.checked })}
+        />
+        쪽 나눔 점선 표시
+      </label>
       <p className="note">
-        용지·방향을 바꿔도 월 폭과 행 높이는 유지됩니다. 필요할 때만 위 버튼으로 시트 비율을
-        맞추세요. 출력 해상도(DPI)는 <b>도면 출력</b> 창에서 정합니다.
+        PDF·DXF 는 가로를 용지 폭에 맞추고, 세로로 넘치는 부분은 다음 장으로 넘깁니다(2쪽부터는
+        맨 위에 연·월 헤더 반복). 출력 해상도(DPI)는 <b>도면 출력</b> 창에서 정합니다.
       </p>
 
       <div style={{ height: 1, background: 'var(--hairline)', margin: '8px 0 14px' }} />
